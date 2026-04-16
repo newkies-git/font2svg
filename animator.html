@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hanja Stroke Explorer - Noto Serif KR</title>
+    <style>
+        :root {
+            --bg: #0f172a;
+            --surface: #1e293b;
+            --primary: #38bdf8;
+            --primary-hover: #0ea5e9;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --border: #334155;
+            --accent-red: #fb7185;
+            --accent-green: #34d399;
+        }
+
+        * { box-sizing: border-box; }
+        
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background-color: var(--bg);
+            color: var(--text-main);
+            margin: 0;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Sidebar: Search & List */
+        .sidebar {
+            width: 320px;
+            background: var(--surface);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            box-shadow: 4px 0 15px rgba(0,0,0,0.02);
+            z-index: 10;
+        }
+
+        .sidebar-header {
+            padding: 24px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        h1 { font-size: 1.25rem; font-weight: 800; margin: 0 0 16px; color: var(--primary); }
+
+        .search-box {
+            position: relative;
+        }
+
+        #search-input {
+            width: 100%;
+            padding: 12px 16px;
+            padding-left: 40px;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            background: #f8fafc;
+            font-size: 0.95rem;
+            outline: none;
+            transition: all 0.2s;
+        }
+
+        #search-input:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+            background: white;
+        }
+
+        .search-icon {
+            position: absolute;
+            left: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-muted);
+            pointer-events: none;
+        }
+
+        #results-grid {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
+            gap: 8px;
+            align-content: start;
+        }
+
+        #results-grid::-webkit-scrollbar { width: 6px; }
+        #results-grid::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+
+        .char-card {
+            background: #1e293b;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 8px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .char-card:hover {
+            border-color: var(--primary);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+        }
+
+        .char-card.active {
+            background: var(--primary);
+            border-color: var(--primary);
+            color: white;
+            box-shadow: 0 10px 15px -3px rgba(37, 99, 235, 0.4);
+        }
+
+        .char-card .glyph { font-size: 1.5rem; margin-bottom: 2px; }
+        .char-card .eum { font-size: 0.7rem; color: var(--text-muted); }
+        .char-card.active .eum { color: rgba(255,255,255,0.8); }
+
+        /* Main Content */
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 40px;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+
+        .stage-container {
+            position: relative;
+            background: #020617;
+            padding: 20px;
+            border-radius: 32px;
+            box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);
+            border: 1px solid var(--border);
+        }
+
+        .stage {
+            width: 500px;
+            height: 500px;
+            background: #020617;
+            border-radius: 16px;
+            /* Remove overflow hidden to allow labels to show if they slightly bleed out */
+            overflow: visible;
+        }
+
+        #glyph-bg { fill: #f8fafc; }
+        #glyph-main { fill: #f8fafc; }
+        
+        .stroke {
+            fill: none;
+            stroke: white;
+            stroke-width: 100;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
+        .skeleton-visible {
+            fill: none;
+            stroke: var(--accent-red);
+            stroke-width: 4;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            opacity: 0.6;
+        }
+
+        /* Grid & Debug */
+        .grid-line { stroke: #334155; stroke-width: 1; opacity: 0.5; }
+        .axis-line { stroke: #64748b; stroke-width: 2; }
+        .axis-label { fill: #94a3b8; font-size: 24px; font-weight: 500; font-family: monospace; }
+        .viewbox-border { fill: none; stroke: var(--primary); stroke-width: 2; stroke-dasharray: 8 8; opacity: 0.5; }
+
+        /* Controls */
+        .toolbar {
+            margin-top: 40px;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+            width: 100%;
+            max-width: 540px;
+        }
+
+        .controls-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #1e293b;
+            padding: 12px 24px;
+            border-radius: 16px;
+            border: 1px solid var(--border);
+        }
+
+        .toggle-group { display: flex; gap: 20px; }
+        .toggle-group label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.9rem;
+            cursor: pointer;
+            color: var(--text-muted);
+        }
+
+        .action-group { display: flex; gap: 12px; }
+        
+        .btn {
+            padding: 12px 24px;
+            border-radius: 12px;
+            border: none;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-play { background: var(--accent-green); color: white; flex: 2; font-size: 1.1rem; }
+        .btn-play:hover { background: #059669; transform: scale(1.02); }
+        
+        .btn-reset { background: var(--bg); color: var(--text-muted); flex: 1; }
+        .btn-reset:hover { background: var(--border); }
+
+        .scale-control, .opacity-control, .offset-control {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        .scale-control label, .opacity-control label, .offset-control label { 
+            min-width: 120px; 
+            font-size: 0.85rem; 
+            color: var(--text-muted); 
+            font-weight: 600;
+        }
+        .scale-control input, .opacity-control input, .offset-control input { flex: 1; accent-color: var(--primary); }
+        .scale-control span, .opacity-control span, .offset-control span { min-width: 50px; font-variant-numeric: tabular-nums; font-weight: 600; color: var(--primary); }
+
+        #char-info {
+            position: absolute;
+            top: 40px;
+            left: 40px;
+            text-align: left;
+        }
+        #char-info h2 { font-size: 3rem; margin: 0; }
+        #char-info p { color: var(--text-muted); margin: 4px 0; }
+
+        /* Loading */
+        .loader {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: var(--primary);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            display: none;
+            animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+    </style>
+</head>
+<body>
+
+    <aside class="sidebar">
+        <div class="sidebar-header">
+            <h1>Hanja Explorer</h1>
+            <div class="search-box">
+                <span class="search-icon">🔍</span>
+                <input type="text" id="search-input" placeholder="한자 또는 음 검색...">
+            </div>
+        </div>
+        <div id="results-grid"></div>
+    </aside>
+
+    <main class="main-content">
+        <div id="loader" class="loader">Loading data...</div>
+
+        <div id="char-info">
+            <h2 id="display-char">-</h2>
+            <p id="display-eum">Select a character</p>
+        </div>
+
+        <div class="stage-container">
+            <div class="stage">
+                <svg id="main-svg" viewBox="-500 -500 1000 1000" style="overflow: visible;">
+                    <!-- Coordinate Grid Base (Restored & Padded) -->
+                    <g id="grid-layer">
+                        <!-- Grid lines every 100 units -->
+                        <path class="grid-line" d="M -500 -400 L 500 -400 M -500 -300 L 500 -300 M -500 -200 L 500 -200 M -500 -100 L 500 -100 M -500 100 L 500 100 M -500 200 L 500 200 M -500 300 L 500 300 M -500 400 L 500 400"></path>
+                        <path class="grid-line" d="M -400 -500 L -400 500 M -300 -500 L -300 500 M -200 -500 L -200 500 M -100 -500 L -100 500 M 100 -500 L 100 500 M 200 -500 L 200 500 M 300 -500 L 300 500 M 400 -500 L 400 500"></path>
+                        
+                        <!-- Axes (0,0) -->
+                        <line class="axis-line" x1="-500" y1="0" x2="500" y2="0"></line>
+                        <line class="axis-line" x1="0" y1="-500" x2="0" y2="500"></line>
+                        
+                        <!-- ViewBox Boundary -->
+                        <rect class="viewbox-border" x="-500" y="-500" width="1000" height="1000"></rect>
+
+                        <!-- Labels moved closer to the borders -->
+                        <text class="axis-label" x="8" y="25">0,0</text>
+                        <text class="axis-label" x="435" y="25">500</text>
+                        <text class="axis-label" x="-495" y="25">-500</text>
+                        <text class="axis-label" x="8" y="490">500</text>
+                        <text class="axis-label" x="8" y="-475">-500</text>
+                    </g>
+
+                    <defs>
+                        <mask id="stroke-mask">
+                            <g id="mask-scaler">
+                                <g id="mask-shifter">
+                                    <g transform="scale(1, -1)" id="mask-content"></g>
+                                </g>
+                            </g>
+                        </mask>
+                    </defs>
+                    
+                    <g id="glyph-scaler">
+                        <g id="glyph-shifter">
+                            <g transform="scale(1, -1)">
+                                <path id="glyph-bg" d=""></path>
+                                <path id="glyph-main" d="" mask="url(#stroke-mask)"></path>
+                                <g id="skeleton-container" visibility="hidden"></g>
+                            </g>
+                        </g>
+                    </g>
+                </svg>
+            </div>
+        </div>
+
+        <div class="toolbar">
+            <div class="controls-row scale-control">
+                <label>Character Scale</label>
+                <input type="range" id="glyph-scale" min="0.5" max="1.0" step="0.01" value="0.9" oninput="updateGlyphScale(this.value)">
+                <span id="scale-val">0.90x</span>
+            </div>
+            <div class="controls-row opacity-control">
+                <label>Font Opacity</label>
+                <input type="range" id="font-opacity" min="0" max="1.0" step="0.01" value="0.15" oninput="updateFontOpacity(this.value)">
+                <span id="opacity-val">15%</span>
+            </div>
+            <div class="controls-row offset-control">
+                <label>Vertical Offset</label>
+                <input type="range" id="vertical-offset" min="700" max="1000" step="5" value="870" oninput="updateVerticalOffset(this.value)">
+                <span id="offset-val">870</span>
+            </div>
+            <div class="controls-row">
+                <div class="toggle-group">
+                    <label><input type="checkbox" id="toggle-font" checked onchange="updateVisibility()"> Design</label>
+                    <label><input type="checkbox" id="toggle-skeleton" onchange="updateVisibility()"> Skeleton</label>
+                </div>
+                <div class="action-group">
+                    <button class="btn btn-reset" onclick="reset()">↺ Reset</button>
+                    <button class="btn btn-play" onclick="animateStrokes()">▶ Animate</button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        let allCharacters = [];
+        const characterCache = {};
+        let currentCharacterObj = null;
+        let currentMaskPaths = [];
+
+        async function init() {
+            try {
+                const res = await fetch('input.json');
+                allCharacters = await res.json();
+                
+                setupSearch();
+                renderResults('');
+                
+                updateGlyphScale(document.getElementById('glyph-scale').value);
+                updateFontOpacity(document.getElementById('font-opacity').value);
+                updateVerticalOffset(document.getElementById('vertical-offset').value);
+                
+                const startChar = allCharacters.find(c => c.한자 === '懇') || allCharacters[0];
+                if (startChar) selectCharacter(startChar);
+            } catch (err) {
+                console.error("Failed to load input.json", err);
+            }
+        }
+
+        function updateGlyphScale(val) {
+            const scaler = document.getElementById('glyph-scaler');
+            const maskScaler = document.getElementById('mask-scaler');
+            const scaleDisplay = document.getElementById('scale-val');
+            
+            scaler.setAttribute('transform', `scale(${val})`);
+            maskScaler.setAttribute('transform', `scale(${val})`);
+            scaleDisplay.innerText = `${parseFloat(val).toFixed(2)}x`;
+        }
+
+        function updateFontOpacity(val) {
+            const bg = document.getElementById('glyph-bg');
+            const opacityDisplay = document.getElementById('opacity-val');
+            
+            // Note: We use an internal variable for design-wide opacity
+            window.currentFontOpacity = val;
+            updateVisibility();
+            opacityDisplay.innerText = `${Math.round(val * 100)}%`;
+        }
+
+        function updateVerticalOffset(val) {
+            const shifter = document.getElementById('glyph-shifter');
+            const maskShifter = document.getElementById('mask-shifter');
+            const offsetDisplay = document.getElementById('offset-val');
+            
+            // Map the font-space Y (850) to our center (0,0)
+            // Logic: we translate by -500 (X) and by (val - 500) (Y)
+            const yOffset = parseInt(val) - 500;
+            shifter.setAttribute('transform', `translate(-500, ${yOffset})`);
+            maskShifter.setAttribute('transform', `translate(-500, ${yOffset})`);
+            offsetDisplay.innerText = val;
+        }
+
+        function setupSearch() {
+            const input = document.getElementById('search-input');
+            input.addEventListener('input', (e) => {
+                renderResults(e.target.value);
+            });
+        }
+
+        function renderResults(query) {
+            const grid = document.getElementById('results-grid');
+            grid.innerHTML = '';
+            
+            const filtered = allCharacters.filter(c => 
+                c.한자.includes(query) || (c.음 && c.음.includes(query))
+            ).slice(0, 100);
+
+            filtered.forEach(c => {
+                const card = document.createElement('div');
+                card.className = 'char-card';
+                if (currentCharacterObj && c.한자 === currentCharacterObj.한자) card.classList.add('active');
+                
+                card.innerHTML = `
+                    <div class="glyph">${c.한자}</div>
+                    <div class="eum">${c.음 || ''}</div>
+                `;
+                card.onclick = () => selectCharacter(c);
+                grid.appendChild(card);
+            });
+        }
+
+        async function selectCharacter(charObj) {
+            currentCharacterObj = charObj;
+            document.getElementById('display-char').innerText = charObj.한자;
+            document.getElementById('display-eum').innerText = `음: ${charObj.음} (ID: ${charObj.id})`;
+            
+            document.querySelectorAll('.char-card').forEach(card => {
+                card.classList.toggle('active', card.querySelector('.glyph').innerText === charObj.한자);
+            });
+
+            await loadCharData(charObj.한자);
+        }
+
+        async function loadCharData(char) {
+            const loader = document.getElementById('loader');
+            loader.style.display = 'block';
+
+            let data = characterCache[char];
+            if (!data) {
+                try {
+                    const res = await fetch(`data/${char}.json`);
+                    if (!res.ok) throw new Error("Data not found");
+                    data = await res.json();
+                    characterCache[char] = data;
+                } catch (err) {
+                    console.error(err);
+                    loader.style.display = 'none';
+                    return;
+                }
+            }
+
+            renderGlyph(data);
+            loader.style.display = 'none';
+        }
+
+        function renderGlyph(data) {
+            const bg = document.getElementById('glyph-bg');
+            const main = document.getElementById('glyph-main');
+            const maskContent = document.getElementById('mask-content');
+            const skeletonContainer = document.getElementById('skeleton-container');
+            
+            const fontPath = Array.isArray(data.font_outline) ? data.font_outline.join(' ') : (data.font_outline || '');
+            bg.setAttribute('d', fontPath);
+            main.setAttribute('d', fontPath);
+            
+            maskContent.innerHTML = '';
+            skeletonContainer.innerHTML = '';
+            currentMaskPaths = [];
+            
+            const skeletons = data.skeletons || [];
+            skeletons.forEach((d) => {
+                const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+                p.setAttribute('d', d);
+                p.setAttribute('class', 'stroke');
+                p.setAttribute('stroke-width', '100'); 
+                maskContent.appendChild(p);
+                
+                const v = document.createElementNS("http://www.w3.org/2000/svg", "path");
+                v.setAttribute('d', d);
+                v.setAttribute('class', 'skeleton-visible');
+                skeletonContainer.appendChild(v);
+                
+                const length = p.getTotalLength();
+                p.style.strokeDasharray = length;
+                p.style.strokeDashoffset = length;
+                currentMaskPaths.push({ element: p, length: length });
+            });
+            
+            updateVisibility();
+        }
+
+        function updateVisibility() {
+            const showFont = document.getElementById('toggle-font').checked;
+            const showSkeleton = document.getElementById('toggle-skeleton').checked;
+            const opacity = window.currentFontOpacity !== undefined ? window.currentFontOpacity : 0.15;
+            
+            document.getElementById('glyph-bg').style.opacity = showFont ? opacity : 0;
+            document.getElementById('glyph-main').style.opacity = showFont ? 1 : 0;
+            document.getElementById('skeleton-container').style.visibility = showSkeleton ? 'visible' : 'hidden';
+        }
+
+        async function animateStrokes() {
+            if (currentMaskPaths.length === 0) return;
+            
+            currentMaskPaths.forEach(item => {
+                item.element.style.transition = 'none';
+                item.element.style.strokeDashoffset = item.length;
+            });
+            
+            document.body.getBoundingClientRect();
+            
+            for (let i = 0; i < currentMaskPaths.length; i++) {
+                const item = currentMaskPaths[i];
+                const duration = 0.3 + (item.length / 800);
+                item.element.style.transition = `stroke-dashoffset ${duration}s ease-in-out`;
+                item.element.style.strokeDashoffset = '0';
+                await new Promise(r => setTimeout(r, duration * 800));
+            }
+        }
+
+        function reset() {
+            currentMaskPaths.forEach(item => {
+                item.element.style.transition = 'stroke-dashoffset 0.5s ease-out';
+                item.element.style.strokeDashoffset = item.length;
+            });
+        }
+
+        window.onload = init;
+    </script>
+</body>
+</html>
