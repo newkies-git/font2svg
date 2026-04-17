@@ -1,10 +1,33 @@
 import os
-import sys
 import json
-import csv
 import argparse
+import re
 from fontTools.ttLib import TTFont
 from fontTools.pens.svgPathPen import SVGPathPen
+
+
+def stroke_outlines_from_font_outline(font_outline):
+    """
+    font_outline 배열 순서대로 stroke_outlines 항목을 만든다.
+    각 항목: order(1부터), path, radical(기본 빈 문자열).
+    """
+    if isinstance(font_outline, list):
+        out = []
+        order = 1
+        for seg in font_outline:
+            if not isinstance(seg, str):
+                continue
+            path = seg.strip()
+            if not path:
+                continue
+            out.append({"order": order, "path": path, "radical": ""})
+            order += 1
+        return out
+    if isinstance(font_outline, str):
+        path = font_outline.strip()
+        return [{"order": 1, "path": path, "radical": ""}] if path else []
+    return []
+
 
 def extract_glyph_path(font_path, char):
     try:
@@ -24,12 +47,7 @@ def extract_glyph_path(font_path, char):
         pen = SVGPathPen(glyph_set)
         glyph.draw(pen)
         
-        # Get head table for unitsPerEm (scaling)
-        units_per_em = font['head'].unitsPerEm
-        
-        # Format path commands into grouped sub-paths for readability
         raw_path = pen.getCommands()
-        import re
         commands = re.findall(r'([MLQCVHZm][^MLQCVHZm]*)', raw_path)
         
         new_path_list = []
@@ -44,10 +62,7 @@ def extract_glyph_path(font_path, char):
         if current_segment:
             new_path_list.append(' '.join(current_segment))
             
-        return {
-            "font_outline": new_path_list,
-            "unitsPerEm": units_per_em
-        }
+        return {"font_outline": new_path_list}
     except Exception as e:
         print(f"Error extracting {char}: {e}")
         return None
@@ -55,24 +70,28 @@ def extract_glyph_path(font_path, char):
 def save_character_data(char, new_data, data_dir="data"):
     os.makedirs(data_dir, exist_ok=True)
     file_path = os.path.join(data_dir, f"{char}.json")
-    
+
     existing_data = {}
     if os.path.exists(file_path):
         with open(file_path, 'r', encoding='utf-8') as f:
             existing_data = json.load(f)
-    
-    # Smart Merge: Preserve skeletons and radStrokes if they exist
+
+    font_outline = new_data["font_outline"]
+    stroke_outlines = stroke_outlines_from_font_outline(font_outline)
+    char_radical = existing_data.get("radical")
+    if char_radical is None:
+        char_radical = ""
+
     merged = {
         "char": char,
-        "font_outline": new_data["font_outline"],
-        "stroke_outlines": existing_data.get("stroke_outlines", []),
-        "skeletons": existing_data.get("skeletons", []),
-        "radStrokes": existing_data.get("radStrokes", []),
-        "unitsPerEm": new_data["unitsPerEm"]
+        "radical": char_radical,
+        "font_outline": font_outline,
+        "stroke_outlines": stroke_outlines,
     }
-    
+
     with open(file_path, "w", encoding="utf-8") as f:
         json.dump(merged, f, ensure_ascii=False, indent=2)
+        f.write("\n")
     print(f"  -> Saved to {file_path}")
 
 def load_chars_from_file(input_path):
@@ -102,7 +121,6 @@ def main():
     parser.add_argument("--input", "-i", default="input.json", help="Path to input.json containing characters.")
     parser.add_argument("--font", "-f", default="NotoSerifKR-Regular.ttf", help="Path to TTF/OTF font file.")
     parser.add_argument("--outdir", "-o", default="data", help="Output directory for JSON files.")
-    
     args = parser.parse_args()
     
     if not os.path.exists(args.font):

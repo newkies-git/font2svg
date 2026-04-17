@@ -3,18 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hanja Stroke Explorer - Noto Serif KR</title>
+    <title>Hanja Explorer</title>
     <style>
         :root {
-            --bg: #0f172a;
-            --surface: #1e293b;
-            --primary: #38bdf8;
-            --primary-hover: #0ea5e9;
-            --text-main: #f8fafc;
-            --text-muted: #94a3b8;
-            --border: #334155;
-            --accent-red: #fb7185;
-            --accent-green: #34d399;
+            --bg: #ffffff;
+            --surface: #f8fafc;
+            --primary: #0284c7;
+            --text-main: #0f172a;
+            --text-muted: #64748b;
+            --border: #e2e8f0;
+            --panel: #f1f5f9;
         }
 
         * { box-sizing: border-box; }
@@ -29,14 +27,13 @@
             overflow: hidden;
         }
 
-        /* Sidebar: Search & List */
         .sidebar {
             width: 320px;
             background: var(--surface);
             border-right: 1px solid var(--border);
             display: flex;
             flex-direction: column;
-            box-shadow: 4px 0 15px rgba(0,0,0,0.02);
+            box-shadow: 4px 0 24px rgba(15, 23, 42, 0.06);
             z-index: 10;
         }
 
@@ -65,7 +62,7 @@
 
         #search-input:focus {
             border-color: var(--primary);
-            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+            box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.15);
             background: white;
         }
 
@@ -92,7 +89,7 @@
         #results-grid::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
 
         .char-card {
-            background: #1e293b;
+            background: #ffffff;
             border: 1px solid var(--border);
             border-radius: 10px;
             padding: 8px;
@@ -102,26 +99,26 @@
             display: flex;
             flex-direction: column;
             align-items: center;
+            color: var(--text-main);
         }
 
         .char-card:hover {
             border-color: var(--primary);
             transform: translateY(-2px);
-            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+            box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
         }
 
         .char-card.active {
             background: var(--primary);
             border-color: var(--primary);
             color: white;
-            box-shadow: 0 10px 15px -3px rgba(37, 99, 235, 0.4);
+            box-shadow: 0 8px 20px rgba(2, 132, 199, 0.35);
         }
 
         .char-card .glyph { font-size: 1.5rem; margin-bottom: 2px; }
         .char-card .eum { font-size: 0.7rem; color: var(--text-muted); }
-        .char-card.active .eum { color: rgba(255,255,255,0.8); }
+        .char-card.active .eum { color: rgba(255, 255, 255, 0.9); }
 
-        /* Main Content */
         .main-content {
             flex: 1;
             display: flex;
@@ -130,109 +127,303 @@
             align-items: center;
             justify-content: center;
             position: relative;
+            min-height: 0;
+            overflow: auto;
+        }
+
+        .work-row {
+            display: flex;
+            flex-direction: row;
+            align-items: flex-start;
+            justify-content: center;
+            gap: 28px 40px;
+            flex-wrap: wrap;
+            width: 100%;
+            max-width: 1100px;
+        }
+        .work-row .stage-container {
+            flex-shrink: 0;
         }
 
         .stage-container {
             position: relative;
-            background: #020617;
+            background: var(--bg);
             padding: 20px;
             border-radius: 32px;
-            box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);
+            box-shadow: 0 20px 40px -12px rgba(15, 23, 42, 0.12);
             border: 1px solid var(--border);
         }
 
         .stage {
             width: 500px;
             height: 500px;
-            background: #020617;
+            background: var(--bg);
             border-radius: 16px;
-            /* Remove overflow hidden to allow labels to show if they slightly bleed out */
             overflow: visible;
         }
 
-        #glyph-bg { fill: #f8fafc; }
-        #glyph-main { fill: #f8fafc; }
-        
-        .stroke {
+        #glyph-layers.glyph-display-fill #glyph-bg,
+        #glyph-layers.glyph-display-fill #glyph-main {
+            fill: #0f172a;
+            stroke: none;
+        }
+
+        #glyph-layers.glyph-display-stroke #glyph-bg,
+        #glyph-layers.glyph-display-stroke #glyph-main {
             fill: none;
-            stroke: white;
-            stroke-width: 100;
+            stroke: #0f172a;
             stroke-linecap: round;
             stroke-linejoin: round;
         }
-
-        .skeleton-visible {
-            fill: none;
-            stroke: var(--accent-red);
-            stroke-width: 4;
-            stroke-linecap: round;
-            stroke-linejoin: round;
-            opacity: 0.6;
+        #glyph-layers.glyph-display-stroke #glyph-bg {
+            stroke-width: 11;
+        }
+        #glyph-layers.glyph-display-stroke #glyph-main {
+            stroke-width: 6;
         }
 
-        /* Grid & Debug */
-        .grid-line { stroke: #334155; stroke-width: 1; opacity: 0.5; }
-        .axis-line { stroke: #64748b; stroke-width: 2; }
-        .axis-label { fill: #94a3b8; font-size: 24px; font-weight: 500; font-family: monospace; }
+        .display-mode-row .outline-row-label {
+            align-self: center;
+        }
+        .display-mode-buttons {
+            display: flex;
+            flex: 1;
+            justify-content: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .btn-display-mode.display-mode-active {
+            border-color: var(--primary);
+            color: var(--primary);
+            background: rgba(2, 132, 199, 0.1);
+        }
+
+        .grid-line { stroke: #cbd5e1; stroke-width: 1; opacity: 0.9; }
+        .axis-line { stroke: #94a3b8; stroke-width: 2; }
+        .axis-label { fill: #64748b; font-size: 24px; font-weight: 500; font-family: monospace; }
         .viewbox-border { fill: none; stroke: var(--primary); stroke-width: 2; stroke-dasharray: 8 8; opacity: 0.5; }
 
-        /* Controls */
         .toolbar {
-            margin-top: 40px;
+            margin-top: 0;
             display: flex;
             flex-direction: column;
-            gap: 24px;
-            width: 100%;
-            max-width: 540px;
+            gap: 16px;
+            width: 340px;
+            max-width: 100%;
+            flex: 0 0 auto;
         }
 
         .controls-row {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            background: #1e293b;
-            padding: 12px 24px;
+            background: var(--panel);
+            padding: 12px 16px;
             border-radius: 16px;
             border: 1px solid var(--border);
-        }
-
-        .toggle-group { display: flex; gap: 20px; }
-        .toggle-group label {
-            display: flex;
-            align-items: center;
+            flex-wrap: wrap;
             gap: 8px;
-            font-size: 0.9rem;
-            cursor: pointer;
-            color: var(--text-muted);
         }
 
-        .action-group { display: flex; gap: 12px; }
-        
-        .btn {
-            padding: 12px 24px;
+        .outline-step-row {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: center;
+            gap: 16px;
+        }
+        .btn-step {
+            min-width: 48px;
+            padding: 10px 16px;
             border-radius: 12px;
-            border: none;
-            font-weight: 700;
+            border: 1px solid var(--border);
+            background: #ffffff;
+            color: var(--text-main);
+            font-weight: 800;
+            font-size: 1.1rem;
             cursor: pointer;
             transition: all 0.2s;
+        }
+        .btn-step:hover:not(:disabled),
+        .btn-outline-text:hover:not(:disabled) {
+            border-color: var(--primary);
+            color: var(--primary);
+        }
+        .btn-step:disabled,
+        .btn-outline-text:disabled {
+            opacity: 0.35;
+            cursor: not-allowed;
+        }
+        #outline-step-label {
+            font-variant-numeric: tabular-nums;
+            font-weight: 700;
+            color: var(--primary);
+            min-width: 72px;
+            text-align: center;
+            font-size: 0.95rem;
+        }
+        .btn-outline-text {
+            padding: 8px 14px;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            background: #ffffff;
+            font-size: 0.8rem;
+            font-weight: 700;
+            color: var(--text-main);
+            cursor: pointer;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+        .outline-toolbar-col {
+            flex: 1;
             display: flex;
+            flex-direction: column;
+            gap: 10px;
             align-items: center;
-            gap: 8px;
+        }
+        .outline-row-label {
+            min-width: 100px;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            font-weight: 600;
         }
 
-        .btn-play { background: var(--accent-green); color: white; flex: 2; font-size: 1.1rem; }
-        .btn-play:hover { background: #059669; transform: scale(1.02); }
-        
-        .btn-reset { background: var(--bg); color: var(--text-muted); flex: 1; }
-        .btn-reset:hover { background: var(--border); }
+        .sidebar-refresh-wrap {
+            padding: 0 24px 16px;
+        }
+        .btn-sidebar-refresh {
+            width: 100%;
+            padding: 10px 14px;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            background: #ffffff;
+            font-size: 0.8rem;
+            font-weight: 700;
+            color: var(--text-main);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-sidebar-refresh:hover:not(:disabled) {
+            border-color: var(--primary);
+            color: var(--primary);
+        }
+        .btn-sidebar-refresh:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
 
+        .order-edit-controls-row {
+            align-items: flex-start;
+        }
+        #order-edit-list {
+            width: 100%;
+            max-height: 280px;
+            overflow: auto;
+            padding: 0;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            background: #ffffff;
+        }
+
+        .order-edit-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.78rem;
+            color: var(--text-main);
+        }
+        .order-edit-table thead th {
+            background: var(--panel);
+            font-weight: 700;
+            font-size: 0.72rem;
+            color: var(--text-muted);
+            text-align: center;
+            padding: 8px 6px;
+            border-bottom: 1px solid var(--border);
+            position: sticky;
+            top: 0;
+            z-index: 1;
+            white-space: nowrap;
+        }
+        .order-edit-table tbody td {
+            padding: 6px 8px;
+            text-align: center;
+            vertical-align: middle;
+            border-bottom: 1px solid var(--border);
+        }
+        .order-edit-table tbody tr:last-child td {
+            border-bottom: none;
+        }
+        .order-edit-table tbody tr:hover td {
+            background: #f8fafc;
+        }
+        .order-edit-table .col-idx {
+            font-variant-numeric: tabular-nums;
+            font-weight: 800;
+            color: var(--primary);
+            width: 2.5em;
+        }
+        .order-edit-table .col-order-current,
+        .order-edit-table .col-radical-current {
+            font-variant-numeric: tabular-nums;
+            color: var(--text-muted);
+        }
+        .order-edit-table .col-order-current strong,
+        .order-edit-table .col-radical-current strong {
+            color: var(--text-main);
+            font-weight: 800;
+        }
+        .order-edit-table .order-change-input {
+            width: 4.5rem;
+            padding: 4px 8px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            font-size: 0.85rem;
+            font-variant-numeric: tabular-nums;
+        }
+        .order-edit-table .order-change-input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.15);
+        }
+        .order-edit-hint {
+            display: block;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            line-height: 1.4;
+            padding: 12px;
+        }
+        .order-edit-actions {
+            display: flex;
+            justify-content: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-top: 4px;
+        }
+        .order-edit-table .order-radical-wrap {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            margin: 0 auto;
+            font-weight: 600;
+            font-size: 0.78rem;
+            color: var(--text-main);
+            cursor: pointer;
+            user-select: none;
+        }
+        .order-edit-table .order-radical-wrap input {
+            width: 1rem;
+            height: 1rem;
+            accent-color: var(--primary);
+            cursor: pointer;
+        }
         .scale-control, .opacity-control, .offset-control {
             display: flex;
             align-items: center;
             gap: 16px;
         }
         .scale-control label, .opacity-control label, .offset-control label { 
-            min-width: 120px; 
+            min-width: 100px; 
             font-size: 0.85rem; 
             color: var(--text-muted); 
             font-weight: 600;
@@ -249,7 +440,6 @@
         #char-info h2 { font-size: 3rem; margin: 0; }
         #char-info p { color: var(--text-muted); margin: 4px 0; }
 
-        /* Loading */
         .loader {
             position: fixed;
             top: 20px;
@@ -274,6 +464,9 @@
                 <span class="search-icon">🔍</span>
                 <input type="text" id="search-input" placeholder="한자 또는 음 검색...">
             </div>
+            <div class="sidebar-refresh-wrap">
+                <button type="button" class="btn-sidebar-refresh" id="btn-refresh-data" onclick="refreshCurrentCharData()" disabled title="선택한 한자의 data/*.json을 다시 불러옵니다">데이터 새로 고침</button>
+            </div>
         </div>
         <div id="results-grid"></div>
     </aside>
@@ -286,23 +479,16 @@
             <p id="display-eum">Select a character</p>
         </div>
 
+        <div class="work-row">
         <div class="stage-container">
             <div class="stage">
-                <svg id="main-svg" viewBox="-500 -500 1000 1000" style="overflow: visible;">
-                    <!-- Coordinate Grid Base (Restored & Padded) -->
+                <svg viewBox="-500 -500 1000 1000" style="overflow: visible;">
                     <g id="grid-layer">
-                        <!-- Grid lines every 100 units -->
                         <path class="grid-line" d="M -500 -400 L 500 -400 M -500 -300 L 500 -300 M -500 -200 L 500 -200 M -500 -100 L 500 -100 M -500 100 L 500 100 M -500 200 L 500 200 M -500 300 L 500 300 M -500 400 L 500 400"></path>
                         <path class="grid-line" d="M -400 -500 L -400 500 M -300 -500 L -300 500 M -200 -500 L -200 500 M -100 -500 L -100 500 M 100 -500 L 100 500 M 200 -500 L 200 500 M 300 -500 L 300 500 M 400 -500 L 400 500"></path>
-                        
-                        <!-- Axes (0,0) -->
                         <line class="axis-line" x1="-500" y1="0" x2="500" y2="0"></line>
                         <line class="axis-line" x1="0" y1="-500" x2="0" y2="500"></line>
-                        
-                        <!-- ViewBox Boundary -->
                         <rect class="viewbox-border" x="-500" y="-500" width="1000" height="1000"></rect>
-
-                        <!-- Labels moved closer to the borders -->
                         <text class="axis-label" x="8" y="25">0,0</text>
                         <text class="axis-label" x="435" y="25">500</text>
                         <text class="axis-label" x="-495" y="25">-500</text>
@@ -310,22 +496,11 @@
                         <text class="axis-label" x="8" y="-475">-500</text>
                     </g>
 
-                    <defs>
-                        <mask id="stroke-mask">
-                            <g id="mask-scaler">
-                                <g id="mask-shifter">
-                                    <g transform="scale(1, -1)" id="mask-content"></g>
-                                </g>
-                            </g>
-                        </mask>
-                    </defs>
-                    
                     <g id="glyph-scaler">
                         <g id="glyph-shifter">
-                            <g transform="scale(1, -1)">
+                            <g id="glyph-layers" class="glyph-display-fill" transform="scale(1, -1)">
                                 <path id="glyph-bg" d=""></path>
-                                <path id="glyph-main" d="" mask="url(#stroke-mask)"></path>
-                                <g id="skeleton-container" visibility="hidden"></g>
+                                <path id="glyph-main" d=""></path>
                             </g>
                         </g>
                     </g>
@@ -349,75 +524,358 @@
                 <input type="range" id="vertical-offset" min="700" max="1000" step="5" value="870" oninput="updateVerticalOffset(this.value)">
                 <span id="offset-val">870</span>
             </div>
-            <div class="controls-row">
-                <div class="toggle-group">
-                    <label><input type="checkbox" id="toggle-font" checked onchange="updateVisibility()"> Design</label>
-                    <label><input type="checkbox" id="toggle-skeleton" onchange="updateVisibility()"> Skeleton</label>
-                </div>
-                <div class="action-group">
-                    <button class="btn btn-reset" onclick="reset()">↺ Reset</button>
-                    <button class="btn btn-play" onclick="animateStrokes()">▶ Animate</button>
+            <div class="controls-row display-mode-row">
+                <label class="outline-row-label">표시</label>
+                <div class="display-mode-buttons">
+                    <button type="button" class="btn-outline-text btn-display-mode display-mode-active" id="btn-display-fill" onclick="setGlyphDisplayMode('fill')" title="면으로 채우기">면</button>
+                    <button type="button" class="btn-outline-text btn-display-mode" id="btn-display-stroke" onclick="setGlyphDisplayMode('stroke')" title="윤곽선만">윤곽</button>
                 </div>
             </div>
+            <div class="controls-row">
+                <label class="outline-row-label">윤곽 누적</label>
+                <div class="outline-toolbar-col">
+                    <div class="outline-step-row">
+                        <button type="button" class="btn-step" id="outline-prev" onclick="stepOutline(-1)" title="한 획 줄이기">&lt;</button>
+                        <span id="outline-step-label">-</span>
+                        <button type="button" class="btn-step" id="outline-next" onclick="stepOutline(1)" title="한 획 더하기">&gt;</button>
+                        <button type="button" class="btn-outline-text" id="outline-all" onclick="setOutlineStrokeCountToAll()" title="모든 획 표시">전체</button>
+                        <button type="button" class="btn-outline-text" id="outline-clear" onclick="setOutlineStrokeCountToZero()" title="획 0(빈 윤곽)">초기화</button>
+                    </div>
+                    <button type="button" class="btn-outline-text" id="outline-play-cumulative" onclick="playOutlineCumulativeFromZeroToN()" title="0획부터 한 획씩 누적해 마지막까지 자동 표시">재생</button>
+                </div>
+            </div>
+            <div class="controls-row order-edit-controls-row">
+                <label class="outline-row-label">order (획 순서)</label>
+                <div class="outline-toolbar-col">
+                    <div id="order-edit-list"></div>
+                    <div class="order-edit-actions">
+                        <button type="button" class="btn-outline-text" id="btn-apply-orders" onclick="applyStrokeOutlineOrders()" title="order·radical(1=참, 0=거짓) 변경을 캐시에 반영하고 윤곽을 다시 계산합니다">순서·부수 적용</button>
+                    </div>
+                </div>
+            </div>
+        </div>
         </div>
     </main>
 
     <script>
+        const OUTLINE_PLAY_STEP_MS = 420;
+        const DEFAULT_FONT_OPACITY = 0.15;
+
         let allCharacters = [];
         const characterCache = {};
         let currentCharacterObj = null;
-        let currentMaskPaths = [];
+        let outlineSegments = [];
+        let outlineStrokeCount = 0;
+        let outlineCumulativePlaying = false;
+        let outlinePlaybackGeneration = 0;
+
+        function updateRefreshDataButtonState() {
+            const btn = document.getElementById('btn-refresh-data');
+            if (btn) btn.disabled = !currentCharacterObj || !currentCharacterObj.한자;
+        }
+
+        function escapeHtml(str) {
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        function buildOrderEditRows(data) {
+            const list = document.getElementById('order-edit-list');
+            const applyBtn = document.getElementById('btn-apply-orders');
+            if (!list) return;
+
+            list.innerHTML = '';
+            const arr = Array.isArray(data.stroke_outlines) ? data.stroke_outlines : [];
+            const objectRows = [];
+            arr.forEach((item, index) => {
+                if (!item || typeof item !== 'object') return;
+                const path = String(item.path ?? item.d ?? '').trim();
+                if (!path) return;
+                objectRows.push({ item, index });
+            });
+
+            if (arr.length === 0) {
+                list.innerHTML = '<span class="order-edit-hint">stroke_outlines가 없습니다. font_outline만 사용 중입니다.</span>';
+                if (applyBtn) applyBtn.disabled = true;
+                return;
+            }
+
+            if (objectRows.length === 0) {
+                list.innerHTML =
+                    '<span class="order-edit-hint">stroke_outlines가 문자열 배열이면 order를 여기서 바꿀 수 없습니다.</span>';
+                if (applyBtn) applyBtn.disabled = true;
+                return;
+            }
+
+            if (applyBtn) applyBtn.disabled = false;
+
+            const table = document.createElement('table');
+            table.className = 'order-edit-table';
+            const thead = document.createElement('thead');
+            thead.innerHTML = `
+                <tr>
+                    <th scope="col">#</th>
+                    <th scope="col">order 현재</th>
+                    <th scope="col">order 변경</th>
+                    <th scope="col">radical 현재</th>
+                    <th scope="col">부수 획</th>
+                </tr>
+            `;
+            const tbody = document.createElement('tbody');
+
+            objectRows.forEach(({ item, index }) => {
+                const currentOrder = strokeOutlineOrder(item, index);
+                const radRaw = String(item.radical ?? '').trim();
+                const radShown = radRaw === '' ? '—' : escapeHtml(radRaw);
+                const radChecked = radRaw === '1' ? 'checked' : '';
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="col-idx">${index + 1}</td>
+                    <td class="col-order-current"><strong>${currentOrder}</strong></td>
+                    <td class="col-order-change">
+                        <input type="number" step="1" class="order-change-input" value="${currentOrder}" data-idx="${index}" aria-label="order 변경 행 ${index + 1}">
+                    </td>
+                    <td class="col-radical-current"><strong>${radShown}</strong></td>
+                    <td class="col-radical-cell">
+                        <label class="order-radical-wrap">
+                            <input type="checkbox" class="order-radical-cb" data-idx="${index}" ${radChecked} title="부수 획: 적용 시 radical을 1(참) 또는 0(거짓) 문자열로 저장합니다." aria-label="부수 획 행 ${index + 1}">
+                        </label>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            table.appendChild(thead);
+            table.appendChild(tbody);
+            list.appendChild(table);
+        }
+
+        function applyStrokeOutlineOrders() {
+            const char = currentCharacterObj && currentCharacterObj.한자;
+            if (!char) return;
+            const data = characterCache[char];
+            if (!data || !Array.isArray(data.stroke_outlines)) return;
+
+            const inputs = document.querySelectorAll('#order-edit-list .order-change-input');
+            if (!inputs.length) return;
+
+            inputs.forEach((input) => {
+                const idx = parseInt(input.getAttribute('data-idx'), 10);
+                if (Number.isNaN(idx) || idx < 0 || idx >= data.stroke_outlines.length) return;
+                const item = data.stroke_outlines[idx];
+                if (!item || typeof item !== 'object') return;
+                const raw = String(input.value).trim();
+                const n = parseInt(raw, 10);
+                if (Number.isNaN(n)) return;
+                item.order = n;
+            });
+
+            document.querySelectorAll('#order-edit-list .order-radical-cb').forEach((cb) => {
+                const idx = parseInt(cb.getAttribute('data-idx'), 10);
+                if (Number.isNaN(idx) || idx < 0 || idx >= data.stroke_outlines.length) return;
+                const item = data.stroke_outlines[idx];
+                if (!item || typeof item !== 'object') return;
+                item.radical = cb.checked ? '1' : '0';
+            });
+
+            renderGlyph(data);
+            buildOrderEditRows(data);
+        }
+
+        async function refreshCurrentCharData() {
+            const char = currentCharacterObj && currentCharacterObj.한자;
+            if (!char) return;
+
+            const loader = document.getElementById('loader');
+            const btn = document.getElementById('btn-refresh-data');
+            if (btn) btn.disabled = true;
+            if (loader) loader.style.display = 'block';
+
+            try {
+                const url = `data/${char}.json?t=${Date.now()}`;
+                const res = await fetch(url, { cache: 'no-store' });
+                if (!res.ok) throw new Error('Data not found');
+                const data = await res.json();
+                characterCache[char] = data;
+                renderGlyph(data);
+                buildOrderEditRows(data);
+            } catch (err) {
+                console.error(err);
+                window.alert('데이터를 새로 고침하지 못했습니다. 파일 경로와 서버 실행 여부를 확인하세요.');
+            } finally {
+                if (loader) loader.style.display = 'none';
+                updateRefreshDataButtonState();
+            }
+        }
+
+        function setGlyphDisplayMode(mode) {
+            const layers = document.getElementById('glyph-layers');
+            const fillBtn = document.getElementById('btn-display-fill');
+            const strokeBtn = document.getElementById('btn-display-stroke');
+            if (!layers || !fillBtn || !strokeBtn) return;
+            const isStroke = mode === 'stroke';
+            layers.classList.remove('glyph-display-fill', 'glyph-display-stroke');
+            layers.classList.add(isStroke ? 'glyph-display-stroke' : 'glyph-display-fill');
+            fillBtn.classList.toggle('display-mode-active', !isStroke);
+            strokeBtn.classList.toggle('display-mode-active', isStroke);
+            window.glyphDisplayMode = isStroke ? 'stroke' : 'fill';
+            updateVisibility();
+        }
+
+        function strokeOutlineOrder(item, index) {
+            if (item.order === undefined || item.order === null) return index + 1;
+            const n = Number(item.order);
+            return Number.isNaN(n) ? index + 1 : n;
+        }
+
+        function parseOrderedStrokeOutlines(strokeOutlines) {
+            if (!Array.isArray(strokeOutlines) || strokeOutlines.length === 0) return [];
+
+            const entries = strokeOutlines
+                .map((item, index) => {
+                    if (typeof item === 'string') {
+                        const path = item.trim();
+                        return path ? { order: index + 1, path, _idx: index } : null;
+                    }
+                    if (item && typeof item === 'object') {
+                        const path = String(item.path ?? item.d ?? '').trim();
+                        if (!path) return null;
+                        return { order: strokeOutlineOrder(item, index), path, _idx: index };
+                    }
+                    return null;
+                })
+                .filter(Boolean);
+
+            entries.sort((a, b) => (a.order !== b.order ? a.order - b.order : a._idx - b._idx));
+            return entries.map((e) => e.path);
+        }
+
+        function parseOutlineSegments(data) {
+            const strokeOutlines = data.stroke_outlines;
+            const fontOutline = data.font_outline;
+            if (Array.isArray(strokeOutlines) && strokeOutlines.length > 0) {
+                const fromStrokes = parseOrderedStrokeOutlines(strokeOutlines);
+                if (fromStrokes.length > 0) return fromStrokes;
+            }
+            if (Array.isArray(fontOutline) && fontOutline.length > 0) {
+                return fontOutline.filter((s) => typeof s === 'string' && s.trim());
+            }
+            if (typeof fontOutline === 'string' && fontOutline.trim()) {
+                return [fontOutline.trim()];
+            }
+            return [];
+        }
+
+        function applyOutlineStep() {
+            const n = outlineSegments.length;
+            const d =
+                n === 0 || outlineStrokeCount <= 0
+                    ? ''
+                    : outlineSegments.slice(0, Math.min(outlineStrokeCount, n)).join(' ');
+            document.getElementById('glyph-bg').setAttribute('d', d);
+            document.getElementById('glyph-main').setAttribute('d', d);
+
+            const locked = outlineCumulativePlaying;
+            document.getElementById('outline-step-label').textContent = n ? `${outlineStrokeCount} / ${n}` : '-';
+            document.getElementById('outline-prev').disabled = locked || n === 0 || outlineStrokeCount <= 0;
+            document.getElementById('outline-next').disabled = locked || n === 0 || outlineStrokeCount >= n;
+            document.getElementById('outline-all').disabled = locked || n === 0 || outlineStrokeCount >= n;
+            document.getElementById('outline-clear').disabled = locked || n === 0 || outlineStrokeCount <= 0;
+            const playBtn = document.getElementById('outline-play-cumulative');
+            playBtn.disabled = locked || n === 0;
+            playBtn.textContent = locked ? '재생 중…' : '재생';
+        }
+
+        function stepOutline(delta) {
+            if (outlineSegments.length === 0) return;
+            outlineStrokeCount = Math.min(
+                outlineSegments.length,
+                Math.max(0, outlineStrokeCount + delta)
+            );
+            applyOutlineStep();
+        }
+
+        function setOutlineStrokeCountToAll() {
+            if (outlineSegments.length === 0) return;
+            outlineStrokeCount = outlineSegments.length;
+            applyOutlineStep();
+        }
+
+        function setOutlineStrokeCountToZero() {
+            outlineStrokeCount = 0;
+            applyOutlineStep();
+        }
+
+        function stopOutlinePlaybackIfStale(gen) {
+            if (gen === outlinePlaybackGeneration) return false;
+            outlineCumulativePlaying = false;
+            applyOutlineStep();
+            return true;
+        }
+
+        async function playOutlineCumulativeFromZeroToN() {
+            if (outlineSegments.length === 0 || outlineCumulativePlaying) return;
+            const n = outlineSegments.length;
+            const gen = outlinePlaybackGeneration;
+            const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+            outlineCumulativePlaying = true;
+            applyOutlineStep();
+
+            outlineStrokeCount = 0;
+            applyOutlineStep();
+            await wait(OUTLINE_PLAY_STEP_MS);
+            if (stopOutlinePlaybackIfStale(gen)) return;
+
+            for (let i = 1; i <= n; i++) {
+                outlineStrokeCount = i;
+                applyOutlineStep();
+                await wait(OUTLINE_PLAY_STEP_MS);
+                if (stopOutlinePlaybackIfStale(gen)) return;
+            }
+
+            outlineCumulativePlaying = false;
+            applyOutlineStep();
+        }
 
         async function init() {
             try {
                 const res = await fetch('input.json');
                 allCharacters = await res.json();
-                
+
                 setupSearch();
                 renderResults('');
-                
+
                 updateGlyphScale(document.getElementById('glyph-scale').value);
                 updateFontOpacity(document.getElementById('font-opacity').value);
                 updateVerticalOffset(document.getElementById('vertical-offset').value);
-                
-                const startChar = allCharacters.find(c => c.한자 === '懇') || allCharacters[0];
-                if (startChar) selectCharacter(startChar);
+                setGlyphDisplayMode('fill');
+
+                const startChar = allCharacters[0];
+                if (startChar) await selectCharacter(startChar);
+                updateRefreshDataButtonState();
             } catch (err) {
-                console.error("Failed to load input.json", err);
+                console.error('Failed to load input.json', err);
             }
         }
 
         function updateGlyphScale(val) {
-            const scaler = document.getElementById('glyph-scaler');
-            const maskScaler = document.getElementById('mask-scaler');
-            const scaleDisplay = document.getElementById('scale-val');
-            
-            scaler.setAttribute('transform', `scale(${val})`);
-            maskScaler.setAttribute('transform', `scale(${val})`);
-            scaleDisplay.innerText = `${parseFloat(val).toFixed(2)}x`;
+            document.getElementById('glyph-scaler').setAttribute('transform', `scale(${val})`);
+            document.getElementById('scale-val').innerText = `${parseFloat(val).toFixed(2)}x`;
         }
 
         function updateFontOpacity(val) {
-            const bg = document.getElementById('glyph-bg');
-            const opacityDisplay = document.getElementById('opacity-val');
-            
-            // Note: We use an internal variable for design-wide opacity
             window.currentFontOpacity = val;
             updateVisibility();
-            opacityDisplay.innerText = `${Math.round(val * 100)}%`;
+            document.getElementById('opacity-val').innerText = `${Math.round(Number(val) * 100)}%`;
         }
 
         function updateVerticalOffset(val) {
-            const shifter = document.getElementById('glyph-shifter');
-            const maskShifter = document.getElementById('mask-shifter');
-            const offsetDisplay = document.getElementById('offset-val');
-            
-            // Map the font-space Y (850) to our center (0,0)
-            // Logic: we translate by -500 (X) and by (val - 500) (Y)
-            const yOffset = parseInt(val) - 500;
-            shifter.setAttribute('transform', `translate(-500, ${yOffset})`);
-            maskShifter.setAttribute('transform', `translate(-500, ${yOffset})`);
-            offsetDisplay.innerText = val;
+            const yOffset = parseInt(val, 10) - 500;
+            document.getElementById('glyph-shifter').setAttribute('transform', `translate(-500, ${yOffset})`);
+            document.getElementById('offset-val').innerText = String(val);
         }
 
         function setupSearch() {
@@ -431,11 +889,11 @@
             const grid = document.getElementById('results-grid');
             grid.innerHTML = '';
             
-            const filtered = allCharacters.filter(c => 
-                c.한자.includes(query) || (c.음 && c.음.includes(query))
-            ).slice(0, 100);
+            const filtered = allCharacters
+                .filter((c) => c.한자.includes(query) || (c.음 && c.음.includes(query)))
+                .slice(0, 100);
 
-            filtered.forEach(c => {
+            filtered.forEach((c) => {
                 const card = document.createElement('div');
                 card.className = 'char-card';
                 if (currentCharacterObj && c.한자 === currentCharacterObj.한자) card.classList.add('active');
@@ -453,12 +911,13 @@
             currentCharacterObj = charObj;
             document.getElementById('display-char').innerText = charObj.한자;
             document.getElementById('display-eum').innerText = `음: ${charObj.음} (ID: ${charObj.id})`;
-            
-            document.querySelectorAll('.char-card').forEach(card => {
+
+            document.querySelectorAll('.char-card').forEach((card) => {
                 card.classList.toggle('active', card.querySelector('.glyph').innerText === charObj.한자);
             });
 
             await loadCharData(charObj.한자);
+            updateRefreshDataButtonState();
         }
 
         async function loadCharData(char) {
@@ -469,90 +928,36 @@
             if (!data) {
                 try {
                     const res = await fetch(`data/${char}.json`);
-                    if (!res.ok) throw new Error("Data not found");
+                    if (!res.ok) throw new Error('Data not found');
                     data = await res.json();
                     characterCache[char] = data;
                 } catch (err) {
                     console.error(err);
                     loader.style.display = 'none';
+                    buildOrderEditRows({ stroke_outlines: [] });
                     return;
                 }
             }
 
             renderGlyph(data);
+            buildOrderEditRows(data);
             loader.style.display = 'none';
         }
 
         function renderGlyph(data) {
-            const bg = document.getElementById('glyph-bg');
-            const main = document.getElementById('glyph-main');
-            const maskContent = document.getElementById('mask-content');
-            const skeletonContainer = document.getElementById('skeleton-container');
-            
-            const fontPath = Array.isArray(data.font_outline) ? data.font_outline.join(' ') : (data.font_outline || '');
-            bg.setAttribute('d', fontPath);
-            main.setAttribute('d', fontPath);
-            
-            maskContent.innerHTML = '';
-            skeletonContainer.innerHTML = '';
-            currentMaskPaths = [];
-            
-            const skeletons = data.skeletons || [];
-            skeletons.forEach((d) => {
-                const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
-                p.setAttribute('d', d);
-                p.setAttribute('class', 'stroke');
-                p.setAttribute('stroke-width', '100'); 
-                maskContent.appendChild(p);
-                
-                const v = document.createElementNS("http://www.w3.org/2000/svg", "path");
-                v.setAttribute('d', d);
-                v.setAttribute('class', 'skeleton-visible');
-                skeletonContainer.appendChild(v);
-                
-                const length = p.getTotalLength();
-                p.style.strokeDasharray = length;
-                p.style.strokeDashoffset = length;
-                currentMaskPaths.push({ element: p, length: length });
-            });
-            
+            outlinePlaybackGeneration += 1;
+            outlineCumulativePlaying = false;
+            outlineSegments = parseOutlineSegments(data);
+            outlineStrokeCount = 0;
+            applyOutlineStep();
             updateVisibility();
         }
 
         function updateVisibility() {
-            const showFont = document.getElementById('toggle-font').checked;
-            const showSkeleton = document.getElementById('toggle-skeleton').checked;
-            const opacity = window.currentFontOpacity !== undefined ? window.currentFontOpacity : 0.15;
-            
-            document.getElementById('glyph-bg').style.opacity = showFont ? opacity : 0;
-            document.getElementById('glyph-main').style.opacity = showFont ? 1 : 0;
-            document.getElementById('skeleton-container').style.visibility = showSkeleton ? 'visible' : 'hidden';
-        }
-
-        async function animateStrokes() {
-            if (currentMaskPaths.length === 0) return;
-            
-            currentMaskPaths.forEach(item => {
-                item.element.style.transition = 'none';
-                item.element.style.strokeDashoffset = item.length;
-            });
-            
-            document.body.getBoundingClientRect();
-            
-            for (let i = 0; i < currentMaskPaths.length; i++) {
-                const item = currentMaskPaths[i];
-                const duration = 0.3 + (item.length / 800);
-                item.element.style.transition = `stroke-dashoffset ${duration}s ease-in-out`;
-                item.element.style.strokeDashoffset = '0';
-                await new Promise(r => setTimeout(r, duration * 800));
-            }
-        }
-
-        function reset() {
-            currentMaskPaths.forEach(item => {
-                item.element.style.transition = 'stroke-dashoffset 0.5s ease-out';
-                item.element.style.strokeDashoffset = item.length;
-            });
+            const opacity =
+                window.currentFontOpacity !== undefined ? window.currentFontOpacity : DEFAULT_FONT_OPACITY;
+            document.getElementById('glyph-bg').style.opacity = opacity;
+            document.getElementById('glyph-main').style.opacity = 1;
         }
 
         window.onload = init;
