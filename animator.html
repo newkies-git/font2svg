@@ -141,8 +141,19 @@
             width: 100%;
             max-width: 1100px;
         }
-        .work-row .stage-container {
+        .work-row .stage-column {
             flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: stretch;
+            gap: 16px;
+        }
+        .outline-below-viewbox {
+            margin: 0;
+            justify-content: center;
+        }
+        .outline-below-viewbox .outline-row-label {
+            min-width: auto;
         }
 
         .stage-container {
@@ -480,6 +491,7 @@
         </div>
 
         <div class="work-row">
+        <div class="stage-column">
         <div class="stage-container">
             <div class="stage">
                 <svg viewBox="-500 -500 1000 1000" style="overflow: visible;">
@@ -507,6 +519,20 @@
                 </svg>
             </div>
         </div>
+            <div class="controls-row outline-below-viewbox">
+                <label class="outline-row-label">윤곽 누적</label>
+                <div class="outline-toolbar-col">
+                    <div class="outline-step-row">
+                        <button type="button" class="btn-step" id="outline-prev" onclick="stepOutline(-1)" title="한 획 줄이기">&lt;</button>
+                        <span id="outline-step-label">-</span>
+                        <button type="button" class="btn-step" id="outline-next" onclick="stepOutline(1)" title="한 획 더하기">&gt;</button>
+                        <button type="button" class="btn-outline-text" id="outline-all" onclick="setOutlineStrokeCountToAll()" title="모든 획 표시">전체</button>
+                        <button type="button" class="btn-outline-text" id="outline-clear" onclick="setOutlineStrokeCountToZero()" title="획 0(빈 윤곽)">초기화</button>
+                    </div>
+                    <button type="button" class="btn-outline-text" id="outline-play-cumulative" onclick="playOutlineCumulativeFromZeroToN()" title="0획부터 한 획씩 누적해 마지막까지 자동 표시">재생</button>
+                </div>
+            </div>
+        </div>
 
         <div class="toolbar">
             <div class="controls-row scale-control">
@@ -531,25 +557,12 @@
                     <button type="button" class="btn-outline-text btn-display-mode" id="btn-display-stroke" onclick="setGlyphDisplayMode('stroke')" title="윤곽선만">윤곽</button>
                 </div>
             </div>
-            <div class="controls-row">
-                <label class="outline-row-label">윤곽 누적</label>
-                <div class="outline-toolbar-col">
-                    <div class="outline-step-row">
-                        <button type="button" class="btn-step" id="outline-prev" onclick="stepOutline(-1)" title="한 획 줄이기">&lt;</button>
-                        <span id="outline-step-label">-</span>
-                        <button type="button" class="btn-step" id="outline-next" onclick="stepOutline(1)" title="한 획 더하기">&gt;</button>
-                        <button type="button" class="btn-outline-text" id="outline-all" onclick="setOutlineStrokeCountToAll()" title="모든 획 표시">전체</button>
-                        <button type="button" class="btn-outline-text" id="outline-clear" onclick="setOutlineStrokeCountToZero()" title="획 0(빈 윤곽)">초기화</button>
-                    </div>
-                    <button type="button" class="btn-outline-text" id="outline-play-cumulative" onclick="playOutlineCumulativeFromZeroToN()" title="0획부터 한 획씩 누적해 마지막까지 자동 표시">재생</button>
-                </div>
-            </div>
             <div class="controls-row order-edit-controls-row">
                 <label class="outline-row-label">order (획 순서)</label>
                 <div class="outline-toolbar-col">
                     <div id="order-edit-list"></div>
                     <div class="order-edit-actions">
-                        <button type="button" class="btn-outline-text" id="btn-apply-orders" onclick="applyStrokeOutlineOrders()" title="order·radical(1=참, 0=거짓) 변경을 캐시에 반영하고 윤곽을 다시 계산합니다">순서·부수 적용</button>
+                        <button type="button" class="btn-outline-text" id="btn-apply-orders" onclick="applyStrokeOutlineOrders()" title="order·radical(숫자 1=참, 0=거짓) 변경을 캐시에 반영하고 윤곽을 다시 계산합니다">순서·부수 적용</button>
                     </div>
                 </div>
             </div>
@@ -580,6 +593,17 @@
                 .replace(/</g, '&lt;')
                 .replace(/>/g, '&gt;')
                 .replace(/"/g, '&quot;');
+        }
+
+        function strokeOutlineRadicalIsTrue(item) {
+            const v = item && item.radical;
+            return v === 1 || v === '1';
+        }
+
+        function strokeOutlineRadicalDisplay(item) {
+            const v = item && item.radical;
+            if (v === undefined || v === null || v === '') return '—';
+            return escapeHtml(String(v));
         }
 
         function buildOrderEditRows(data) {
@@ -628,9 +652,8 @@
 
             objectRows.forEach(({ item, index }) => {
                 const currentOrder = strokeOutlineOrder(item, index);
-                const radRaw = String(item.radical ?? '').trim();
-                const radShown = radRaw === '' ? '—' : escapeHtml(radRaw);
-                const radChecked = radRaw === '1' ? 'checked' : '';
+                const radShown = strokeOutlineRadicalDisplay(item);
+                const radChecked = strokeOutlineRadicalIsTrue(item) ? 'checked' : '';
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
                     <td class="col-idx">${index + 1}</td>
@@ -641,7 +664,7 @@
                     <td class="col-radical-current"><strong>${radShown}</strong></td>
                     <td class="col-radical-cell">
                         <label class="order-radical-wrap">
-                            <input type="checkbox" class="order-radical-cb" data-idx="${index}" ${radChecked} title="부수 획: 적용 시 radical을 1(참) 또는 0(거짓) 문자열로 저장합니다." aria-label="부수 획 행 ${index + 1}">
+                            <input type="checkbox" class="order-radical-cb" data-idx="${index}" ${radChecked} title="부수 획: 적용 시 radical을 숫자 1(참) 또는 0(거짓)으로 저장합니다." aria-label="부수 획 행 ${index + 1}">
                         </label>
                     </td>
                 `;
@@ -678,7 +701,7 @@
                 if (Number.isNaN(idx) || idx < 0 || idx >= data.stroke_outlines.length) return;
                 const item = data.stroke_outlines[idx];
                 if (!item || typeof item !== 'object') return;
-                item.radical = cb.checked ? '1' : '0';
+                item.radical = cb.checked ? 1 : 0;
             });
 
             renderGlyph(data);

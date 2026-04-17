@@ -9,7 +9,7 @@ from fontTools.pens.svgPathPen import SVGPathPen
 def stroke_outlines_from_font_outline(font_outline):
     """
     font_outline 배열 순서대로 stroke_outlines 항목을 만든다.
-    각 항목: order(1부터), path, radical(기본 빈 문자열).
+    각 항목: order(1부터), path, radical(기본 0 = 거짓).
     """
     if isinstance(font_outline, list):
         out = []
@@ -20,12 +20,12 @@ def stroke_outlines_from_font_outline(font_outline):
             path = seg.strip()
             if not path:
                 continue
-            out.append({"order": order, "path": path, "radical": ""})
+            out.append({"order": order, "path": path, "radical": 0})
             order += 1
         return out
     if isinstance(font_outline, str):
         path = font_outline.strip()
-        return [{"order": 1, "path": path, "radical": ""}] if path else []
+        return [{"order": 1, "path": path, "radical": 0}] if path else []
     return []
 
 
@@ -79,8 +79,8 @@ def save_character_data(char, new_data, data_dir="data"):
     font_outline = new_data["font_outline"]
     stroke_outlines = stroke_outlines_from_font_outline(font_outline)
     char_radical = existing_data.get("radical")
-    if char_radical is None:
-        char_radical = ""
+    if char_radical is None or char_radical == "":
+        char_radical = 0
 
     merged = {
         "char": char,
