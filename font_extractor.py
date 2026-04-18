@@ -2,8 +2,55 @@ import os
 import json
 import argparse
 import re
-from fontTools.ttLib import TTFont
+from fontTools.ttLib import TTFont, TTCollection
 from fontTools.pens.svgPathPen import SVGPathPen
+
+
+def open_font(font_path, font_index=0, font_family=None):
+    """
+    .ttf/.otf 는 그대로, .ttc 는 fontNumber(index) 또는 family 이름으로 선택해 연다.
+    --font-family 가 주어지면 해당 family 이름을 가진 얼굴을 자동으로 찾는다.
+    """
+    ext = os.path.splitext(font_path)[1].lower()
+    if ext == ".ttc":
+        collection = TTCollection(font_path, lazy=True)
+        faces = collection.fonts
+        if font_family:
+            wanted = font_family.strip().lower()
+            for i, tt in enumerate(faces):
+                name = tt["name"] if "name" in tt else None
+                family = None
+                if name is not None:
+                    rec = name.getBestFamilyName()
+                    family = str(rec) if rec else None
+                if family and family.strip().lower() == wanted:
+                    return faces[i]
+            available = []
+            for tt in faces:
+                name = tt["name"] if "name" in tt else None
+                rec = name.getBestFamilyName() if name else None
+                available.append(str(rec) if rec else "?")
+            raise ValueError(
+                f"Font family '{font_family}' not found in {font_path}. "
+                f"Available: {available}"
+            )
+        if font_index < 0 or font_index >= len(faces):
+            raise ValueError(
+                f"font-index {font_index} out of range for {font_path} (0..{len(faces) - 1})"
+            )
+        return faces[font_index]
+    return TTFont(font_path)
+
+
+def list_ttc_faces(font_path):
+    collection = TTCollection(font_path, lazy=True)
+    infos = []
+    for i, tt in enumerate(collection.fonts):
+        name = tt["name"] if "name" in tt else None
+        fam = name.getBestFamilyName() if name else None
+        full = name.getBestFullName() if name else None
+        infos.append((i, str(fam) if fam else "?", str(full) if full else "?"))
+    return infos
 
 
 def stroke_outlines_from_font_outline(font_outline):
@@ -29,9 +76,9 @@ def stroke_outlines_from_font_outline(font_outline):
     return []
 
 
-def extract_glyph_path(font_path, char):
+def extract_glyph_path(font_path, char, font_index=0, font_family=None):
     try:
-        font = TTFont(font_path)
+        font = open_font(font_path, font_index=font_index, font_family=font_family)
         glyph_set = font.getGlyphSet()
         
         # Get glyph name from unicode
@@ -119,12 +166,23 @@ def load_chars_from_file(input_path):
 def main():
     parser = argparse.ArgumentParser(description="Extract SVG paths from font for specific characters.")
     parser.add_argument("--input", "-i", default="input.json", help="Path to input.json containing characters.")
-    parser.add_argument("--font", "-f", default="NotoSerifKR-Regular.ttf", help="Path to TTF/OTF font file.")
+    parser.add_argument("--font", "-f", default="NotoSerifKR-Regular.ttf", help="Path to TTF/OTF/TTC font file.")
+    parser.add_argument("--font-index", type=int, default=0, help="TTC face index (0-based). Used only for .ttc.")
+    parser.add_argument("--font-family", default=None, help="TTC face family name (e.g. 'BiauKaiTC'). Overrides --font-index if given.")
+    parser.add_argument("--list-faces", action="store_true", help="List faces inside a .ttc and exit.")
     parser.add_argument("--outdir", "-o", default="data", help="Output directory for JSON files.")
     args = parser.parse_args()
-    
+
     if not os.path.exists(args.font):
         print(f"Font file {args.font} not found.")
+        return
+
+    if args.list_faces:
+        if os.path.splitext(args.font)[1].lower() != ".ttc":
+            print(f"{args.font} is not a .ttc; nothing to list.")
+            return
+        for i, fam, full in list_ttc_faces(args.font):
+            print(f"[{i}] family='{fam}' full='{full}'")
         return
 
     chars = load_chars_from_file(args.input)
@@ -132,13 +190,17 @@ def main():
         print(f"No characters found in {args.input}")
         return
 
-    print(f"Processing {len(chars)} characters using {args.font}...")
-    # Optional: Deduplicate chars to avoid redundant work
+    face_label = args.font_family or f"index {args.font_index}"
+    print(f"Processing {len(chars)} characters using {args.font} ({face_label})...")
     unique_chars = sorted(list(set(chars)))
-    
+
     for char in unique_chars:
         print(f"Extracting '{char}'...")
-        res = extract_glyph_path(args.font, char)
+        res = extract_glyph_path(
+            args.font, char,
+            font_index=args.font_index,
+            font_family=args.font_family,
+        )
         if res:
             save_character_data(char, res, args.outdir)
     

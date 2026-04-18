@@ -193,6 +193,52 @@
             stroke-width: 6;
         }
 
+        #glyph-layers .compare-path {
+            display: none;
+            stroke: none;
+            fill-rule: evenodd;
+            mix-blend-mode: multiply;
+        }
+        #glyph-layers.compare-on .compare-path { display: block; }
+        #glyph-layers.compare-on #glyph-bg,
+        #glyph-layers.compare-on #glyph-main { display: none; }
+
+        #glyph-compare-data1  { fill: #64748b; fill-opacity: 0.55; }
+        #glyph-compare-data2 { fill: #0284c7; fill-opacity: 0.55; }
+        #glyph-compare-data3 { fill: #dc2626; fill-opacity: 0.55; }
+
+        .compare-legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: center;
+            margin-top: 4px;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+        .compare-legend .dot {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .compare-legend .dot::before {
+            content: "";
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: currentColor;
+            opacity: 0.7;
+        }
+        .compare-legend .dot.data1   { color: #64748b; }
+        .compare-legend .dot.data2  { color: #0284c7; }
+        .compare-legend .dot.data3  { color: #dc2626; }
+        .compare-legend .dot.missing { opacity: 0.35; text-decoration: line-through; }
+        .btn-outline-text.compare-active {
+            border-color: var(--primary);
+            color: var(--primary);
+            background: rgba(2, 132, 199, 0.1);
+        }
+
         .display-mode-row .outline-row-label {
             align-self: center;
         }
@@ -299,6 +345,37 @@
             font-weight: 600;
         }
 
+        .sidebar-dataset-wrap {
+            padding: 12px 24px 0;
+        }
+        .sidebar-dataset-wrap label {
+            display: block;
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+        .sidebar-dataset-wrap select {
+            width: 100%;
+            padding: 10px 12px;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            background: #ffffff;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--text-main);
+            cursor: pointer;
+            outline: none;
+            transition: all 0.2s;
+        }
+        .sidebar-dataset-wrap select:hover,
+        .sidebar-dataset-wrap select:focus {
+            border-color: var(--primary);
+            color: var(--primary);
+        }
+
         .sidebar-refresh-wrap {
             padding: 0 24px 16px;
         }
@@ -391,6 +468,24 @@
             font-size: 0.85rem;
             font-variant-numeric: tabular-nums;
         }
+        .order-edit-table .col-path {
+            width: 56px;
+            padding: 4px;
+            text-align: center;
+        }
+        .order-edit-table .col-path svg {
+            display: block;
+            width: 44px;
+            height: 44px;
+            margin: 0 auto;
+            background: #ffffff;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+        }
+        .order-edit-table .col-path svg path {
+            fill: #0f172a;
+            stroke: none;
+        }
         .order-edit-table .order-change-input:focus {
             outline: none;
             border-color: var(--primary);
@@ -475,8 +570,17 @@
                 <span class="search-icon">🔍</span>
                 <input type="text" id="search-input" placeholder="한자 또는 음 검색...">
             </div>
+            <div class="sidebar-dataset-wrap">
+                <label for="dataset-select">데이터 폴더</label>
+                <select id="dataset-select" onchange="onDatasetChange(this.value)">
+                    <option value="data">NotoSerifKR</option>
+                    <option value="data1">OpenMind</option>
+                    <option value="data2">Biaukai</option>
+                    <option value="data3">궁서체</option>
+                </select>
+            </div>
             <div class="sidebar-refresh-wrap">
-                <button type="button" class="btn-sidebar-refresh" id="btn-refresh-data" onclick="refreshCurrentCharData()" disabled title="선택한 한자의 data/*.json을 다시 불러옵니다">데이터 새로 고침</button>
+                <button type="button" class="btn-sidebar-refresh" id="btn-refresh-data" onclick="refreshCurrentCharData()" disabled title="선택한 한자의 JSON 파일을 현재 데이터 폴더에서 다시 불러옵니다">데이터 새로 고침</button>
             </div>
         </div>
         <div id="results-grid"></div>
@@ -513,6 +617,9 @@
                             <g id="glyph-layers" class="glyph-display-fill" transform="scale(1, -1)">
                                 <path id="glyph-bg" d=""></path>
                                 <path id="glyph-main" d=""></path>
+                                <path id="glyph-compare-data1"  class="compare-path" d=""></path>
+                                <path id="glyph-compare-data2" class="compare-path" d=""></path>
+                                <path id="glyph-compare-data3" class="compare-path" d=""></path>
                             </g>
                         </g>
                     </g>
@@ -557,6 +664,17 @@
                     <button type="button" class="btn-outline-text btn-display-mode" id="btn-display-stroke" onclick="setGlyphDisplayMode('stroke')" title="윤곽선만">윤곽</button>
                 </div>
             </div>
+            <div class="controls-row">
+                <label class="outline-row-label">3 폴더 비교</label>
+                <div class="outline-toolbar-col">
+                    <button type="button" class="btn-outline-text" id="btn-compare-toggle" onclick="toggleCompareMode()" title="data1/data2/data3 의 같은 글자를 하나의 viewBox에 겹쳐 표시합니다">비교 모드</button>
+                    <div class="compare-legend" id="compare-legend">
+                        <span class="dot data1"   id="legend-data1">data1</span>
+                        <span class="dot data2"  id="legend-data2">data2</span>
+                        <span class="dot data3"  id="legend-data3">data3</span>
+                    </div>
+                </div>
+            </div>
             <div class="controls-row order-edit-controls-row">
                 <label class="outline-row-label">order (획 순서)</label>
                 <div class="outline-toolbar-col">
@@ -575,12 +693,105 @@
         const DEFAULT_FONT_OPACITY = 0.15;
 
         let allCharacters = [];
-        const characterCache = {};
+        const DEFAULT_DATA_DIR = 'data';
+        const COMPARE_FOLDERS = ['data1', 'data2', 'data3'];
+        let currentDataDir = DEFAULT_DATA_DIR;
+        const characterCaches = { [DEFAULT_DATA_DIR]: {} };
         let currentCharacterObj = null;
         let outlineSegments = [];
         let outlineStrokeCount = 0;
         let outlineCumulativePlaying = false;
         let outlinePlaybackGeneration = 0;
+        let compareMode = false;
+
+        function getCharacterCache() {
+            if (!characterCaches[currentDataDir]) characterCaches[currentDataDir] = {};
+            return characterCaches[currentDataDir];
+        }
+
+        async function onDatasetChange(dir) {
+            const next = String(dir || '').trim() || DEFAULT_DATA_DIR;
+            if (next === currentDataDir) return;
+            currentDataDir = next;
+            if (!characterCaches[currentDataDir]) characterCaches[currentDataDir] = {};
+            if (currentCharacterObj && currentCharacterObj.한자) {
+                await loadCharData(currentCharacterObj.한자);
+            } else {
+                buildOrderEditRows({ stroke_outlines: [] });
+            }
+            updateRefreshDataButtonState();
+        }
+
+        async function fetchCharFromFolder(folder, char) {
+            if (!characterCaches[folder]) characterCaches[folder] = {};
+            const cache = characterCaches[folder];
+            if (cache[char] !== undefined) return cache[char];
+            try {
+                const res = await fetch(`${folder}/${char}.json`);
+                if (!res.ok) throw new Error('not found');
+                const data = await res.json();
+                cache[char] = data;
+                return data;
+            } catch {
+                cache[char] = null;
+                return null;
+            }
+        }
+
+        function compareIdFor(folder) {
+            return `glyph-compare-${folder}`;
+        }
+
+        function joinFontOutline(data) {
+            if (!data) return '';
+            const fo = data.font_outline;
+            if (Array.isArray(fo)) return fo.filter((s) => typeof s === 'string' && s.trim()).join(' ');
+            if (typeof fo === 'string') return fo.trim();
+            return '';
+        }
+
+        async function loadCompareData() {
+            if (!currentCharacterObj || !currentCharacterObj.한자) return;
+            const char = currentCharacterObj.한자;
+            const results = await Promise.all(
+                COMPARE_FOLDERS.map((f) => fetchCharFromFolder(f, char))
+            );
+            COMPARE_FOLDERS.forEach((f, i) => {
+                const data = results[i];
+                const d = joinFontOutline(data);
+                const pathEl = document.getElementById(compareIdFor(f));
+                if (pathEl) pathEl.setAttribute('d', d);
+                const legend = document.getElementById(`legend-${f}`);
+                if (legend) legend.classList.toggle('missing', !d);
+            });
+        }
+
+        function clearCompareData() {
+            COMPARE_FOLDERS.forEach((f) => {
+                const el = document.getElementById(compareIdFor(f));
+                if (el) el.setAttribute('d', '');
+                const legend = document.getElementById(`legend-${f}`);
+                if (legend) legend.classList.remove('missing');
+            });
+        }
+
+        async function toggleCompareMode() {
+            compareMode = !compareMode;
+            const layers = document.getElementById('glyph-layers');
+            const btn = document.getElementById('btn-compare-toggle');
+            if (layers) layers.classList.toggle('compare-on', compareMode);
+            if (btn) {
+                btn.classList.toggle('compare-active', compareMode);
+                btn.textContent = compareMode ? '비교 모드 해제' : '비교 모드';
+            }
+
+            if (compareMode) {
+                await loadCompareData();
+            } else {
+                clearCompareData();
+            }
+            applyOutlineStep();
+        }
 
         function updateRefreshDataButtonState() {
             const btn = document.getElementById('btn-refresh-data');
@@ -644,6 +855,7 @@
                     <th scope="col">#</th>
                     <th scope="col">order 현재</th>
                     <th scope="col">order 변경</th>
+                    <th scope="col">path</th>
                     <th scope="col">radical 현재</th>
                     <th scope="col">부수 획</th>
                 </tr>
@@ -654,6 +866,11 @@
                 const currentOrder = strokeOutlineOrder(item, index);
                 const radShown = strokeOutlineRadicalDisplay(item);
                 const radChecked = strokeOutlineRadicalIsTrue(item) ? 'checked' : '';
+                const pathStr = String(item.path ?? item.d ?? '').trim();
+                const pathEscaped = escapeHtml(pathStr);
+                const pathSvg = pathStr
+                    ? `<svg viewBox="-100 -1000 1200 1200" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg"><g transform="scale(1,-1)"><path d="${pathEscaped}"></path></g></svg>`
+                    : '';
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
                     <td class="col-idx">${index + 1}</td>
@@ -661,6 +878,7 @@
                     <td class="col-order-change">
                         <input type="number" step="1" class="order-change-input" value="${currentOrder}" data-idx="${index}" aria-label="order 변경 행 ${index + 1}">
                     </td>
+                    <td class="col-path" title="${pathEscaped}">${pathSvg}</td>
                     <td class="col-radical-current"><strong>${radShown}</strong></td>
                     <td class="col-radical-cell">
                         <label class="order-radical-wrap">
@@ -679,7 +897,8 @@
         function applyStrokeOutlineOrders() {
             const char = currentCharacterObj && currentCharacterObj.한자;
             if (!char) return;
-            const data = characterCache[char];
+            const cache = getCharacterCache();
+            const data = cache[char];
             if (!data || !Array.isArray(data.stroke_outlines)) return;
 
             const inputs = document.querySelectorAll('#order-edit-list .order-change-input');
@@ -718,16 +937,22 @@
             if (loader) loader.style.display = 'block';
 
             try {
-                const url = `data/${char}.json?t=${Date.now()}`;
+                const url = `${currentDataDir}/${char}.json?t=${Date.now()}`;
                 const res = await fetch(url, { cache: 'no-store' });
                 if (!res.ok) throw new Error('Data not found');
                 const data = await res.json();
-                characterCache[char] = data;
+                getCharacterCache()[char] = data;
                 renderGlyph(data);
                 buildOrderEditRows(data);
+                if (compareMode) {
+                    COMPARE_FOLDERS.forEach((f) => {
+                        if (characterCaches[f]) delete characterCaches[f][char];
+                    });
+                    await loadCompareData();
+                }
             } catch (err) {
                 console.error(err);
-                window.alert('데이터를 새로 고침하지 못했습니다. 파일 경로와 서버 실행 여부를 확인하세요.');
+                window.alert(`'${currentDataDir}/${char}.json' 를 새로 고침하지 못했습니다. 파일 경로와 서버 실행 여부를 확인하세요.`);
             } finally {
                 if (loader) loader.style.display = 'none';
                 updateRefreshDataButtonState();
@@ -801,7 +1026,7 @@
             document.getElementById('glyph-bg').setAttribute('d', d);
             document.getElementById('glyph-main').setAttribute('d', d);
 
-            const locked = outlineCumulativePlaying;
+            const locked = outlineCumulativePlaying || compareMode;
             document.getElementById('outline-step-label').textContent = n ? `${outlineStrokeCount} / ${n}` : '-';
             document.getElementById('outline-prev').disabled = locked || n === 0 || outlineStrokeCount <= 0;
             document.getElementById('outline-next').disabled = locked || n === 0 || outlineStrokeCount >= n;
@@ -809,7 +1034,7 @@
             document.getElementById('outline-clear').disabled = locked || n === 0 || outlineStrokeCount <= 0;
             const playBtn = document.getElementById('outline-play-cumulative');
             playBtn.disabled = locked || n === 0;
-            playBtn.textContent = locked ? '재생 중…' : '재생';
+            playBtn.textContent = outlineCumulativePlaying ? '재생 중…' : '재생';
         }
 
         function stepOutline(delta) {
@@ -870,6 +1095,9 @@
 
                 setupSearch();
                 renderResults('');
+
+                const datasetSelect = document.getElementById('dataset-select');
+                if (datasetSelect) datasetSelect.value = currentDataDir;
 
                 updateGlyphScale(document.getElementById('glyph-scale').value);
                 updateFontOpacity(document.getElementById('font-opacity').value);
@@ -947,13 +1175,14 @@
             const loader = document.getElementById('loader');
             loader.style.display = 'block';
 
-            let data = characterCache[char];
+            const cache = getCharacterCache();
+            let data = cache[char];
             if (!data) {
                 try {
-                    const res = await fetch(`data/${char}.json`);
+                    const res = await fetch(`${currentDataDir}/${char}.json`);
                     if (!res.ok) throw new Error('Data not found');
                     data = await res.json();
-                    characterCache[char] = data;
+                    cache[char] = data;
                 } catch (err) {
                     console.error(err);
                     loader.style.display = 'none';
@@ -964,6 +1193,7 @@
 
             renderGlyph(data);
             buildOrderEditRows(data);
+            if (compareMode) await loadCompareData();
             loader.style.display = 'none';
         }
 
