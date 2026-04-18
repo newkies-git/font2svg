@@ -170,7 +170,7 @@ def main():
     parser.add_argument("--font-index", type=int, default=0, help="TTC face index (0-based). Used only for .ttc.")
     parser.add_argument("--font-family", default=None, help="TTC face family name (e.g. 'BiauKaiTC'). Overrides --font-index if given.")
     parser.add_argument("--list-faces", action="store_true", help="List faces inside a .ttc and exit.")
-    parser.add_argument("--outdir", "-o", default="data", help="Output directory for JSON files.")
+    parser.add_argument("--outdir", "-o", default="font_ext_data", help="Output directory for JSON files.")
     args = parser.parse_args()
 
     if not os.path.exists(args.font):

@@ -193,19 +193,19 @@
             stroke-width: 6;
         }
 
-        #glyph-layers .compare-path {
+        #glyph-scaler .glyph-compare-stack .compare-path {
             display: none;
             stroke: none;
             fill-rule: evenodd;
             mix-blend-mode: multiply;
         }
-        #glyph-layers.compare-on .compare-path { display: block; }
-        #glyph-layers.compare-on #glyph-bg,
-        #glyph-layers.compare-on #glyph-main { display: none; }
+        #glyph-scaler.compare-on .glyph-compare-stack .compare-path { display: block; }
+        #glyph-scaler.compare-on #glyph-layers #glyph-bg,
+        #glyph-scaler.compare-on #glyph-layers #glyph-main { display: none; }
 
-        #glyph-compare-data1  { fill: #64748b; fill-opacity: 0.55; }
-        #glyph-compare-data2 { fill: #0284c7; fill-opacity: 0.55; }
-        #glyph-compare-data3 { fill: #dc2626; fill-opacity: 0.55; }
+        #glyph-compare-opnemind_data  { fill: #64748b; fill-opacity: 0.55; }
+        #glyph-compare-biaukai_data { fill: #0284c7; fill-opacity: 0.55; }
+        #glyph-compare-hanzi_data { fill: #d97706; fill-opacity: 0.55; }
 
         .compare-legend {
             display: flex;
@@ -229,10 +229,30 @@
             background: currentColor;
             opacity: 0.7;
         }
-        .compare-legend .dot.data1   { color: #64748b; }
-        .compare-legend .dot.data2  { color: #0284c7; }
-        .compare-legend .dot.data3  { color: #dc2626; }
+        .compare-legend .dot.opnemind_data   { color: #64748b; }
+        .compare-legend .dot.biaukai_data  { color: #0284c7; }
+        .compare-legend .dot.hanzi_data { color: #d97706; }
         .compare-legend .dot.missing { opacity: 0.35; text-decoration: line-through; }
+        .compare-legend.compare-picks {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 6px;
+        }
+        .compare-pick {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            user-select: none;
+        }
+        .compare-pick input {
+            margin: 0;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+        .compare-pick.compare-unpicked {
+            opacity: 0.45;
+        }
         .btn-outline-text.compare-active {
             border-color: var(--primary);
             color: var(--primary);
@@ -528,14 +548,54 @@
             align-items: center;
             gap: 16px;
         }
-        .scale-control label, .opacity-control label, .offset-control label { 
-            min-width: 100px; 
-            font-size: 0.85rem; 
-            color: var(--text-muted); 
+        .offset-control {
+            align-items: flex-start;
+        }
+        .offset-sliders-col {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            min-width: 0;
+        }
+        .offset-slider-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            width: 100%;
+        }
+        .offset-slider-row .offset-source-label {
+            min-width: 118px;
+            font-size: 0.75rem;
+            color: var(--text-muted);
             font-weight: 600;
         }
-        .scale-control input, .opacity-control input, .offset-control input { flex: 1; accent-color: var(--primary); }
-        .scale-control span, .opacity-control span, .offset-control span { min-width: 50px; font-variant-numeric: tabular-nums; font-weight: 600; color: var(--primary); }
+        .offset-slider-row input.offset-spin {
+            width: 5.5rem;
+            flex-shrink: 0;
+            margin-left: auto;
+            padding: 6px 8px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: var(--panel);
+            color: var(--text-main);
+            font-size: 0.85rem;
+            font-variant-numeric: tabular-nums;
+            font-weight: 600;
+        }
+        .offset-slider-row input.offset-spin:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.2);
+        }
+        .scale-control label, .opacity-control label {
+            min-width: 100px;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            font-weight: 600;
+        }
+        .scale-control input, .opacity-control input { flex: 1; accent-color: var(--primary); }
+        .scale-control span, .opacity-control span { min-width: 50px; font-variant-numeric: tabular-nums; font-weight: 600; color: var(--primary); }
 
         #char-info {
             position: absolute;
@@ -573,10 +633,9 @@
             <div class="sidebar-dataset-wrap">
                 <label for="dataset-select">데이터 폴더</label>
                 <select id="dataset-select" onchange="onDatasetChange(this.value)">
-                    <option value="data">NotoSerifKR</option>
-                    <option value="data1">OpenMind</option>
-                    <option value="data2">Biaukai</option>
-                    <option value="data3">궁서체</option>
+                    <option value="opnemind_data">OpenMind (opnemind_data)</option>
+                    <option value="biaukai_data">BiauKai (biaukai_data)</option>
+                    <option value="hanzi_data">Hanzi (hanzi_data)</option>
                 </select>
             </div>
             <div class="sidebar-refresh-wrap">
@@ -613,13 +672,33 @@
                     </g>
 
                     <g id="glyph-scaler">
-                        <g id="glyph-shifter">
-                            <g id="glyph-layers" class="glyph-display-fill" transform="scale(1, -1)">
-                                <path id="glyph-bg" d=""></path>
-                                <path id="glyph-main" d=""></path>
-                                <path id="glyph-compare-data1"  class="compare-path" d=""></path>
-                                <path id="glyph-compare-data2" class="compare-path" d=""></path>
-                                <path id="glyph-compare-data3" class="compare-path" d=""></path>
+                        <g id="glyph-main-stack">
+                            <g id="glyph-main-translate" transform="translate(-500, 200)">
+                                <g id="glyph-layers" class="glyph-display-fill" transform="scale(1, -1)">
+                                    <path id="glyph-bg" d=""></path>
+                                    <path id="glyph-main" d=""></path>
+                                </g>
+                            </g>
+                        </g>
+                        <g id="glyph-compare-stack-opnemind_data" class="glyph-compare-stack">
+                            <g id="glyph-compare-translate-opnemind_data" transform="translate(-500, 200)">
+                                <g transform="scale(1, -1)">
+                                    <path id="glyph-compare-opnemind_data" class="compare-path" d=""></path>
+                                </g>
+                            </g>
+                        </g>
+                        <g id="glyph-compare-stack-biaukai_data" class="glyph-compare-stack">
+                            <g id="glyph-compare-translate-biaukai_data" transform="translate(-500, 200)">
+                                <g transform="scale(1, -1)">
+                                    <path id="glyph-compare-biaukai_data" class="compare-path" d=""></path>
+                                </g>
+                            </g>
+                        </g>
+                        <g id="glyph-compare-stack-hanzi_data" class="glyph-compare-stack">
+                            <g id="glyph-compare-translate-hanzi_data" transform="translate(-500, 370)">
+                                <g transform="scale(1, -1)">
+                                    <path id="glyph-compare-hanzi_data" class="compare-path" d=""></path>
+                                </g>
                             </g>
                         </g>
                     </g>
@@ -653,9 +732,29 @@
                 <span id="opacity-val">15%</span>
             </div>
             <div class="controls-row offset-control">
-                <label>Vertical Offset</label>
-                <input type="range" id="vertical-offset" min="700" max="1000" step="5" value="870" oninput="updateVerticalOffset(this.value)">
-                <span id="offset-val">870</span>
+                <label class="outline-row-label">Vertical Offset</label>
+                <div class="offset-sliders-col">
+                    <div class="offset-slider-row">
+                        <span class="offset-source-label">메인</span>
+                        <input type="number" class="offset-spin" id="vertical-offset" min="700" max="1000" step="1" value="700" inputmode="numeric"
+                            oninput="onVerticalOffsetSpinInput(this)" onchange="onVerticalOffsetSpinChange(this)">
+                    </div>
+                    <div class="offset-slider-row">
+                        <span class="offset-source-label">opnemind_data</span>
+                        <input type="number" class="offset-spin" id="vertical-offset-opnemind_data" min="700" max="1000" step="1" value="700" inputmode="numeric"
+                            oninput="onCompareVerticalOffsetSpinInput('opnemind_data', this)" onchange="onCompareVerticalOffsetSpinChange('opnemind_data', this)">
+                    </div>
+                    <div class="offset-slider-row">
+                        <span class="offset-source-label">biaukai_data</span>
+                        <input type="number" class="offset-spin" id="vertical-offset-biaukai_data" min="700" max="1000" step="1" value="700" inputmode="numeric"
+                            oninput="onCompareVerticalOffsetSpinInput('biaukai_data', this)" onchange="onCompareVerticalOffsetSpinChange('biaukai_data', this)">
+                    </div>
+                    <div class="offset-slider-row">
+                        <span class="offset-source-label">hanzi_data</span>
+                        <input type="number" class="offset-spin" id="vertical-offset-hanzi_data" min="700" max="1000" step="1" value="870" inputmode="numeric"
+                            oninput="onCompareVerticalOffsetSpinInput('hanzi_data', this)" onchange="onCompareVerticalOffsetSpinChange('hanzi_data', this)">
+                    </div>
+                </div>
             </div>
             <div class="controls-row display-mode-row">
                 <label class="outline-row-label">표시</label>
@@ -665,13 +764,22 @@
                 </div>
             </div>
             <div class="controls-row">
-                <label class="outline-row-label">3 폴더 비교</label>
+                <label class="outline-row-label">폴더 비교</label>
                 <div class="outline-toolbar-col">
-                    <button type="button" class="btn-outline-text" id="btn-compare-toggle" onclick="toggleCompareMode()" title="data1/data2/data3 의 같은 글자를 하나의 viewBox에 겹쳐 표시합니다">비교 모드</button>
-                    <div class="compare-legend" id="compare-legend">
-                        <span class="dot data1"   id="legend-data1">data1</span>
-                        <span class="dot data2"  id="legend-data2">data2</span>
-                        <span class="dot data3"  id="legend-data3">data3</span>
+                    <button type="button" class="btn-outline-text" id="btn-compare-toggle" onclick="toggleCompareMode()" title="체크한 데이터 폴더끼리 같은 글자를 하나의 viewBox에 겹쳐 표시합니다">비교 모드</button>
+                    <div class="compare-legend compare-picks" id="compare-legend">
+                        <label class="compare-pick dot opnemind_data" id="legend-opnemind_data">
+                            <input type="checkbox" id="compare-sel-opnemind_data" data-compare-folder="opnemind_data" checked onchange="onCompareSelectionChange()">
+                            <span>opnemind_data</span>
+                        </label>
+                        <label class="compare-pick dot biaukai_data" id="legend-biaukai_data">
+                            <input type="checkbox" id="compare-sel-biaukai_data" data-compare-folder="biaukai_data" checked onchange="onCompareSelectionChange()">
+                            <span>biaukai_data</span>
+                        </label>
+                        <label class="compare-pick dot hanzi_data" id="legend-hanzi_data">
+                            <input type="checkbox" id="compare-sel-hanzi_data" data-compare-folder="hanzi_data" checked onchange="onCompareSelectionChange()">
+                            <span>hanzi_data</span>
+                        </label>
                     </div>
                 </div>
             </div>
@@ -693,8 +801,8 @@
         const DEFAULT_FONT_OPACITY = 0.15;
 
         let allCharacters = [];
-        const DEFAULT_DATA_DIR = 'data';
-        const COMPARE_FOLDERS = ['data1', 'data2', 'data3'];
+        const DEFAULT_DATA_DIR = 'opnemind_data';
+        const COMPARE_FOLDERS = ['opnemind_data', 'biaukai_data', 'hanzi_data'];
         let currentDataDir = DEFAULT_DATA_DIR;
         const characterCaches = { [DEFAULT_DATA_DIR]: {} };
         let currentCharacterObj = null;
@@ -742,6 +850,28 @@
             return `glyph-compare-${folder}`;
         }
 
+        function isCompareFolderSelected(folder) {
+            const el = document.getElementById(`compare-sel-${folder}`);
+            return !!(el && el.checked);
+        }
+
+        function updateComparePickVisualState() {
+            COMPARE_FOLDERS.forEach((f) => {
+                const lab = document.getElementById(`legend-${f}`);
+                if (lab && lab.classList.contains('compare-pick')) {
+                    lab.classList.toggle('compare-unpicked', !isCompareFolderSelected(f));
+                }
+            });
+        }
+
+        async function onCompareSelectionChange() {
+            updateComparePickVisualState();
+            if (compareMode) {
+                await loadCompareData();
+                applyOutlineStep();
+            }
+        }
+
         function joinFontOutline(data) {
             if (!data) return '';
             const fo = data.font_outline;
@@ -754,16 +884,24 @@
             if (!currentCharacterObj || !currentCharacterObj.한자) return;
             const char = currentCharacterObj.한자;
             const results = await Promise.all(
-                COMPARE_FOLDERS.map((f) => fetchCharFromFolder(f, char))
+                COMPARE_FOLDERS.map((f) =>
+                    isCompareFolderSelected(f) ? fetchCharFromFolder(f, char) : Promise.resolve(null)
+                )
             );
             COMPARE_FOLDERS.forEach((f, i) => {
+                const pathEl = document.getElementById(compareIdFor(f));
+                const legend = document.getElementById(`legend-${f}`);
+                if (!isCompareFolderSelected(f)) {
+                    if (pathEl) pathEl.setAttribute('d', '');
+                    if (legend) legend.classList.remove('missing');
+                    return;
+                }
                 const data = results[i];
                 const d = joinFontOutline(data);
-                const pathEl = document.getElementById(compareIdFor(f));
                 if (pathEl) pathEl.setAttribute('d', d);
-                const legend = document.getElementById(`legend-${f}`);
                 if (legend) legend.classList.toggle('missing', !d);
             });
+            updateComparePickVisualState();
         }
 
         function clearCompareData() {
@@ -773,19 +911,21 @@
                 const legend = document.getElementById(`legend-${f}`);
                 if (legend) legend.classList.remove('missing');
             });
+            updateComparePickVisualState();
         }
 
         async function toggleCompareMode() {
             compareMode = !compareMode;
-            const layers = document.getElementById('glyph-layers');
+            const scaler = document.getElementById('glyph-scaler');
             const btn = document.getElementById('btn-compare-toggle');
-            if (layers) layers.classList.toggle('compare-on', compareMode);
+            if (scaler) scaler.classList.toggle('compare-on', compareMode);
             if (btn) {
                 btn.classList.toggle('compare-active', compareMode);
                 btn.textContent = compareMode ? '비교 모드 해제' : '비교 모드';
             }
 
             if (compareMode) {
+                updateComparePickVisualState();
                 await loadCompareData();
             } else {
                 clearCompareData();
@@ -1101,7 +1241,7 @@
 
                 updateGlyphScale(document.getElementById('glyph-scale').value);
                 updateFontOpacity(document.getElementById('font-opacity').value);
-                updateVerticalOffset(document.getElementById('vertical-offset').value);
+                initVerticalOffsetsFromControls();
                 setGlyphDisplayMode('fill');
 
                 const startChar = allCharacters[0];
@@ -1123,10 +1263,77 @@
             document.getElementById('opacity-val').innerText = `${Math.round(Number(val) * 100)}%`;
         }
 
+        const VERTICAL_OFFSET_MIN = 700;
+        const VERTICAL_OFFSET_MAX = 1000;
+
+        function verticalOffsetToTranslateY(num) {
+            return num - 500;
+        }
+
+        function clampVerticalOffset(raw) {
+            const n = parseInt(String(raw).trim(), 10);
+            if (Number.isNaN(n)) return VERTICAL_OFFSET_MIN;
+            return Math.min(VERTICAL_OFFSET_MAX, Math.max(VERTICAL_OFFSET_MIN, n));
+        }
+
+        /** 입력 중: 700–1000 범위의 정수만 즉시 반영(중간 입력 깨짐 방지). */
+        function parseVerticalOffsetInRangeOnly(raw) {
+            const t = String(raw).trim();
+            if (t === '' || t === '-') return null;
+            const n = parseInt(t, 10);
+            if (Number.isNaN(n)) return null;
+            if (n < VERTICAL_OFFSET_MIN || n > VERTICAL_OFFSET_MAX) return null;
+            return n;
+        }
+
         function updateVerticalOffset(val) {
-            const yOffset = parseInt(val, 10) - 500;
-            document.getElementById('glyph-shifter').setAttribute('transform', `translate(-500, ${yOffset})`);
-            document.getElementById('offset-val').innerText = String(val);
+            const n = typeof val === 'number' ? val : clampVerticalOffset(val);
+            const yOffset = verticalOffsetToTranslateY(n);
+            const g = document.getElementById('glyph-main-translate');
+            if (g) g.setAttribute('transform', `translate(-500, ${yOffset})`);
+        }
+
+        function updateCompareVerticalOffset(folder, val) {
+            const n = typeof val === 'number' ? val : clampVerticalOffset(val);
+            const g = document.getElementById(`glyph-compare-translate-${folder}`);
+            if (g) g.setAttribute('transform', `translate(-500, ${verticalOffsetToTranslateY(n)})`);
+        }
+
+        function onVerticalOffsetSpinInput(el) {
+            const v = parseVerticalOffsetInRangeOnly(el.value);
+            if (v !== null) updateVerticalOffset(v);
+        }
+
+        function onVerticalOffsetSpinChange(el) {
+            const v = clampVerticalOffset(el.value);
+            el.value = String(v);
+            updateVerticalOffset(v);
+        }
+
+        function onCompareVerticalOffsetSpinInput(folder, el) {
+            const v = parseVerticalOffsetInRangeOnly(el.value);
+            if (v !== null) updateCompareVerticalOffset(folder, v);
+        }
+
+        function onCompareVerticalOffsetSpinChange(folder, el) {
+            const v = clampVerticalOffset(el.value);
+            el.value = String(v);
+            updateCompareVerticalOffset(folder, v);
+        }
+
+        function initVerticalOffsetsFromControls() {
+            const main = document.getElementById('vertical-offset');
+            if (main) {
+                main.value = String(clampVerticalOffset(main.value));
+                updateVerticalOffset(parseInt(main.value, 10));
+            }
+            COMPARE_FOLDERS.forEach((f) => {
+                const inp = document.getElementById(`vertical-offset-${f}`);
+                if (inp) {
+                    inp.value = String(clampVerticalOffset(inp.value));
+                    updateCompareVerticalOffset(f, parseInt(inp.value, 10));
+                }
+            });
         }
 
         function setupSearch() {
@@ -1186,7 +1393,10 @@
                 } catch (err) {
                     console.error(err);
                     loader.style.display = 'none';
+                    const empty = { font_outline: [], stroke_outlines: [] };
+                    renderGlyph(empty);
                     buildOrderEditRows({ stroke_outlines: [] });
+                    if (compareMode) await loadCompareData();
                     return;
                 }
             }

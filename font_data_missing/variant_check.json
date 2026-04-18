@@ -1,0 +1,636 @@
+[
+  {
+    "korean_char": "倣",
+    "korean_codepoint": "U+5023",
+    "candidates": [
+      "仿",
+      "倣"
+    ],
+    "found_in_hanzi_data": [],
+    "not_found_in_hanzi_data": [
+      {
+        "variant": "仿",
+        "codepoint": "U+4EFF"
+      },
+      {
+        "variant": "倣",
+        "codepoint": "U+5023"
+      }
+    ],
+    "status": "❌ 후보 모두 없음"
+  },
+  {
+    "korean_char": "値",
+    "korean_codepoint": "U+5024",
+    "candidates": [
+      "值"
+    ],
+    "found_in_hanzi_data": [],
+    "not_found_in_hanzi_data": [
+      {
+        "variant": "值",
+        "codepoint": "U+503C"
+      }
+    ],
+    "status": "❌ 후보 모두 없음"
+  },
+  {
+    "korean_char": "僞",
+    "korean_codepoint": "U+50DE",
+    "candidates": [
+      "偽",
+      "伪"
+    ],
+    "found_in_hanzi_data": [],
+    "not_found_in_hanzi_data": [
+      {
+        "variant": "偽",
+        "codepoint": "U+507D"
+      },
+      {
+        "variant": "伪",
+        "codepoint": "U+4F2A"
+      }
+    ],
+    "status": "❌ 후보 모두 없음"
+  },
+  {
+    "korean_char": "卽",
+    "korean_codepoint": "U+537D",
+    "candidates": [
+      "即"
+    ],
+    "found_in_hanzi_data": [],
+    "not_found_in_hanzi_data": [
+      {
+        "variant": "即",
+        "codepoint": "U+5373"
+      }
+    ],
+    "status": "❌ 후보 모두 없음"
+  },
+  {
+    "korean_char": "奬",
+    "korean_codepoint": "U+596C",
+    "candidates": [
+      "獎",
+      "奖"
+    ],
+    "found_in_hanzi_data": [],
+    "not_found_in_hanzi_data": [
+      {
+        "variant": "獎",
+        "codepoint": "U+734E"
+      },
+      {
+        "variant": "奖",
+        "codepoint": "U+5956"
+      }
+    ],
+    "status": "❌ 후보 모두 없음"
+  },
+  {
+    "korean_char": "屛",
+    "korean_codepoint": "U+5C5B",
+    "candidates": [
+      "屏"
+    ],
+    "found_in_hanzi_data": [],
+    "not_found_in_hanzi_data": [
+      {
+        "variant": "屏",
+        "codepoint": "U+5C4F"
+      }
+    ],
+    "status": "❌ 후보 모두 없음"
+  },
+  {
+    "korean_char": "峯",
+    "korean_codepoint": "U+5CEF",
+    "candidates": [
+      "峰"
+    ],
+    "found_in_hanzi_data": [],
+    "not_found_in_hanzi_data": [
+      {
+        "variant": "峰",
+        "codepoint": "U+5CF0"
+      }
+    ],
+    "status": "❌ 후보 모두 없음"
+  },
+  {
+    "korean_char": "愼",
+    "korean_codepoint": "U+613C",
+    "candidates": [
+      "慎"
+    ],
+    "found_in_hanzi_data": [],
+    "not_found_in_hanzi_data": [
+      {
+        "variant": "慎",
+        "codepoint": "U+614E"
+      }
+    ],
+    "status": "❌ 후보 모두 없음"
+  },
+  {
+    "korean_char": "慙",
+    "korean_codepoint": "U+6159",
+    "candidates": [
+      "慚",
+      "惭"
+    ],
+    "found_in_hanzi_data": [],
+    "not_found_in_hanzi_data": [
+      {
+        "variant": "慚",
+        "codepoint": "U+615A"
+      },
+      {
+        "variant": "惭",
+        "codepoint": "U+60ED"
+      }
+    ],
+    "status": "❌ 후보 모두 없음"
+  },
+  {
+    "korean_char": "擧",
+    "korean_codepoint": "U+64E7",
+    "candidates": [
+      "舉",
+      "举"
+    ],
+    "found_in_hanzi_data": [],
+    "not_found_in_hanzi_data": [
+      {
+        "variant": "舉",
+        "codepoint": "U+8209"
+      },
+      {
+        "variant": "举",
+        "codepoint": "U+4E3E"
+      }
+    ],
+    "status": "❌ 후보 모두 없음"
+  },
+  {
+    "korean_char": "敍",
+    "korean_codepoint": "U+654D",
+    "candidates": [
+      "敘",
+      "叙"
+    ],
+    "found_in_hanzi_data": [],
+    "not_found_in_hanzi_data": [
+      {
+        "variant": "敘",
+        "codepoint": "U+6558"
+      },
+      {
+        "variant": "叙",
+        "codepoint": "U+53D9"
+      }
+    ],
+    "status": "❌ 후보 모두 없음"
+  },
+  {
+    "korean_char": "敎",
+    "korean_codepoint": "U+654E",
+    "candidates": [
+      "教"
+    ],
+    "found_in_hanzi_data": [],
+    "not_found_in_hanzi_data": [
+      {
+        "variant": "教",
+        "codepoint": "U+6559"
+      }
+    ],
+    "status": "❌ 후보 모두 없음"
+  },
+  {
+    "korean_char": "旣",
+    "korean_codepoint": "U+65E3",
+    "candidates": [
+      "既"
+    ],
+    "found_in_hanzi_data": [],
+    "not_found_in_hanzi_data": [
+      {
+        "variant": "既",
+        "codepoint": "U+65E2"
+      }
+    ],
+    "status": "❌ 후보 모두 없음"
+  },
+  {
+    "korean_char": "査",
+    "korean_codepoint": "U+67FB",
+    "candidates": [
+      "查"
+    ],
+    "found_in_hanzi_data": [],
+    "not_found_in_hanzi_data": [
+      {
+        "variant": "查",
+        "codepoint": "U+67E5"
+      }
+    ],
+    "status": "❌ 후보 모두 없음"
+  },
+  {
+    "korean_char": "槪",
+    "korean_codepoint": "U+69EA",
+    "candidates": [
+      "概"
+    ],
+    "found_in_hanzi_data": [],
+    "not_found_in_hanzi_data": [
+      {
+        "variant": "概",
+        "codepoint": "U+6982"
+      }
+    ],
+    "status": "❌ 후보 모두 없음"
+  },
+  {
+    "korean_char": "氷",
+    "korean_codepoint": "U+6C37",
+    "candidates": [
+      "冰"
+    ],
+    "found_in_hanzi_data": [],
+    "not_found_in_hanzi_data": [
+      {
+        "variant": "冰",
+        "codepoint": "U+51B0"
+      }
+    ],
+    "status": "❌ 후보 모두 없음"
+  },
+  {
+    "korean_char": "汚",
+    "korean_codepoint": "U+6C5A",
+    "candidates": [
+      "污"
+    ],
+    "found_in_hanzi_data": [],
+    "not_found_in_hanzi_data": [
+      {
+        "variant": "污",
+        "codepoint": "U+6C61"
+      }
+    ],
+    "status": "❌ 후보 모두 없음"
+  },
+  {
+    "korean_char": "淸",
+    "korean_codepoint": "U+6DF8",
+    "candidates": [
+      "清"
+    ],
+    "found_in_hanzi_data": [],
+    "not_found_in_hanzi_data": [
+      {
+        "variant": "清",
+        "codepoint": "U+6E05"
+      }
+    ],
+    "status": "❌ 후보 모두 없음"
+  },
+  {
+    "korean_char": "爲",
+    "korean_codepoint": "U+7232",
+    "candidates": [
+      "為",
+      "为"
+    ],
+    "found_in_hanzi_data": [],
+    "not_found_in_hanzi_data": [
+      {
+        "variant": "為",
+        "codepoint": "U+70BA"
+      },
+      {
+        "variant": "为",
+        "codepoint": "U+4E3A"
+      }
+    ],
+    "status": "❌ 후보 모두 없음"
+  },
+  {
+    "korean_char": "畓",
+    "korean_codepoint": "U+7553",
+    "candidates": [],
+    "found_in_hanzi_data": [],
+    "not_found_in_hanzi_data": [],
+    "status": "⚠️  후보 없음"
+  },
+  {
+    "korean_char": "眞",
+    "korean_codepoint": "U+771E",
+    "candidates": [
+      "真"
+    ],
+    "found_in_hanzi_data": [],
+    "not_found_in_hanzi_data": [
+      {
+        "variant": "真",
+        "codepoint": "U+771F"
+      }
+    ],
+    "status": "❌ 후보 모두 없음"
+  },
+  {
+    "korean_char": "硏",
+    "korean_codepoint": "U+784F",
+    "candidates": [
+      "研"
+    ],
+    "found_in_hanzi_data": [],
+    "not_found_in_hanzi_data": [
+      {
+        "variant": "研",
+        "codepoint": "U+7814"
+      }
+    ],
+    "status": "❌ 후보 모두 없음"
+  },
+  {
+    "korean_char": "窓",
+    "korean_codepoint": "U+7A93",
+    "candidates": [
+      "窗",
+      "窓"
+    ],
+    "found_in_hanzi_data": [],
+    "not_found_in_hanzi_data": [
+      {
+        "variant": "窗",
+        "codepoint": "U+7A97"
+      },
+      {
+        "variant": "窓",
+        "codepoint": "U+7A93"
+      }
+    ],
+    "status": "❌ 후보 모두 없음"
+  },
+  {
+    "korean_char": "竝",
+    "korean_codepoint": "U+7ADD",
+    "candidates": [
+      "並",
+      "并"
+    ],
+    "found_in_hanzi_data": [],
+    "not_found_in_hanzi_data": [
+      {
+        "variant": "並",
+        "codepoint": "U+4E26"
+      },
+      {
+        "variant": "并",
+        "codepoint": "U+5E76"
+      }
+    ],
+    "status": "❌ 후보 모두 없음"
+  },
+  {
+    "korean_char": "粧",
+    "korean_codepoint": "U+7CA7",
+    "candidates": [
+      "妝",
+      "妆"
+    ],
+    "found_in_hanzi_data": [],
+    "not_found_in_hanzi_data": [
+      {
+        "variant": "妝",
+        "codepoint": "U+599D"
+      },
+      {
+        "variant": "妆",
+        "codepoint": "U+5986"
+      }
+    ],
+    "status": "❌ 후보 모두 없음"
+  },
+  {
+    "korean_char": "絃",
+    "korean_codepoint": "U+7D43",
+    "candidates": [
+      "弦"
+    ],
+    "found_in_hanzi_data": [],
+    "not_found_in_hanzi_data": [
+      {
+        "variant": "弦",
+        "codepoint": "U+5F26"
+      }
+    ],
+    "status": "❌ 후보 모두 없음"
+  },
+  {
+    "korean_char": "緖",
+    "korean_codepoint": "U+7DD6",
+    "candidates": [
+      "緒",
+      "绪"
+    ],
+    "found_in_hanzi_data": [],
+    "not_found_in_hanzi_data": [
+      {
+        "variant": "緒",
+        "codepoint": "U+7DD2"
+      },
+      {
+        "variant": "绪",
+        "codepoint": "U+7EEA"
+      }
+    ],
+    "status": "❌ 후보 모두 없음"
+  },
+  {
+    "korean_char": "郞",
+    "korean_codepoint": "U+90DE",
+    "candidates": [
+      "郎"
+    ],
+    "found_in_hanzi_data": [],
+    "not_found_in_hanzi_data": [
+      {
+        "variant": "郎",
+        "codepoint": "U+90CE"
+      }
+    ],
+    "status": "❌ 후보 모두 없음"
+  },
+  {
+    "korean_char": "鄕",
+    "korean_codepoint": "U+9115",
+    "candidates": [
+      "鄉",
+      "乡"
+    ],
+    "found_in_hanzi_data": [],
+    "not_found_in_hanzi_data": [
+      {
+        "variant": "鄉",
+        "codepoint": "U+9109"
+      },
+      {
+        "variant": "乡",
+        "codepoint": "U+4E61"
+      }
+    ],
+    "status": "❌ 후보 모두 없음"
+  },
+  {
+    "korean_char": "鎭",
+    "korean_codepoint": "U+93AD",
+    "candidates": [
+      "鎮",
+      "镇"
+    ],
+    "found_in_hanzi_data": [],
+    "not_found_in_hanzi_data": [
+      {
+        "variant": "鎮",
+        "codepoint": "U+93AE"
+      },
+      {
+        "variant": "镇",
+        "codepoint": "U+9547"
+      }
+    ],
+    "status": "❌ 후보 모두 없음"
+  },
+  {
+    "korean_char": "鑛",
+    "korean_codepoint": "U+945B",
+    "candidates": [
+      "礦",
+      "矿"
+    ],
+    "found_in_hanzi_data": [],
+    "not_found_in_hanzi_data": [
+      {
+        "variant": "礦",
+        "codepoint": "U+7926"
+      },
+      {
+        "variant": "矿",
+        "codepoint": "U+77FF"
+      }
+    ],
+    "status": "❌ 후보 모두 없음"
+  },
+  {
+    "korean_char": "隷",
+    "korean_codepoint": "U+96B7",
+    "candidates": [
+      "隸",
+      "隶"
+    ],
+    "found_in_hanzi_data": [],
+    "not_found_in_hanzi_data": [
+      {
+        "variant": "隸",
+        "codepoint": "U+96B8"
+      },
+      {
+        "variant": "隶",
+        "codepoint": "U+96B6"
+      }
+    ],
+    "status": "❌ 후보 모두 없음"
+  },
+  {
+    "korean_char": "顔",
+    "korean_codepoint": "U+9854",
+    "candidates": [
+      "顏",
+      "颜"
+    ],
+    "found_in_hanzi_data": [],
+    "not_found_in_hanzi_data": [
+      {
+        "variant": "顏",
+        "codepoint": "U+984F"
+      },
+      {
+        "variant": "颜",
+        "codepoint": "U+989C"
+      }
+    ],
+    "status": "❌ 후보 모두 없음"
+  },
+  {
+    "korean_char": "飜",
+    "korean_codepoint": "U+98DC",
+    "candidates": [
+      "翻"
+    ],
+    "found_in_hanzi_data": [],
+    "not_found_in_hanzi_data": [
+      {
+        "variant": "翻",
+        "codepoint": "U+7FFB"
+      }
+    ],
+    "status": "❌ 후보 모두 없음"
+  },
+  {
+    "korean_char": "飮",
+    "korean_codepoint": "U+98EE",
+    "candidates": [
+      "飲",
+      "饮"
+    ],
+    "found_in_hanzi_data": [],
+    "not_found_in_hanzi_data": [
+      {
+        "variant": "飲",
+        "codepoint": "U+98F2"
+      },
+      {
+        "variant": "饮",
+        "codepoint": "U+996E"
+      }
+    ],
+    "status": "❌ 후보 모두 없음"
+  },
+  {
+    "korean_char": "鬪",
+    "korean_codepoint": "U+9B2A",
+    "candidates": [
+      "鬥",
+      "斗"
+    ],
+    "found_in_hanzi_data": [
+      {
+        "variant": "斗",
+        "codepoint": "U+6597",
+        "char_field": "斗",
+        "char_match": true
+      }
+    ],
+    "not_found_in_hanzi_data": [
+      {
+        "variant": "鬥",
+        "codepoint": "U+9B25"
+      }
+    ],
+    "status": "✅ 이체자 있음"
+  },
+  {
+    "korean_char": "𮕩",
+    "korean_codepoint": "U+2E569",
+    "candidates": [],
+    "found_in_hanzi_data": [],
+    "not_found_in_hanzi_data": [],
+    "status": "⚠️  후보 없음"
+  }
+]
