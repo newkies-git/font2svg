@@ -3,27 +3,42 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hanja Explorer</title>
+    <title>한자 필순·윤곽 검수기 · Chusa 1817</title>
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700;800&family=Noto+Serif+TC:wght@500;700&display=swap">
     <style>
         :root {
             --bg: #ffffff;
             --surface: #f8fafc;
-            --primary: #0284c7;
+            --primary: #004ac6;
             --text-main: #0f172a;
             --text-muted: #64748b;
             --border: #e2e8f0;
             --panel: #f1f5f9;
+            --font-text-stack: 'Pretendard Variable', 'Pretendard', 'Noto Sans KR', system-ui, -apple-system, sans-serif;
+            --hanja-font-stack: 'BiauKai', 'DFKai-SB', 'KaiTi', 'Kaiti TC', 'Noto Serif TC', serif;
+            color-scheme: light;
+            accent-color: var(--primary);
         }
 
         * { box-sizing: border-box; }
+
+        :focus-visible {
+            outline: 2px solid var(--primary);
+            outline-offset: 2px;
+        }
         
         body {
-            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            font-family: var(--font-text-stack);
             background-color: var(--bg);
             color: var(--text-main);
             margin: 0;
             display: flex;
-            height: 100vh;
+            min-height: 100dvh;
+            height: 100dvh;
             overflow: hidden;
         }
 
@@ -100,6 +115,7 @@
             flex-direction: column;
             align-items: center;
             color: var(--text-main);
+            font-family: inherit;
         }
 
         .char-card:hover {
@@ -112,10 +128,10 @@
             background: var(--primary);
             border-color: var(--primary);
             color: white;
-            box-shadow: 0 8px 20px rgba(2, 132, 199, 0.35);
+            box-shadow: 0 8px 20px rgba(0, 74, 198, 0.3);
         }
 
-        .char-card .glyph { font-size: 1.5rem; margin-bottom: 2px; }
+        .char-card .glyph { font-size: 1.5rem; margin-bottom: 2px; font-family: var(--hanja-font-stack); }
         .char-card .eum { font-size: 0.7rem; color: var(--text-muted); }
         .char-card.active .eum { color: rgba(255, 255, 255, 0.9); }
 
@@ -166,8 +182,8 @@
         }
 
         .stage {
-            width: 500px;
-            height: 500px;
+            width: min(500px, 85dvw);
+            height: min(500px, 85dvw);
             background: var(--bg);
             border-radius: 16px;
             overflow: visible;
@@ -603,7 +619,7 @@
             left: 40px;
             text-align: left;
         }
-        #char-info h2 { font-size: 3rem; margin: 0; }
+        #char-info h2 { font-size: 3rem; margin: 0; font-family: var(--hanja-font-stack); }
         #char-info p { color: var(--text-muted); margin: 4px 0; }
 
         .loader {
@@ -619,16 +635,27 @@
             animation: pulse 1.5s infinite;
         }
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+            }
+            .char-card:hover {
+                transform: none;
+            }
+        }
     </style>
 </head>
 <body>
 
     <aside class="sidebar">
         <div class="sidebar-header">
-            <h1>Hanja Explorer</h1>
+            <h1>한자 필순·윤곽 검수기</h1>
             <div class="search-box">
-                <span class="search-icon">🔍</span>
-                <input type="text" id="search-input" placeholder="한자 또는 음 검색...">
+                <span class="search-icon" aria-hidden="true">🔍</span>
+                <input type="search" id="search-input" aria-label="한자 또는 음 검색" placeholder="한자 또는 음 검색…">
             </div>
             <div class="sidebar-dataset-wrap">
                 <label for="dataset-select">데이터 폴더</label>
@@ -646,11 +673,11 @@
     </aside>
 
     <main class="main-content">
-        <div id="loader" class="loader">Loading data...</div>
+        <div id="loader" class="loader" role="status" aria-live="polite">데이터 불러오는 중…</div>
 
         <div id="char-info">
             <h2 id="display-char">-</h2>
-            <p id="display-eum">Select a character</p>
+            <p id="display-eum">좌측 목록에서 한자를 선택하세요.</p>
         </div>
 
         <div class="work-row">
@@ -709,9 +736,9 @@
                 <label class="outline-row-label">윤곽 누적</label>
                 <div class="outline-toolbar-col">
                     <div class="outline-step-row">
-                        <button type="button" class="btn-step" id="outline-prev" onclick="stepOutline(-1)" title="한 획 줄이기">&lt;</button>
-                        <span id="outline-step-label">-</span>
-                        <button type="button" class="btn-step" id="outline-next" onclick="stepOutline(1)" title="한 획 더하기">&gt;</button>
+                        <button type="button" class="btn-step" id="outline-prev" onclick="stepOutline(-1)" title="한 획 줄이기" aria-label="한 획 줄이기">&lt;</button>
+                        <span id="outline-step-label" aria-live="polite">-</span>
+                        <button type="button" class="btn-step" id="outline-next" onclick="stepOutline(1)" title="한 획 더하기" aria-label="한 획 더하기">&gt;</button>
                         <button type="button" class="btn-outline-text" id="outline-all" onclick="setOutlineStrokeCountToAll()" title="모든 획 표시">전체</button>
                         <button type="button" class="btn-outline-text" id="outline-clear" onclick="setOutlineStrokeCountToZero()" title="획 0(빈 윤곽)">초기화</button>
                     </div>
@@ -722,51 +749,51 @@
 
         <div class="toolbar">
             <div class="controls-row scale-control">
-                <label>Character Scale</label>
+                <label for="glyph-scale">글자 크기 배율</label>
                 <input type="range" id="glyph-scale" min="0.5" max="1.0" step="0.01" value="0.9" oninput="updateGlyphScale(this.value)">
                 <span id="scale-val">0.90x</span>
             </div>
             <div class="controls-row opacity-control">
-                <label>Font Opacity</label>
+                <label for="font-opacity">배경 윤곽 투명도</label>
                 <input type="range" id="font-opacity" min="0" max="1.0" step="0.01" value="0.15" oninput="updateFontOpacity(this.value)">
                 <span id="opacity-val">15%</span>
             </div>
             <div class="controls-row offset-control">
-                <label class="outline-row-label">Vertical Offset</label>
+                <span class="outline-row-label">세로 위치 보정</span>
                 <div class="offset-sliders-col">
                     <div class="offset-slider-row">
-                        <span class="offset-source-label">메인</span>
+                        <label for="vertical-offset" class="offset-source-label">메인</label>
                         <input type="number" class="offset-spin" id="vertical-offset" min="700" max="1000" step="1" value="700" inputmode="numeric"
                             oninput="onVerticalOffsetSpinInput(this)" onchange="onVerticalOffsetSpinChange(this)">
                     </div>
                     <div class="offset-slider-row">
-                        <span class="offset-source-label">opnemind_data</span>
+                        <label for="vertical-offset-opnemind_data" class="offset-source-label">opnemind_data</label>
                         <input type="number" class="offset-spin" id="vertical-offset-opnemind_data" min="700" max="1000" step="1" value="700" inputmode="numeric"
                             oninput="onCompareVerticalOffsetSpinInput('opnemind_data', this)" onchange="onCompareVerticalOffsetSpinChange('opnemind_data', this)">
                     </div>
                     <div class="offset-slider-row">
-                        <span class="offset-source-label">biaukai_data</span>
+                        <label for="vertical-offset-biaukai_data" class="offset-source-label">biaukai_data</label>
                         <input type="number" class="offset-spin" id="vertical-offset-biaukai_data" min="700" max="1000" step="1" value="700" inputmode="numeric"
                             oninput="onCompareVerticalOffsetSpinInput('biaukai_data', this)" onchange="onCompareVerticalOffsetSpinChange('biaukai_data', this)">
                     </div>
                     <div class="offset-slider-row">
-                        <span class="offset-source-label">hanzi_data</span>
+                        <label for="vertical-offset-hanzi_data" class="offset-source-label">hanzi_data</label>
                         <input type="number" class="offset-spin" id="vertical-offset-hanzi_data" min="700" max="1000" step="1" value="870" inputmode="numeric"
                             oninput="onCompareVerticalOffsetSpinInput('hanzi_data', this)" onchange="onCompareVerticalOffsetSpinChange('hanzi_data', this)">
                     </div>
                 </div>
             </div>
             <div class="controls-row display-mode-row">
-                <label class="outline-row-label">표시</label>
+                <span class="outline-row-label">표시</span>
                 <div class="display-mode-buttons">
-                    <button type="button" class="btn-outline-text btn-display-mode display-mode-active" id="btn-display-fill" onclick="setGlyphDisplayMode('fill')" title="면으로 채우기">면</button>
-                    <button type="button" class="btn-outline-text btn-display-mode" id="btn-display-stroke" onclick="setGlyphDisplayMode('stroke')" title="윤곽선만">윤곽</button>
+                    <button type="button" class="btn-outline-text btn-display-mode display-mode-active" id="btn-display-fill" aria-pressed="true" onclick="setGlyphDisplayMode('fill')" title="면으로 채우기">면</button>
+                    <button type="button" class="btn-outline-text btn-display-mode" id="btn-display-stroke" aria-pressed="false" onclick="setGlyphDisplayMode('stroke')" title="윤곽선만">윤곽</button>
                 </div>
             </div>
             <div class="controls-row">
-                <label class="outline-row-label">폴더 비교</label>
+                <span class="outline-row-label">폴더 비교</span>
                 <div class="outline-toolbar-col">
-                    <button type="button" class="btn-outline-text" id="btn-compare-toggle" onclick="toggleCompareMode()" title="체크한 데이터 폴더끼리 같은 글자를 하나의 viewBox에 겹쳐 표시합니다">비교 모드</button>
+                    <button type="button" class="btn-outline-text" id="btn-compare-toggle" aria-pressed="false" onclick="toggleCompareMode()" title="체크한 데이터 폴더끼리 같은 글자를 하나의 viewBox에 겹쳐 표시합니다">비교 모드</button>
                     <div class="compare-legend compare-picks" id="compare-legend">
                         <label class="compare-pick dot opnemind_data" id="legend-opnemind_data">
                             <input type="checkbox" id="compare-sel-opnemind_data" data-compare-folder="opnemind_data" checked onchange="onCompareSelectionChange()">
@@ -921,6 +948,7 @@
             if (scaler) scaler.classList.toggle('compare-on', compareMode);
             if (btn) {
                 btn.classList.toggle('compare-active', compareMode);
+                btn.setAttribute('aria-pressed', String(compareMode));
                 btn.textContent = compareMode ? '비교 모드 해제' : '비교 모드';
             }
 
@@ -1109,6 +1137,8 @@
             layers.classList.add(isStroke ? 'glyph-display-stroke' : 'glyph-display-fill');
             fillBtn.classList.toggle('display-mode-active', !isStroke);
             strokeBtn.classList.toggle('display-mode-active', isStroke);
+            fillBtn.setAttribute('aria-pressed', String(!isStroke));
+            strokeBtn.setAttribute('aria-pressed', String(isStroke));
             window.glyphDisplayMode = isStroke ? 'stroke' : 'fill';
             updateVisibility();
         }
@@ -1339,6 +1369,10 @@
         function setupSearch() {
             const input = document.getElementById('search-input');
             input.addEventListener('input', (e) => {
+                if (e.isComposing) return;
+                renderResults(e.target.value);
+            });
+            input.addEventListener('compositionend', (e) => {
                 renderResults(e.target.value);
             });
         }
@@ -1352,9 +1386,12 @@
                 .slice(0, 100);
 
             filtered.forEach((c) => {
-                const card = document.createElement('div');
+                const isActive = Boolean(currentCharacterObj && c.한자 === currentCharacterObj.한자);
+                const card = document.createElement('button');
+                card.type = 'button';
                 card.className = 'char-card';
-                if (currentCharacterObj && c.한자 === currentCharacterObj.한자) card.classList.add('active');
+                card.setAttribute('aria-pressed', String(isActive));
+                if (isActive) card.classList.add('active');
                 
                 card.innerHTML = `
                     <div class="glyph">${c.한자}</div>
@@ -1371,7 +1408,9 @@
             document.getElementById('display-eum').innerText = `음: ${charObj.음} (ID: ${charObj.id})`;
 
             document.querySelectorAll('.char-card').forEach((card) => {
-                card.classList.toggle('active', card.querySelector('.glyph').innerText === charObj.한자);
+                const isMatch = card.querySelector('.glyph').innerText === charObj.한자;
+                card.classList.toggle('active', isMatch);
+                card.setAttribute('aria-pressed', String(isMatch));
             });
 
             await loadCharData(charObj.한자);
