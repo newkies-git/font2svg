@@ -12,3 +12,4 @@
 | `docs/` | 구현 가이드([`docs/implementation.md`](docs/implementation.md)) 및 운영 절차([`docs/procedures.md`](docs/procedures.md)) |
 | `opnemind_data/`, `biaukai_data/`, `hanzi_data/` | 글자별 추출/정제 완료된 JSON 데이터셋 |
 | `font_data_missing/` | 누락 및 이체자 대조 리포트 |
+
