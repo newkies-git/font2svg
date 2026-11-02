@@ -30,10 +30,10 @@
 - 형식: `{"id": "고유ID", "한자": "한자글자", "음": "소리"}`
 
 ### 2단계: 폰트 윤곽선 일괄 추출
-- `font_extractor.py`를 실행하여 폰트 파일에서 벡터 데이터를 추출합니다. 대상 한자는 **`--input`(기본 `input.json`)** 의 `한자` 필드에서 읽습니다.
+- `scripts/font_extractor.py`를 실행하여 폰트 파일에서 벡터 데이터를 추출합니다. 대상 한자는 **`--input`(기본 `input.json`)** 의 `한자` 필드에서 읽습니다.
 - **예시** (`--outdir`에 한자별 JSON 생성):
   ```bash
-  ./venv/bin/python font_extractor.py --input input.json --font NotoSerifKR-Regular.ttf --outdir font_ext_data
+  ./venv/bin/python scripts/font_extractor.py --input input.json --font NotoSerifKR-Regular.ttf --outdir font_ext_data
   ```
 - `--outdir`를 생략하면 기본 **`font_ext_data`**에 씁니다. `animator.html`이 읽는 `opnemind_data` 등과 다를 수 있으므로, 필요하면 복사·동기화하거나 `--outdir`로 애니메이터용 폴더를 직접 지정합니다.
 - **TTC 폰트**(예: BiauKai): `--font-family` 또는 `--font-index`, 면 목록은 `--list-faces`.
@@ -48,15 +48,15 @@
 - 접속 주소: `http://localhost:8000/animator.html`
 
 ### 4단계 (선택): `hanzi_fetch`를 hanzi-writer-data로 채우기
-- 스크립트: 저장소 루트의 [`fetch_hanzi_writer_to_data2.py`](fetch_hanzi_writer_to_data2.py) 를 실행합니다.
+- 스크립트: [`scripts/fetch_hanzi_writer_to_data2.py`](../scripts/fetch_hanzi_writer_to_data2.py) 를 실행합니다.
 - `input.json`에 등록된 **한자**마다 CDN  
   `https://cdn.jsdelivr.net/npm/hanzi-writer-data@2.0/{한자}.json`  
-  을 조회하고, 결과를 애니메이터용 한자 JSON(예: [`opnemind_data/佳.json`](opnemind_data/佳.json))과 동일한 JSON 스키마(`char`, `radical`, `font_outline`, `stroke_outlines`)로 **`hanzi_fetch/`**에 저장합니다.
+  을 조회하고, 결과를 애니메이터용 한자 JSON(예: [`opnemind_data/佳.json`](../opnemind_data/佳.json))과 동일한 JSON 스키마(`char`, `radical`, `font_outline`, `stroke_outlines`)로 **`hanzi_fetch/`**에 저장합니다.
 - **`hanzi_fetch/{한자}.json`이 이미 있으면 덮어쓰지 않고 건너뜁니다.**
 - `--outdir`를 생략하면 기본 **`hanzi_fetch`**입니다. 사이드바의 `biaukai_data` 등 다른 폴더에 넣으려면 `--outdir`로 지정하거나 이후에 파일을 옮깁니다.
 - 패키지에 없는 글자는 404로 파일이 생기지 않습니다(로그에 `MISS` 출력).
 ```bash
-./venv/bin/python -u fetch_hanzi_writer_to_data2.py
+./venv/bin/python -u scripts/fetch_hanzi_writer_to_data2.py
 # 옵션: --delay 0.02 (요청 간격 초), --dry-run
 ```
 

@@ -8,7 +8,7 @@ hanzi_data에 없는 한국 표준 이체자들의
 import json
 import pathlib
 
-BASE       = pathlib.Path("/Users/yutaek/zWorkSpace/zBasis/font2svg")
+BASE       = pathlib.Path(__file__).resolve().parent.parent
 HANZI_DIR  = BASE / "hanzi_data"
 OUT_DIR    = BASE / "font_data_missing"
 OUT_DIR.mkdir(exist_ok=True)

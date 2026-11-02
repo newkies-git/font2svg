@@ -11,7 +11,7 @@ input.json의 '한자' 목록을 기준으로
 import json
 import pathlib
 
-BASE        = pathlib.Path("/Users/yutaek/zWorkSpace/zBasis/font2svg")
+BASE        = pathlib.Path(__file__).resolve().parent.parent
 INPUT_JSON  = BASE / "input.json"
 BIAUKAI_DIR = BASE / "biaukai_data"
 HANZI_DIR   = BASE / "hanzi_data"
