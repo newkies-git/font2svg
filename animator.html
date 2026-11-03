@@ -637,7 +637,7 @@
             font-weight: 600;
         }
         .scale-control input, .opacity-control input { flex: 1; accent-color: var(--primary); }
-        .scale-control span, .opacity-control span { min-width: 50px; font-variant-numeric: tabular-nums; font-weight: 600; color: var(--primary); }
+        .scale-control output, .opacity-control output { min-width: 50px; font-variant-numeric: tabular-nums; font-weight: 600; color: var(--primary); }
 
         #char-info {
             position: absolute;
@@ -720,7 +720,7 @@
 </head>
 <body>
 
-    <aside class="sidebar">
+    <aside class="sidebar" aria-label="한자 검색 및 데이터셋 선택">
         <div class="sidebar-header">
             <h1>한자 필순·윤곽 검수기</h1>
             <div class="search-box">
@@ -742,7 +742,7 @@
         <div id="results-grid"></div>
     </aside>
 
-    <main class="main-content">
+    <main id="main-workspace" class="main-content" aria-label="한자 필순 및 윤곽 작업 공간" aria-busy="false">
         <div id="loader" class="loader" role="status" aria-live="polite">데이터 불러오는 중…</div>
         <div id="toast-notice" class="toast-notice" role="status" aria-live="polite"></div>
 
@@ -822,12 +822,12 @@
             <div class="controls-row scale-control">
                 <label for="glyph-scale">글자 크기 배율</label>
                 <input type="range" id="glyph-scale" min="0.5" max="1.0" step="0.01" value="0.9" oninput="updateGlyphScale(this.value)">
-                <span id="scale-val">0.90x</span>
+                <output id="scale-val" for="glyph-scale">0.90x</output>
             </div>
             <div class="controls-row opacity-control">
                 <label for="font-opacity">배경 윤곽 투명도</label>
                 <input type="range" id="font-opacity" min="0" max="1.0" step="0.01" value="0.15" oninput="updateFontOpacity(this.value)">
-                <span id="opacity-val">15%</span>
+                <output id="opacity-val" for="font-opacity">15%</output>
             </div>
             <div class="controls-row offset-control">
                 <span class="outline-row-label">세로 위치 보정</span>
@@ -1191,9 +1191,11 @@
             if (!char) return;
 
             const loader = document.getElementById('loader');
+            const workspace = document.getElementById('main-workspace');
             const btn = document.getElementById('btn-refresh-data');
             if (btn) btn.disabled = true;
             if (loader) loader.style.display = 'block';
+            if (workspace) workspace.setAttribute('aria-busy', 'true');
 
             try {
                 const url = `${currentDataDir}/${char}.json?t=${Date.now()}`;
@@ -1215,6 +1217,7 @@
                 showToastNotice(`'${currentDataDir}/${char}.json' 파일을 새로 고침하지 못했습니다. 파일 경로와 서버 상태를 확인하세요.`, 'error');
             } finally {
                 if (loader) loader.style.display = 'none';
+                if (workspace) workspace.setAttribute('aria-busy', 'false');
                 updateRefreshDataButtonState();
             }
         }
@@ -1516,7 +1519,9 @@
 
         async function loadCharData(char) {
             const loader = document.getElementById('loader');
+            const workspace = document.getElementById('main-workspace');
             loader.style.display = 'block';
+            if (workspace) workspace.setAttribute('aria-busy', 'true');
 
             const cache = getCharacterCache();
             let data = cache[char];
@@ -1529,6 +1534,7 @@
                 } catch (err) {
                     console.error(err);
                     loader.style.display = 'none';
+                    if (workspace) workspace.setAttribute('aria-busy', 'false');
                     const empty = { font_outline: [], stroke_outlines: [] };
                     renderGlyph(empty);
                     buildOrderEditRows({ stroke_outlines: [] });
@@ -1541,6 +1547,7 @@
             buildOrderEditRows(data);
             if (compareMode) await loadCompareData();
             loader.style.display = 'none';
+            if (workspace) workspace.setAttribute('aria-busy', 'false');
         }
 
         function renderGlyph(data) {
