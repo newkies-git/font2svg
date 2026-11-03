@@ -77,7 +77,7 @@
 
         #search-input:focus {
             border-color: var(--primary);
-            box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.15);
+            box-shadow: 0 0 0 3px rgba(0, 74, 198, 0.15);
             background: white;
         }
 
@@ -93,6 +93,8 @@
         #results-grid {
             flex: 1;
             overflow-y: auto;
+            scrollbar-width: thin;
+            scrollbar-color: #cbd5e1 transparent;
             padding: 12px;
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
@@ -102,6 +104,26 @@
 
         #results-grid::-webkit-scrollbar { width: 6px; }
         #results-grid::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
+        }
+
+        .empty-results {
+            grid-column: 1 / -1;
+            padding: 24px 12px;
+            text-align: center;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
 
         .char-card {
             background: #ffffff;
@@ -220,7 +242,7 @@
         #glyph-scaler.compare-on #glyph-layers #glyph-main { display: none; }
 
         #glyph-compare-opnemind_data  { fill: #64748b; fill-opacity: 0.55; }
-        #glyph-compare-biaukai_data { fill: #0284c7; fill-opacity: 0.55; }
+        #glyph-compare-biaukai_data { fill: var(--primary); fill-opacity: 0.55; }
         #glyph-compare-hanzi_data { fill: #d97706; fill-opacity: 0.55; }
 
         .compare-legend {
@@ -246,7 +268,7 @@
             opacity: 0.7;
         }
         .compare-legend .dot.opnemind_data   { color: #64748b; }
-        .compare-legend .dot.biaukai_data  { color: #0284c7; }
+        .compare-legend .dot.biaukai_data  { color: var(--primary); }
         .compare-legend .dot.hanzi_data { color: #d97706; }
         .compare-legend .dot.missing { opacity: 0.35; text-decoration: line-through; }
         .compare-legend.compare-picks {
@@ -272,7 +294,7 @@
         .btn-outline-text.compare-active {
             border-color: var(--primary);
             color: var(--primary);
-            background: rgba(2, 132, 199, 0.1);
+            background: rgba(0, 74, 198, 0.1);
         }
 
         .display-mode-row .outline-row-label {
@@ -288,7 +310,7 @@
         .btn-display-mode.display-mode-active {
             border-color: var(--primary);
             color: var(--primary);
-            background: rgba(2, 132, 199, 0.1);
+            background: rgba(0, 74, 198, 0.1);
         }
 
         .grid-line { stroke: #cbd5e1; stroke-width: 1; opacity: 0.9; }
@@ -443,6 +465,8 @@
             width: 100%;
             max-height: 280px;
             overflow: auto;
+            scrollbar-width: thin;
+            scrollbar-color: #cbd5e1 transparent;
             padding: 0;
             border-radius: 10px;
             border: 1px solid var(--border);
@@ -525,7 +549,7 @@
         .order-edit-table .order-change-input:focus {
             outline: none;
             border-color: var(--primary);
-            box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.15);
+            box-shadow: 0 0 0 2px rgba(0, 74, 198, 0.15);
         }
         .order-edit-hint {
             display: block;
@@ -602,7 +626,7 @@
         .offset-slider-row input.offset-spin:focus {
             outline: none;
             border-color: var(--primary);
-            box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.2);
+            box-shadow: 0 0 0 2px rgba(0, 74, 198, 0.2);
         }
         .scale-control label, .opacity-control label {
             min-width: 100px;
@@ -684,7 +708,7 @@
         <div class="stage-column">
         <div class="stage-container">
             <div class="stage">
-                <svg viewBox="-500 -500 1000 1000" style="overflow: visible;">
+                <svg viewBox="-500 -500 1000 1000" role="img" aria-label="한자 윤곽 및 필순 캔버스" style="overflow: visible;">
                     <g id="grid-layer">
                         <path class="grid-line" d="M -500 -400 L 500 -400 M -500 -300 L 500 -300 M -500 -200 L 500 -200 M -500 -100 L 500 -100 M -500 100 L 500 100 M -500 200 L 500 200 M -500 300 L 500 300 M -500 400 L 500 400"></path>
                         <path class="grid-line" d="M -400 -500 L -400 500 M -300 -500 L -300 500 M -200 -500 L -200 500 M -100 -500 L -100 500 M 100 -500 L 100 500 M 200 -500 L 200 500 M 300 -500 L 300 500 M 400 -500 L 400 500"></path>
@@ -733,7 +757,7 @@
             </div>
         </div>
             <div class="controls-row outline-below-viewbox">
-                <label class="outline-row-label">윤곽 누적</label>
+                <span class="outline-row-label">윤곽 누적</span>
                 <div class="outline-toolbar-col">
                     <div class="outline-step-row">
                         <button type="button" class="btn-step" id="outline-prev" onclick="stepOutline(-1)" title="한 획 줄이기" aria-label="한 획 줄이기">&lt;</button>
@@ -811,7 +835,7 @@
                 </div>
             </div>
             <div class="controls-row order-edit-controls-row">
-                <label class="outline-row-label">order (획 순서)</label>
+                <span class="outline-row-label">획 순서 · 부수</span>
                 <div class="outline-toolbar-col">
                     <div id="order-edit-list"></div>
                     <div class="order-edit-actions">
@@ -1017,15 +1041,19 @@
 
             const table = document.createElement('table');
             table.className = 'order-edit-table';
+            const caption = document.createElement('caption');
+            caption.className = 'sr-only';
+            caption.textContent = '획 순서 및 부수 편집 표';
+            table.appendChild(caption);
             const thead = document.createElement('thead');
             thead.innerHTML = `
                 <tr>
                     <th scope="col">#</th>
-                    <th scope="col">order 현재</th>
-                    <th scope="col">order 변경</th>
-                    <th scope="col">path</th>
-                    <th scope="col">radical 현재</th>
-                    <th scope="col">부수 획</th>
+                    <th scope="col">현재 순서</th>
+                    <th scope="col">순서 변경</th>
+                    <th scope="col">획 모양</th>
+                    <th scope="col">현재 부수</th>
+                    <th scope="col">부수 지정</th>
                 </tr>
             `;
             const tbody = document.createElement('tbody');
@@ -1044,13 +1072,13 @@
                     <td class="col-idx">${index + 1}</td>
                     <td class="col-order-current"><strong>${currentOrder}</strong></td>
                     <td class="col-order-change">
-                        <input type="number" step="1" class="order-change-input" value="${currentOrder}" data-idx="${index}" aria-label="order 변경 행 ${index + 1}">
+                        <input type="number" step="1" class="order-change-input" value="${currentOrder}" data-idx="${index}" aria-label="순서 변경 행 ${index + 1}">
                     </td>
                     <td class="col-path" title="${pathEscaped}">${pathSvg}</td>
                     <td class="col-radical-current"><strong>${radShown}</strong></td>
                     <td class="col-radical-cell">
                         <label class="order-radical-wrap">
-                            <input type="checkbox" class="order-radical-cb" data-idx="${index}" ${radChecked} title="부수 획: 적용 시 radical을 숫자 1(참) 또는 0(거짓)으로 저장합니다." aria-label="부수 획 행 ${index + 1}">
+                            <input type="checkbox" class="order-radical-cb" data-idx="${index}" ${radChecked} title="부수 획: 적용 시 radical을 숫자 1(참) 또는 0(거짓)으로 저장합니다." aria-label="부수 지정 행 ${index + 1}">
                         </label>
                     </td>
                 `;
@@ -1384,6 +1412,11 @@
             const filtered = allCharacters
                 .filter((c) => c.한자.includes(query) || (c.음 && c.음.includes(query)))
                 .slice(0, 100);
+
+            if (filtered.length === 0) {
+                grid.innerHTML = '<p class="empty-results">검색 결과가 없습니다.</p>';
+                return;
+            }
 
             filtered.forEach((c) => {
                 const isActive = Boolean(currentCharacterObj && c.한자 === currentCharacterObj.한자);
