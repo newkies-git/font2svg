@@ -138,6 +138,8 @@
             align-items: center;
             color: var(--text-main);
             font-family: inherit;
+            content-visibility: auto;
+            contain-intrinsic-size: 60px 64px;
         }
 
         .char-card:hover {
@@ -657,8 +659,52 @@
             font-size: 0.8rem;
             display: none;
             animation: pulse 1.5s infinite;
+            z-index: 50;
         }
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+
+        .toast-notice {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            max-width: min(24rem, calc(100dvw - 2rem));
+            padding: 10px 16px;
+            border-radius: 12px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            line-height: 1.4;
+            box-shadow: 0 10px 28px rgba(15, 23, 42, 0.14);
+            display: none;
+            z-index: 60;
+        }
+        .toast-notice.toast-success {
+            background: #f0fdf4;
+            border: 1px solid #bbf7d0;
+            color: #14532d;
+        }
+        .toast-notice.toast-error {
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            color: #7f1d1d;
+        }
+
+        @media (max-width: 900px) {
+            body {
+                flex-direction: column;
+                height: auto;
+                overflow: auto;
+            }
+            .sidebar {
+                width: 100%;
+                max-height: 42dvh;
+                border-right: none;
+                border-bottom: 1px solid var(--border);
+            }
+            .main-content {
+                padding: 20px 16px;
+                overflow: visible;
+            }
+        }
 
         @media (prefers-reduced-motion: reduce) {
             *, *::before, *::after {
@@ -698,6 +744,7 @@
 
     <main class="main-content">
         <div id="loader" class="loader" role="status" aria-live="polite">데이터 불러오는 중…</div>
+        <div id="toast-notice" class="toast-notice" role="status" aria-live="polite"></div>
 
         <div id="char-info">
             <h2 id="display-char">-</h2>
@@ -1025,14 +1072,14 @@
             });
 
             if (arr.length === 0) {
-                list.innerHTML = '<span class="order-edit-hint">stroke_outlines가 없습니다. font_outline만 사용 중입니다.</span>';
+                list.innerHTML = '<span class="order-edit-hint">획별 윤곽 데이터(stroke_outlines)가 없습니다. 전체 윤곽(font_outline)만 사용 중입니다.</span>';
                 if (applyBtn) applyBtn.disabled = true;
                 return;
             }
 
             if (objectRows.length === 0) {
                 list.innerHTML =
-                    '<span class="order-edit-hint">stroke_outlines가 문자열 배열이면 order를 여기서 바꿀 수 없습니다.</span>';
+                    '<span class="order-edit-hint">획별 윤곽 데이터가 문자열 배열 형식이어서 순서를 편집할 수 없습니다.</span>';
                 if (applyBtn) applyBtn.disabled = true;
                 return;
             }
@@ -1090,6 +1137,21 @@
             list.appendChild(table);
         }
 
+        let toastHideTimer = null;
+
+        function showToastNotice(message, type = 'success') {
+            const toast = document.getElementById('toast-notice');
+            if (!toast) return;
+            if (toastHideTimer) clearTimeout(toastHideTimer);
+            toast.className = `toast-notice toast-${type}`;
+            toast.setAttribute('role', type === 'error' ? 'alert' : 'status');
+            toast.textContent = message;
+            toast.style.display = 'block';
+            toastHideTimer = setTimeout(() => {
+                toast.style.display = 'none';
+            }, 3200);
+        }
+
         function applyStrokeOutlineOrders() {
             const char = currentCharacterObj && currentCharacterObj.한자;
             if (!char) return;
@@ -1121,6 +1183,7 @@
 
             renderGlyph(data);
             buildOrderEditRows(data);
+            showToastNotice('획 순서와 부수 설정을 캔버스에 반영했습니다.');
         }
 
         async function refreshCurrentCharData() {
@@ -1146,9 +1209,10 @@
                     });
                     await loadCompareData();
                 }
+                showToastNotice(`'${currentDataDir}/${char}.json' 데이터를 새로 불러왔습니다.`);
             } catch (err) {
                 console.error(err);
-                window.alert(`'${currentDataDir}/${char}.json' 를 새로 고침하지 못했습니다. 파일 경로와 서버 실행 여부를 확인하세요.`);
+                showToastNotice(`'${currentDataDir}/${char}.json' 파일을 새로 고침하지 못했습니다. 파일 경로와 서버 상태를 확인하세요.`, 'error');
             } finally {
                 if (loader) loader.style.display = 'none';
                 updateRefreshDataButtonState();
