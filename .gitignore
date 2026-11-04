@@ -22,3 +22,9 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
+
+# Node & SQLite workspace
+node_modules/
+app/dist/
+*.db-wal
+*.db-shm
