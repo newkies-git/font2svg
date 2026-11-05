@@ -142,7 +142,7 @@ async function openChar(row: CharacterSummary) {
     }))
     shown.value = strokes.value.length
     reveal.value = 1
-    message.value = [detail.char, detail.reading, detail.origin, detail.origin_url, detail.status].filter(Boolean).join(' · ')
+    message.value = [detail.char, detail.reading, detail.origin, detail.origin_url].filter(Boolean).join(' · ')
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : '한자 상세 정보 조회 실패: 잠시 후 다시 시도하세요.'
   } finally {
@@ -475,7 +475,7 @@ onBeforeUnmount(() => {
                 <span>{{ row.reading }}</span>
                 <span>{{ row.unicode }}</span>
               </span>
-              <span class="badge" :class="{ done: row.status === 'DONE' }">
+              <span class="badge">
                 {{ row.stroke_count }}획
               </span>
             </button>

@@ -1,6 +1,5 @@
 export type Pt = [number, number]
 
-export type CharStatus = 'TODO' | 'AUTO_MATCHED' | 'AI_ASSISTED' | 'ISSUE' | 'DONE'
 export type RefSource = 'MMH' | 'IDS' | 'OLLAMA_IDS' | 'MANUAL' | 'NONE'
 export type CapType = 'NONE' | 'AUTO_ROUND' | 'REF_STAMP'
 export type BackgroundMode = 'outline' | 'silhouette' | 'none'
@@ -17,7 +16,6 @@ export type CharacterSummary = {
   unicode: string
   char: string
   grade: string | null
-  status: CharStatus
   issue_reason: string | null
   origin: RefSource
   reading: string | null
@@ -64,7 +62,6 @@ export type CharacterDetail = {
   unicode: string
   char: string
   grade: string | null
-  status: CharStatus
   issue_reason: string | null
   reading: string | null
   meaning: string | null

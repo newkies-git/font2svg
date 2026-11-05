@@ -38,8 +38,6 @@ const FONT_FILE = path.join('app', 'fonts', 'Gungseouche.ttf')
 const KIBIBYTE = 1024
 const FETCH_LIMIT = 512 * KIBIBYTE
 
-const KR_ORDER_REVIEW = new Set(['必', '右', '有', '布', '左', '王', '玉', '主', '生', '靑', '青', '火', '爲', '為', '登', '發', '皮', '馬', '門', '臣', '母', '舟', '車', '戈', '成', '我', '感'])
-
 const IDS_URL = 'https://www.babelstone.co.uk/CJK/IDS.TXT'
 const IDS_FILE = path.join('database', 'IDS.TXT')
 const IDS_HEADER = 'Ideographic Description Sequences'
@@ -103,7 +101,7 @@ function createWorkspace(rootDir: string) {
   function listCharacters(query: string) {
     const q = query.trim()
     const rows = db.prepare(`
-      SELECT c.unicode, c.char, c.grade, c.status, i.reason AS issue_reason, COALESCE(s.origin, 'NONE') AS origin,
+      SELECT c.unicode, c.char, c.grade, i.reason AS issue_reason, COALESCE(s.origin, 'NONE') AS origin,
              c.reading, c.meaning, c.stroke_count, c.last_modified_at, c.last_modified_by
       FROM characters c
       LEFT JOIN issues i ON i.char = c.char
@@ -234,7 +232,7 @@ function createWorkspace(rootDir: string) {
         }
       }), ACTOR_USER)
       db.prepare(`
-        UPDATE characters SET stroke_count = ?, status = CASE WHEN status = 'DONE' THEN 'AUTO_MATCHED' ELSE status END, last_modified_by = ?
+        UPDATE characters SET stroke_count = ?, last_modified_by = ?
         WHERE unicode = ?
       `).run(strokes.length, ACTOR_USER, unicode)
       db.exec('COMMIT')
@@ -306,7 +304,6 @@ function createWorkspace(rootDir: string) {
     }
     const [origin, originUrl] = IDS_ORIGINS[composed.source]
     saveImported(unicode, origin, originUrl, [], fontOrGiven(character.char, composed.medians, []))
-    db.prepare(`UPDATE characters SET status = 'AI_ASSISTED', last_modified_by = ? WHERE unicode = ?`).run(ACTOR_IDS, unicode)
     return { unicode, source: composed.source, fetched: true }
   }
 
@@ -346,7 +343,7 @@ function createWorkspace(rootDir: string) {
       strokeWidths: strokes.map((stroke) => stroke.stroke_width),
       source: { outline: String(detail.origin_url || detail.origin), medians: String(detail.origin_url || detail.origin) },
     }
-    db.prepare(`UPDATE characters SET status = 'AUTO_MATCHED', last_modified_by = ? WHERE unicode = ?`).run(ACTOR_USER, unicode)
+    db.prepare('UPDATE characters SET last_modified_by = ? WHERE unicode = ?').run(ACTOR_USER, unicode)
     clearIssue(unicode)
     const file = charFile(compiledDir, String(detail.char))
     fs.writeFileSync(file, `${JSON.stringify(compiled)}\n`)
@@ -355,18 +352,6 @@ function createWorkspace(rootDir: string) {
 
   function listRadicals() {
     return db.prepare('SELECT id, radical_char, variant_chars, name_kr, stroke_count FROM radicals ORDER BY id').all()
-  }
-
-  function setStatus(unicode: string, status: string) {
-    const row = db.prepare('SELECT char FROM characters WHERE unicode = ?').get(unicode) as { char: string } | undefined
-    if (!row) throw new Error('등록되지 않은 글자입니다.')
-    if (!['TODO', 'AUTO_MATCHED', 'AI_ASSISTED', 'ISSUE', 'DONE'].includes(status)) throw new Error('알 수 없는 상태입니다.')
-    if (status === 'DONE' && KR_ORDER_REVIEW.has(row.char)) {
-      throw new Error('한국 필순 검수가 필요한 글자는 검수 전 완료로 둘 수 없습니다.')
-    }
-    db.prepare('UPDATE characters SET status = ?, last_modified_by = ? WHERE unicode = ?').run(status, ACTOR_USER, unicode)
-    clearIssue(unicode)
-    return getCharacter(unicode)
   }
 
   function importInitial(entries: unknown) {
@@ -378,15 +363,16 @@ function createWorkspace(rootDir: string) {
     db.exec('BEGIN')
     try {
       const insertChar = db.prepare(`
-        INSERT INTO characters (unicode, char, reading, status, stroke_count, last_modified_by)
-        VALUES (?, ?, ?, 'TODO', 0, ?)
+        INSERT INTO characters (unicode, char, grade, reading, meaning, stroke_count, last_modified_by)
+        VALUES (?, ?, ?, ?, ?, 0, ?)
       `)
       for (const entry of entries) {
         if (!entry || typeof entry !== 'object') continue
         const char = String((entry as { 한자?: unknown }).한자 ?? '').trim()
         if ([...char].length !== 1 || seen.has(char)) continue
         seen.add(char)
-        insertChar.run(unicodeOf(char), char, String((entry as { 음?: unknown }).음 ?? ''), ACTOR_USER)
+        const { 구분, 음, 훈 } = entry as { 구분?: unknown; 음?: unknown; 훈?: unknown }
+        insertChar.run(unicodeOf(char), char, 구분 ? String(구분) : null, String(음 ?? ''), 훈 ? String(훈) : null, ACTOR_USER)
         imported += 1
       }
       if (imported === 0) throw new Error('올릴 글자가 없습니다. 한자 한 글자와 음이 있는 목록이어야 합니다.')
@@ -398,7 +384,7 @@ function createWorkspace(rootDir: string) {
     return { imported }
   }
 
-  return { listCharacters, getCharacter, updateStrokes, undo, ensureReference, syncMissing, applyFontBatch, compile, listRadicals, setStatus, importInitial }
+  return { listCharacters, getCharacter, updateStrokes, undo, ensureReference, syncMissing, applyFontBatch, compile, listRadicals, importInitial }
 
   async function loadSource<T>(unicode: string, source: 'MMH', url: string, fetchFresh: () => Promise<Remote<T>>): Promise<Remote<T> | null> {
     const cached = db.prepare('SELECT found, raw_data, source_url FROM reference_data WHERE unicode = ? AND source = ?')
@@ -508,7 +494,7 @@ function createWorkspace(rootDir: string) {
   }
 
   function setIssue(unicode: string, reason: string, by: string) {
-    db.prepare(`UPDATE characters SET status = 'ISSUE', last_modified_by = ? WHERE unicode = ?`).run(by, unicode)
+    db.prepare('UPDATE characters SET last_modified_by = ? WHERE unicode = ?').run(by, unicode)
     db.prepare(`
       INSERT INTO issues (char, reason) SELECT char, ? FROM characters WHERE unicode = ?
       ON CONFLICT(char) DO UPDATE SET reason = excluded.reason, created_at = CURRENT_TIMESTAMP
@@ -533,7 +519,7 @@ function createWorkspace(rootDir: string) {
         start_cap_type: 'NONE',
         end_cap_type: 'NONE',
       })), by, { source, url }, fontOutline)
-      db.prepare(`UPDATE characters SET stroke_count = ?, status = 'AUTO_MATCHED', last_modified_by = ? WHERE unicode = ?`)
+      db.prepare('UPDATE characters SET stroke_count = ?, last_modified_by = ? WHERE unicode = ?')
         .run(medians.length, by, unicode)
       clearIssue(unicode)
       db.exec('COMMIT')
@@ -632,7 +618,6 @@ function charactersDdl(name: string): string {
       unicode TEXT PRIMARY KEY,
       char TEXT NOT NULL UNIQUE,
       grade TEXT,
-      status TEXT NOT NULL DEFAULT 'TODO',
       reading TEXT,
       meaning TEXT,
       variant_reading JSON NOT NULL DEFAULT '[]' CHECK (json_valid(variant_reading) AND json_type(variant_reading) = 'array'),
@@ -673,9 +658,9 @@ function upgradeCharactersTable(db: DatabaseSync) {
     }
     db.exec(charactersDdl('characters_next'))
     db.exec(`
-      INSERT INTO characters_next (unicode, char, grade, status, reading, meaning, variant_reading, variant_meaning,
+      INSERT INTO characters_next (unicode, char, grade, reading, meaning, variant_reading, variant_meaning,
                                    stroke_count, last_modified_at, last_modified_by)
-      SELECT unicode, char, grade, status, reading, meaning, variant_reading, variant_meaning,
+      SELECT unicode, char, grade, reading, meaning, variant_reading, variant_meaning,
              stroke_count, updated_at, '${ACTOR_MIGRATION}'
       FROM characters
     `)
@@ -735,8 +720,16 @@ function upgradeStrokeOrigins(db: DatabaseSync) {
   }
 }
 
+function dropStatusColumn(db: DatabaseSync) {
+  const columns = db.prepare('PRAGMA table_info(characters)').all() as { name: string }[]
+  if (!columns.some((column) => column.name === 'status')) return
+  db.exec('DROP INDEX IF EXISTS idx_characters_status')
+  db.exec('ALTER TABLE characters DROP COLUMN status')
+}
+
 function migrate(db: DatabaseSync) {
   upgradeCharactersTable(db)
+  dropStatusColumn(db)
   upgradeStrokesTable(db)
   upgradeStrokeOrigins(db)
   db.exec(`
@@ -782,7 +775,6 @@ function migrate(db: DatabaseSync) {
       PRIMARY KEY (unicode, source),
       FOREIGN KEY (unicode) REFERENCES characters(unicode) ON DELETE CASCADE
     );
-    CREATE INDEX IF NOT EXISTS idx_characters_status ON characters(status);
     CREATE INDEX IF NOT EXISTS idx_edit_history_unicode_time ON edit_history(unicode, created_at DESC);
     CREATE TRIGGER IF NOT EXISTS trg_characters_updated AFTER UPDATE ON characters
     WHEN NEW.last_modified_at = OLD.last_modified_at

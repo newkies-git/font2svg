@@ -85,10 +85,6 @@ function workspaceApi(): Plugin {
           if (req.method === 'POST' && parts[3] === 'compile') {
             return send(res, 200, ws.compile(unicode))
           }
-          if (req.method === 'POST' && parts[3] === 'status') {
-            const body = await readBody(req)
-            return send(res, 200, ws.setStatus(unicode, String(body.status ?? '')))
-          }
           return send(res, 404, { error: '없는 API입니다.' })
         } catch (error) {
           send(res, 400, { error: error instanceof Error ? error.message : '요청을 처리하지 못했습니다.' })

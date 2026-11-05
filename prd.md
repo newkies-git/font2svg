@@ -31,7 +31,7 @@
 2. **AI & Import Engine**: 화면에서 글자 등록 → DB에 데이터가 없으면 레퍼런스 가져오기(Hanja, §4.5) → 없으면 IDS 조회(공개 IDS 데이터 우선, 없으면 Ollama 추론) → 아핀 변환(Affine Transform)을 통한 초기 중심선 합성.
 3. **Pre-processing Engine (Geometry)**: 좌표 정규화(§2.1) → 구멍(Hole) 보존형 섬(Island) 분해 → 브러시 교집합 분할(Boolean Intersect) → 잔여 조각(Residue) 흡수 및 `strokeWidth` 자동 확장 → 숨겨진 끝점 복원(§4.3).
 4. **Admin Editor**: 수동 보정, 나이프 툴 편집, 부수 태깅, 실시간 프리뷰(§4.4).
-5. **Validation**: 배포 전 자동 검증(§7). 실패 시 `ISSUE` 상태로 전환.
+5. **Validation**: 배포 전 자동 검증(§7). 실패 시 `issues`에 사유를 기록(이하 `ISSUE`).
 6. **Storage & Output**: 단일 파일 SQLite 3 DB(`database/chusa1817.db`) 관리 및 뷰어용 최적화 JSON 배포.
 
 ### 2.1. 좌표계 정규화 (누락 보완)
@@ -83,9 +83,7 @@ CREATE TABLE radicals (
 CREATE TABLE characters (
     unicode TEXT PRIMARY KEY CHECK (unicode GLOB 'U+[0-9A-F][0-9A-F][0-9A-F][0-9A-F]*'),  -- 'U+7553', 'U+2E569'
     char TEXT NOT NULL UNIQUE,
-    grade TEXT,
-    status TEXT NOT NULL DEFAULT 'TODO'
-        CHECK (status IN ('TODO', 'AUTO_MATCHED', 'AI_ASSISTED', 'ISSUE', 'DONE')),
+    grade TEXT,                          -- 구분: '중등', '고등', '3급' (한문 교육용 기초 한자 1800자 + 3급 17자)
 
     -- 음훈 정보
     reading TEXT,                        -- 대표 음. 예: '락'
@@ -100,7 +98,7 @@ CREATE TABLE characters (
     last_modified_by TEXT NOT NULL       -- 'user', 'system:hanja', 'system:ids', 'system:font', 'system:migration'
 );
 
--- 3-1. 문제 사유 테이블: status = 'ISSUE'인 글자의 원인. 글자당 최대 1행이며, 상태가 바뀌면 지운다.
+-- 3-1. 문제 사유 테이블: 문제가 있는 글자(`ISSUE`)의 원인. 글자당 최대 1행이며, 문제가 풀리면 지운다.
 CREATE TABLE issues (
     char TEXT PRIMARY KEY REFERENCES characters(char) ON DELETE CASCADE,
     reason TEXT NOT NULL,
@@ -154,7 +152,6 @@ CREATE TABLE reference_data (
     FOREIGN KEY (unicode) REFERENCES characters(unicode) ON DELETE CASCADE
 );
 
-CREATE INDEX idx_characters_status ON characters(status);
 CREATE INDEX idx_edit_history_unicode_time ON edit_history(unicode, created_at DESC);
 
 -- last_modified_at 자동 갱신 (DEFAULT는 INSERT에만 적용된다). last_modified_by는 쓰는 쪽이 UPDATE에 직접 넣는다.
@@ -173,19 +170,18 @@ END;
 - `unicode`는 `U+` + 대문자 16진수(4~6자리)로 고정한다. 확장 B 이후 글자(예: `𮕩` U+2E569)는 UTF-16 서로게이트 쌍이므로, 코드에서 `str.length`나 `str[0]` 대신 `codePointAt`/`[...str]`로 다룬다.
 - 획 순서 변경·분할·삭제는 `stroke_outlines`와 `median_line`을 함께 새로 만들어 한 번의 `UPDATE`로 교체하고, 이때 `last_modified_at`/`last_modified_by`를 갱신한다. 글자 단위로 원자적이다.
 
-### 3.1. 작업 상태 전이 (누락 보완)
+### 3.1. 작업 상태 (누락 보완)
 
-```
-화면에서 글자 등록 → TODO
-TODO ──Hanja에서 가져옴(§4.5)──▶ AUTO_MATCHED ──검수 통과──▶ DONE
-  │                                              │
-  └──Hanja에 없음 → IDS 합성(§4.1)──▶ AI_ASSISTED ┤
-                                                 └──검증 실패──▶ ISSUE ──수동 보정──▶ (재검증)
-IDS 합성 실패 ──▶ ISSUE
-DONE ──획 수정──▶ AUTO_MATCHED 또는 AI_ASSISTED (재검수 필요)
-```
+`characters`에는 상태 열을 두지 않는다. 글자의 상태는 다른 테이블에서 읽는다.
 
-- `DONE`은 §7의 자동 검증 통과와 사람 검수가 모두 끝난 상태다. `DONE` 글자의 획을 수정하면 상태를 되돌린다. 컴파일 결과는 DB에 저장하지 않고 `output/compiled/<글자>.json` 파일로만 남기므로, 수정 후 다시 컴파일해야 한다.
+| 상태 | 판단 방법 |
+| :--- | :--- |
+| 미등록 획 | `strokes` 행이 없다 |
+| 레퍼런스 가져옴 | `strokes.origin = 'MMH'` |
+| 합성 초안 | `strokes.origin`이 `'IDS'`, `'OLLAMA_IDS'`, `'MANUAL'` |
+| 문제(`ISSUE`) | `issues` 행이 있다 |
+
+- 사람 검수 완료(과거 `DONE`)는 기록하지 않는다. 컴파일 결과는 DB에 저장하지 않고 `output/compiled/<글자>.json` 파일로만 남기므로, 획을 수정한 뒤에는 다시 컴파일해야 한다.
 
 ## 4. 핵심 알고리즘 및 엔진 명세
 
@@ -249,7 +245,7 @@ DONE ──획 수정──▶ AUTO_MATCHED 또는 AI_ASSISTED (재검수 필요
 **판단 순서**
 
 1. `characters`에 글자가 있고 `strokes` 행이 1개 이상이면 기존 데이터를 연다. 외부 조회는 하지 않는다.
-2. 없으면 `characters`에 `TODO`로 등록하고, `reference_data`의 캐시를 확인한다. 캐시가 있으면(`found = 0` 포함) 다시 내려받지 않는다.
+2. 없으면 `characters`에 등록하고, `reference_data`의 캐시를 확인한다. 캐시가 있으면(`found = 0` 포함) 다시 내려받지 않는다.
 3. **Hanja**(hanzi-writer-data, Make Me a Hanja 기반)에서 찾는다. 있으면 그 데이터로 채운다.
 4. Hanja에 없으면 §4.1 IDS 자소 합성으로 넘긴다.
 
@@ -266,7 +262,7 @@ DONE ──획 수정──▶ AUTO_MATCHED 또는 AI_ASSISTED (재검수 필요
 
 - **Hanja는 궁서체 윤곽을 주지 않는다.** MMH의 `strokes`는 Arphic 해서체에서 뽑은 윤곽이므로 최종 `outline_path`로 쓰지 않는다. 궁서체 윤곽은 TTF를 §4.2로 분할해 만든다. TTF에 글자가 없거나 분리가 어긋나 품질 검사를 통과하지 못한 글자만 MMH 윤곽을 그대로 둔다.
 - **궁서체 윤곽으로 일괄 교체**(`POST /api/apply-font`): 이미 획이 있는 글자는 기존(Hanja) 중심선을 길잡이로 TTF 윤곽을 획별로 나누고, 중심선과 폭은 새 윤곽에서 다시 계산한다(방향은 길잡이에 맞추고 점은 RDP 허용오차 3으로 줄인다). `last_modified_by = 'user'`인 글자(사람이 고친 것)와 이미 교체된 글자(`'system:font'`)는 건너뛰고, 교체 전 상태는 `edit_history`에 남겨 실행 취소할 수 있다. 품질 검사: (1) 어느 획도 전체 윤곽 그대로이거나 비어 있으면 안 되고, (2) 획 하나의 면적이 글자 면적의 0.5% 이상이어야 하며, (3) 획 면적의 합이 글자 면적의 0.85~1.7배여야 한다. 하나라도 어기면 그 글자는 바꾸지 않고 목록으로 돌려준다. 교체된 글자는 Hanja 중심선으로 되덮이지 않는다(레퍼런스 수신이 `user`·`system:font` 글자의 중심선을 건드리지 않는다).
-- 가져온 중심선은 궁서체 글리프의 외곽 bbox에 맞춰 아핀 변환한 뒤 §4.2 분할에 넣는다. 결과는 `strokes.origin = 'MMH'`, 상태는 `AUTO_MATCHED`로 저장한다.
+- 가져온 중심선은 궁서체 글리프의 외곽 bbox에 맞춰 아핀 변환한 뒤 §4.2 분할에 넣는다. 결과는 `strokes.origin = 'MMH'`로 저장한다.
 - **중심선은 Hanja 값을 그대로 복사한다. 어떤 획의 `medians`가 없거나 점이 2개 미만이면 그 획의 윤곽에서 직접 계산한다**(래스터화 → 골격 추출 → 가장 긴 경로, `recoverMedian`). 윤곽도 없는 글자는 계산할 수 없으므로 IDS 합성으로 넘긴다. 계산한 중심선은 모양은 맞지만(Hanja 값과의 평균 거리 약 1.6) 시작·끝 방향이 뒤집힐 수 있어(표본의 약 4.6%) 필순 검수에서 확인한다.
 - **윤곽이 없으면 TTF에서 추출한다.** Hanja에 윤곽이 없거나 IDS 합성으로 만든 글자는, 작업 폴더의 `app/fonts/Gungseouche.ttf`(opentype.js로 읽음)에서 글자 윤곽을 꺼내 `strokes.font_outline`에 저장한다. 합성한 중심선 묶음의 bbox를 글자 윤곽 bbox(안쪽으로 20)에 맞춰 늘린 뒤, 윤곽의 각 점을 가장 가까운 중심선에 배정해 획별 윤곽으로 나눈다(§4.2). 결과는 초안이므로 화면에서 칼 분할·중심선 편집으로 고친다. 폰트 파일이 없거나 글자가 없으면 중심선에 폭을 준 띠 모양으로 대신한다.
   - TTF를 처음 읽을 때 SHA-256을 `project_meta`에 기록하고, 이후 해시가 다르면 작업을 멈춘다(§8 보안).
@@ -274,7 +270,7 @@ DONE ──획 수정──▶ AUTO_MATCHED 또는 AI_ASSISTED (재검수 필요
   - 궁서체 글자는 Hanja 데이터보다 낮게 그려져 있어 y축으로 95만큼 올려 같은 높이에 놓는다.
   - Ollama는 `ids`(구조식) 하나만 답하게 하고(구조화 출력, `think: false`), 부품 칸(box)은 구조식 기호로 코드가 정한다. 모델이 준 비율은 신뢰할 수 없었다. 구조식이 형식에 맞지 않거나 부품이 DB에 없으면 실패로 처리한다. 공개 IDS에도 없는 글자에만 쓰며, 결과 품질이 낮아 반드시 화면에서 고친다.
   - IDS 부품의 중심선은 부품 글자의 모든 획을 한 덩어리로 보고 box에 맞춘다.
-- 가져온 필순은 초안이다. 한국 기준과 다를 수 있으므로 §7.3 검수를 거쳐야 `DONE`이 된다.
+- 가져온 필순은 초안이다. 한국 기준과 다를 수 있으므로 §7.3 검수를 거쳐야 한다.
 
 **획수 대조**
 
@@ -353,7 +349,7 @@ DONE ──획 수정──▶ AUTO_MATCHED 또는 AI_ASSISTED (재검수 필요
 
 ### 7.3. 필순 검수
 
-- 레퍼런스(MMH)에서 가져온 필순과 한국 기준이 다른 글자 목록을 관리하고, 해당 글자는 사람 검수 전 `DONE`이 될 수 없다.
+- 레퍼런스(MMH)에서 가져온 필순과 한국 기준이 다른 글자 목록을 관리하고, 해당 글자는 사람이 검수하기 전에는 완료된 것으로 보지 않는다.
 - 획수는 Unihan `kTotalStrokes`와 비교한다. 다르면 정자체/이체자 차이(예: `靑`/`青`)인지 확인한다.
 
 ## 8. 성능 요구사항 (누락 보완)
@@ -370,7 +366,7 @@ DONE ──획 수정──▶ AUTO_MATCHED 또는 AI_ASSISTED (재검수 필요
 - **Boolean 연산 비용**: Paper.js의 `intersect`/`subtract`/`unite`는 세그먼트 수에 따라 비용이 급격히 커지고 UI 스레드를 막는다. 분할은 **Web Worker**에서 실행하고, 편집 시 전체 글자가 아니라 변경된 섬만 다시 계산한다.
 - **경로 단순화**: 브러시 띠는 곡선 그대로 Boolean 연산에 넣지 말고, 허용 오차(예: 0.5 단위)로 평탄화한 뒤 연산하고 결과를 다시 곡선으로 맞춘다.
 - **Ollama**: `qwen3.5:9b`는 모델 크기가 약 6.6GB이고 그만큼의 메모리가 필요하다. 생각(thinking) 모드를 켜면 응답이 1분 안에 끝나지 않으므로 요청에 `think: false`를 준다. 동시 요청은 1개로 제한하고, 요청당 타임아웃(예: 60초)과 재시도 1회를 둔다. 같은 글자의 결과는 DB에 캐시하여 다시 호출하지 않는다.
-- **일괄 처리 중단·재개**: 글자 단위로 커밋하여, 중단 후 재실행하면 `TODO`/`ISSUE` 글자만 처리한다.
+- **일괄 처리 중단·재개**: 글자 단위로 커밋하여, 중단 후 재실행하면 획이 없거나 `issues`에 있는 글자만 처리한다.
 - **레퍼런스 조회(§4.5)**: 글자를 등록할 때마다 CDN에 요청하지 않도록, 고정 버전의 hanzi-writer-data를 처음 한 번 로컬에 내려받아 두고 로컬에서 찾는 방식을 기본으로 한다. 원격 조회를 쓸 경우 동시 요청 4개 이하, 요청 간 지연, 요청당 타임아웃 10초를 둔다. 캐시(`reference_data`)에 있는 글자는 조회하지 않는다.
 
 ### 8.2. DB 성능

@@ -388,11 +388,6 @@
     background-color: var(--color-bg-subtle);
   }
 
-  .badge.done {
-    color: var(--color-success);
-    background-color: var(--color-success-subtle);
-  }
-
   .upload-box {
     display: flex;
     flex-direction: column;
