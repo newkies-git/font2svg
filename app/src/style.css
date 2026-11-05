@@ -215,6 +215,7 @@
     block-size: 100%;
     inline-size: 100%;
     min-block-size: 0;
+    container-type: inline-size;
   }
 
   /* Sidebar Navigation */
@@ -427,6 +428,7 @@
     overflow-x: hidden;
     scrollbar-gutter: stable;
     overscroll-behavior: contain;
+    container-type: inline-size;
   }
 
   .stage-wrap {
@@ -852,6 +854,24 @@
     }
     .side {
       max-block-size: 42vh;
+    }
+  }
+
+  /* Progressive enhancement with Container Queries */
+  @supports (container-type: inline-size) {
+    @container (max-width: 960px) {
+      .app {
+        grid-template-columns: 1fr;
+      }
+      .side {
+        max-block-size: 42vh;
+      }
+    }
+
+    @container (max-width: 760px) {
+      .main {
+        grid-template-columns: 1fr;
+      }
     }
   }
 }
