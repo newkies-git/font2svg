@@ -30,6 +30,21 @@ const knifeFrom = ref<Pt | null>(null)
 const layer = ref<SVGGElement | null>(null)
 const svgFileInput = ref<HTMLInputElement | null>(null)
 const themeMode = ref<ThemeMode>('system')
+const confirmDialog = ref<HTMLDialogElement | null>(null)
+let confirmResolve: ((value: boolean) => void) | null = null
+
+function askConfirm(): Promise<boolean> {
+  return new Promise((resolve) => {
+    confirmResolve = resolve
+    confirmDialog.value?.showModal()
+  })
+}
+
+function onConfirmClose() {
+  const returnValue = confirmDialog.value?.returnValue
+  confirmResolve?.(returnValue === 'confirm')
+  confirmResolve = null
+}
 
 // Animation loop using requestAnimationFrame
 let animFrameId = 0
@@ -249,7 +264,10 @@ async function importSvg(event: Event) {
 
 async function applyNaver() {
   if (!selected.value) return
-  if (strokes.value.length > 0 && !window.confirm('현재 획 데이터를 네이버 한자사전 획순으로 바꿉니다. 바뀐 뒤에도 실행 취소로 되돌릴 수 있습니다.')) return
+  if (strokes.value.length > 0) {
+    const confirmed = await askConfirm()
+    if (!confirmed) return
+  }
   busy.value = true
   error.value = ''
   try {
@@ -747,5 +765,25 @@ onBeforeUnmount(() => {
         </ul>
       </section>
     </main>
+
+    <dialog
+      ref="confirmDialog"
+      class="app-dialog"
+      aria-labelledby="confirm-dialog-title"
+      aria-describedby="confirm-dialog-desc"
+      @close="onConfirmClose"
+    >
+      <div class="dialog-content">
+        <h3 id="confirm-dialog-title">네이버 획순 적용</h3>
+        <p id="confirm-dialog-desc">
+          현재 획 데이터를 네이버 한자사전 획순으로 바꿉니다.<br />
+          바뀐 뒤에도 실행 취소로 되돌릴 수 있습니다.
+        </p>
+        <form method="dialog" class="dialog-actions">
+          <button type="submit" value="cancel" autofocus>취소</button>
+          <button type="submit" value="confirm" class="primary">적용하기</button>
+        </form>
+      </div>
+    </dialog>
   </div>
 </template>
