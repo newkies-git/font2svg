@@ -8,7 +8,6 @@ export const COORD_DECIMALS = 1
 export const UNICODE_HEX_PAD = 4
 export const SHA256_HEX_LENGTH = 64
 export const KANGXI_COUNT = 214
-export const HISTORY_KEEP = 50
 export const DB_BUSY_TIMEOUT_MS = 5_000
 export const FETCH_TIMEOUT_MS = 10_000
 export const OLLAMA_TIMEOUT_MS = 60_000

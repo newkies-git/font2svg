@@ -130,14 +130,22 @@ CREATE TABLE strokes (
     origin_url TEXT                      -- 실제로 가져온 주소. 없으면 NULL
 );
 
--- 5. 작업 히스토리 (Undo / 버전 백업)
-CREATE TABLE edit_history (
+-- 5. strokes 변경 이력 (감사 기록 + 실행 취소). strokes가 바뀔 때마다 바뀌기 전 행을 그대로 남기고, 삭제하지 않는다.
+CREATE TABLE strokes_history (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    unicode TEXT NOT NULL,
-    snapshot_json TEXT NOT NULL,
-    action_desc TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (unicode) REFERENCES characters(unicode) ON DELETE CASCADE
+    char TEXT NOT NULL REFERENCES characters(char) ON DELETE CASCADE,
+    radical INTEGER NOT NULL,            -- 바뀌기 전 strokes 행의 값
+    font_outline JSON NOT NULL CHECK (json_valid(font_outline) AND json_type(font_outline) = 'array'),
+    stroke_outlines JSON NOT NULL CHECK (json_valid(stroke_outlines) AND json_type(stroke_outlines) = 'array'),
+    median_line JSON NOT NULL CHECK (json_valid(median_line) AND json_type(median_line) = 'array'),
+    origin TEXT NOT NULL,
+    origin_url TEXT,
+    state_modified_at DATETIME NOT NULL, -- 그 상태가 만들어진 시각(strokes.last_modified_at)
+    state_modified_by TEXT NOT NULL,     -- 그 상태를 만든 주체(strokes.last_modified_by)
+    action_desc TEXT NOT NULL,           -- 그 상태를 바꾼 작업. 예: '획 편집', '궁서체 윤곽으로 교체', '실행 취소'
+    changed_by TEXT NOT NULL,            -- 바꾼 주체. 'user', 'system:font' 등
+    changed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    undoable INTEGER NOT NULL DEFAULT 1 CHECK (undoable IN (0, 1))  -- 1이면 실행 취소의 대상
 );
 
 -- 6. 레퍼런스 원본 캐시 (§4.5에서 가져온 원본을 변환 전 그대로 보관)
@@ -153,7 +161,7 @@ CREATE TABLE reference_data (
     FOREIGN KEY (unicode) REFERENCES characters(unicode) ON DELETE CASCADE
 );
 
-CREATE INDEX idx_edit_history_unicode_time ON edit_history(unicode, created_at DESC);
+CREATE INDEX idx_strokes_history_char ON strokes_history(char, id DESC);
 
 -- last_modified_at 자동 갱신 (DEFAULT는 INSERT에만 적용된다). last_modified_by는 쓰는 쪽이 UPDATE에 직접 넣는다.
 CREATE TRIGGER trg_characters_updated AFTER UPDATE ON characters
@@ -237,7 +245,7 @@ END;
 - **나이프 툴**: 캔버스에서 선을 그어 외곽선 조각을 두 개로 자르고, 각 조각을 원하는 획에 배정한다.
 - **중심선 편집**: 점 추가·삭제·이동. 편집 즉시 §4.2 분할을 해당 섬에 대해서만 다시 실행한다.
 - **필순 변경**: 획 목록 드래그로 순서를 바꾼다. 저장은 단일 트랜잭션으로 처리한다(§3).
-- **Undo/Redo**: 편집 단위마다 `edit_history`에 스냅샷을 남긴다. 보존 정책은 §8.3.
+- **실행 취소**: 편집 단위마다 `strokes_history`에 바뀌기 전 행을 남긴다. 실행 취소는 이력을 지우지 않는다. `undoable = 1`인 가장 최근 행으로 `strokes`를 되돌리고, 되돌리기 전 상태를 `undoable = 0` 행으로 남기며, 되돌아간 행은 `undoable = 0`으로 바꿔 더 이상 대상이 되지 않게 한다(연속으로 누르면 한 단계씩 더 전으로 간다). 다시 실행(Redo)은 지원하지 않는다. 보존 정책은 §8.3.
 
 ### 4.5. 등록 글자의 레퍼런스 가져오기 (Hanja → IDS)
 
@@ -262,7 +270,7 @@ END;
 | 좌표 변환 | §2.1 MMH 규칙 |
 
 - **Hanja는 궁서체 윤곽을 주지 않는다.** MMH의 `strokes`는 Arphic 해서체에서 뽑은 윤곽이므로 최종 `outline_path`로 쓰지 않는다. 궁서체 윤곽은 TTF를 §4.2로 분할해 만든다. TTF에 글자가 없거나 분리가 어긋나 품질 검사를 통과하지 못한 글자만 MMH 윤곽을 그대로 둔다.
-- **궁서체 윤곽으로 일괄 교체**(`POST /api/apply-font`): 이미 획이 있는 글자는 기존(Hanja) 중심선을 길잡이로 TTF 윤곽을 획별로 나누고, 중심선과 폭은 새 윤곽에서 다시 계산한다(방향은 길잡이에 맞추고 점은 RDP 허용오차 3으로 줄인다). `last_modified_by = 'user'`인 글자(사람이 고친 것)와 이미 교체된 글자(`'system:font'`)는 건너뛰고, 교체 전 상태는 `edit_history`에 남겨 실행 취소할 수 있다. 품질 검사: (1) 어느 획도 전체 윤곽 그대로이거나 비어 있으면 안 되고, (2) 획 하나의 면적이 글자 면적의 0.5% 이상이어야 하며, (3) 획 면적의 합이 글자 면적의 0.85~1.7배여야 한다. 하나라도 어기면 그 글자는 바꾸지 않고 목록으로 돌려준다. 교체된 글자는 Hanja 중심선으로 되덮이지 않는다(레퍼런스 수신이 `user`·`system:font` 글자의 중심선을 건드리지 않는다).
+- **궁서체 윤곽으로 일괄 교체**(`POST /api/apply-font`): 이미 획이 있는 글자는 기존(Hanja) 중심선을 길잡이로 TTF 윤곽을 획별로 나누고, 중심선과 폭은 새 윤곽에서 다시 계산한다(방향은 길잡이에 맞추고 점은 RDP 허용오차 3으로 줄인다). `last_modified_by = 'user'`인 글자(사람이 고친 것)와 이미 교체된 글자(`'system:font'`)는 건너뛰고, 교체 전 상태는 `strokes_history`에 남겨 실행 취소할 수 있다. 품질 검사: (1) 어느 획도 전체 윤곽 그대로이거나 비어 있으면 안 되고, (2) 획 하나의 면적이 글자 면적의 0.5% 이상이어야 하며, (3) 획 면적의 합이 글자 면적의 0.85~1.7배여야 한다. 하나라도 어기면 그 글자는 바꾸지 않고 목록으로 돌려준다. 교체된 글자는 Hanja 중심선으로 되덮이지 않는다(레퍼런스 수신이 `user`·`system:font` 글자의 중심선을 건드리지 않는다).
 - 가져온 중심선은 궁서체 글리프의 외곽 bbox에 맞춰 아핀 변환한 뒤 §4.2 분할에 넣는다. 결과는 `strokes.origin = 'MMH'`로 저장한다.
 - **중심선은 Hanja 값을 그대로 복사한다. 어떤 획의 `medians`가 없거나 점이 2개 미만이면 그 획의 윤곽에서 직접 계산한다**(래스터화 → 골격 추출 → 가장 긴 경로, `recoverMedian`). 윤곽도 없는 글자는 계산할 수 없으므로 IDS 합성으로 넘긴다. 계산한 중심선은 모양은 맞지만(Hanja 값과의 평균 거리 약 1.6) 시작·끝 방향이 뒤집힐 수 있어(표본의 약 4.6%) 필순 검수에서 확인한다.
 - **윤곽이 없으면 TTF에서 추출한다.** Hanja에 윤곽이 없거나 IDS 합성으로 만든 글자는, 작업 폴더의 `app/fonts/Gungseouche.ttf`(opentype.js로 읽음)에서 글자 윤곽을 꺼내 `strokes.font_outline`에 저장한다. 합성한 중심선 묶음의 bbox를 글자 윤곽 bbox(안쪽으로 20)에 맞춰 늘린 뒤, 윤곽의 각 점을 가장 가까운 중심선에 배정해 획별 윤곽으로 나눈다(§4.2). 결과는 초안이므로 화면에서 칼 분할·중심선 편집으로 고친다. 폰트 파일이 없거나 글자가 없으면 중심선에 폭을 준 띠 모양으로 대신한다.
@@ -378,7 +386,7 @@ END;
 
 ### 8.3. 용량 관리
 
-- **`edit_history`**: 글자당 최근 50개 스냅샷만 유지하고 나머지는 삭제한다. 스냅샷은 전체 글자가 아니라 변경된 획만 담는다. 정리 후 주기적으로 `VACUUM`을 실행한다.
+- **`strokes_history`**: 감사 기록이므로 삭제하지 않는다. 한 행이 `strokes` 한 행의 전체 값(윤곽·중심선 포함)이라 DB가 그만큼 커진다. 같은 내용을 다시 저장할 때(레퍼런스 재수신 등)는 행을 남기지 않는다. 용량이 문제가 되면 오래된 행을 정리하는 정책을 따로 정한다.
 - **배포 JSON**: 좌표 소수점 1자리 반올림, 공백 제거(minify), gzip/brotli 전송을 적용한다. `fullOutline`과 `strokes`는 같은 윤곽을 중복으로 담으므로, 뷰어가 Outline 모드를 쓰지 않는 배포본에서는 `fullOutline`을 생략할 수 있게 한다.
 - **배포 단위**: 1,817자를 한 파일로 묶지 말고 글자별 파일로 나누어 필요한 글자만 내려받는다. 뷰어는 내려받은 글자를 캐시한다.
 

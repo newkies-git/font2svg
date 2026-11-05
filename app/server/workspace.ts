@@ -11,7 +11,6 @@ import {
   DEFAULT_STROKE_WIDTH,
   FETCH_TIMEOUT_MS,
   FONT_BATCH_LIMIT,
-  HISTORY_KEEP,
   IDS_FILE_LIMIT,
   IDS_MAX_DEPTH,
   KANGXI_COUNT,
@@ -59,6 +58,8 @@ const ACTOR_HANJA = 'system:hanja'
 const ACTOR_MIGRATION = 'system:migration'
 const ACTOR_IDS = 'system:ids'
 const ACTOR_FONT = 'system:font'
+const ACTION_FONT = '궁서체 윤곽으로 교체'
+const ACTION_UNDO = '실행 취소'
 const ORIGIN_MANUAL = 'MANUAL'
 
 type StrokeOutline = { order: number; path: string; radical: 0 | 1 }
@@ -89,7 +90,6 @@ function createWorkspace(rootDir: string) {
   fs.mkdirSync(compiledDir, { recursive: true })
 
   const db = new DatabaseSync(dbPath)
-  opened = db
   db.exec('PRAGMA foreign_keys = ON')
   db.exec('PRAGMA journal_mode = WAL')
   db.exec(`PRAGMA busy_timeout = ${DB_BUSY_TIMEOUT_MS}`)
@@ -123,7 +123,7 @@ function createWorkspace(rootDir: string) {
     if (!row) return null
     const strokes = readStrokes(unicode).map((stroke, index) => ({ stroke_order: index + 1, ...stroke }))
     const meta = readStrokeRow(unicode)
-    const history = db.prepare('SELECT COUNT(*) AS n FROM edit_history WHERE unicode = ?').get(unicode) as { n: number }
+    const history = db.prepare('SELECT COUNT(*) AS n FROM strokes_history WHERE char = ? AND undoable = 1').get(String(row.char)) as { n: number }
     const issue = db.prepare('SELECT reason FROM issues WHERE char = ?').get(String(row.char)) as { reason: string } | undefined
     return {
       ...row,
@@ -172,7 +172,7 @@ function createWorkspace(rootDir: string) {
     })
   }
 
-  function writeStrokes(unicode: string, items: StrokeItem[], by: string, origin?: { source: string; url: string | null }, fontOutline?: string[]) {
+  function writeStrokes(unicode: string, items: StrokeItem[], by: string, action: string, origin?: { source: string; url: string | null }, fontOutline?: string[]) {
     const character = db.prepare('SELECT char FROM characters WHERE unicode = ?').get(unicode) as { char: string } | undefined
     if (!character) throw new Error('등록되지 않은 글자입니다.')
     if (items.length === 0) {
@@ -187,6 +187,14 @@ function createWorkspace(rootDir: string) {
       start_cap: item.start_cap_type,
       end_cap: item.end_cap_type,
     }))
+    // 내용이 실제로 바뀔 때만, 바뀌기 전 행을 이력에 남긴다(같은 내용을 다시 쓰면 남기지 않는다).
+    const before = db.prepare('SELECT * FROM strokes WHERE char = ?').get(character.char) as StrokeRow | undefined
+    if (before && (
+      before.stroke_outlines !== JSON.stringify(outlines) ||
+      before.median_line !== JSON.stringify(lines) ||
+      (fontOutline && before.font_outline !== JSON.stringify(fontOutline)) ||
+      (origin && (before.origin !== origin.source || before.origin_url !== origin.url))
+    )) pushHistory(before, action, by, 1)
     db.prepare(`
       INSERT INTO strokes (char, radical, font_outline, stroke_outlines, median_line, last_modified_at, last_modified_by, origin, origin_url)
       VALUES (?, 0, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?)
@@ -215,7 +223,6 @@ function createWorkspace(rootDir: string) {
   function updateStrokes(unicode: string, strokes: StrokeItem[], action: string) {
     const current = getCharacter(unicode)
     if (!current) throw new Error('등록되지 않은 글자입니다.')
-    remember(unicode, current, action)
     db.exec('BEGIN')
     try {
       writeStrokes(unicode, strokes.map((stroke, index) => {
@@ -230,7 +237,7 @@ function createWorkspace(rootDir: string) {
           start_cap_type: cap(stroke.start_cap_type),
           end_cap_type: cap(stroke.end_cap_type),
         }
-      }), ACTOR_USER)
+      }), ACTOR_USER, action)
       db.prepare(`
         UPDATE characters SET stroke_count = ?, last_modified_by = ?
         WHERE unicode = ?
@@ -240,36 +247,44 @@ function createWorkspace(rootDir: string) {
       db.exec('ROLLBACK')
       throw error
     }
-    trimHistory(unicode)
     return getCharacter(unicode)
   }
 
+  // 가장 최근의 되돌릴 수 있는 이전 상태로 되돌린다. 이력은 지우지 않는다: 되돌리기 전 상태는 되돌릴 수 없는 이력으로 남기고,
+  // 되돌아간 이력은 더 이상 되돌릴 대상이 아니게 표시한다(연속으로 누르면 그 전 상태로 한 단계씩 간다).
   function undo(unicode: string) {
-    const row = db.prepare(`
-      SELECT id, snapshot_json FROM edit_history WHERE unicode = ? ORDER BY id DESC LIMIT 1
-    `).get(unicode) as { id: number; snapshot_json: string } | undefined
-    if (!row) throw new Error('되돌릴 편집이 없습니다.')
-    const snapshot = JSON.parse(row.snapshot_json) as { strokes: (Omit<StrokeItem, 'median_points'> & { median_points: Pt[] | string })[] }
-    const items = snapshot.strokes.map((stroke): StrokeItem => ({
-      outline_path: stroke.outline_path,
-      median_points: typeof stroke.median_points === 'string' ? JSON.parse(stroke.median_points) as Pt[] : stroke.median_points,
-      stroke_width: stroke.stroke_width,
-      is_radical: stroke.is_radical,
-      start_cap_type: stroke.start_cap_type,
-      end_cap_type: stroke.end_cap_type,
-    }))
+    const character = db.prepare('SELECT char FROM characters WHERE unicode = ?').get(unicode) as { char: string } | undefined
+    if (!character) throw new Error('등록되지 않은 글자입니다.')
+    const target = db.prepare('SELECT * FROM strokes_history WHERE char = ? AND undoable = 1 ORDER BY id DESC LIMIT 1')
+      .get(character.char) as (StrokeRow & { id: number }) | undefined
+    const current = db.prepare('SELECT * FROM strokes WHERE char = ?').get(character.char) as StrokeRow | undefined
+    if (!target || !current) throw new Error('되돌릴 편집이 없습니다.')
     db.exec('BEGIN')
     try {
-      writeStrokes(unicode, items, ACTOR_USER)
+      pushHistory(current, ACTION_UNDO, ACTOR_USER, 0)
+      db.prepare('UPDATE strokes_history SET undoable = 0 WHERE id = ?').run(target.id)
+      db.prepare(`
+        UPDATE strokes SET radical = ?, font_outline = ?, stroke_outlines = ?, median_line = ?, origin = ?, origin_url = ?,
+                           last_modified_at = CURRENT_TIMESTAMP, last_modified_by = ?
+        WHERE char = ?
+      `).run(target.radical, target.font_outline, target.stroke_outlines, target.median_line, target.origin, target.origin_url, ACTOR_USER, character.char)
       db.prepare('UPDATE characters SET stroke_count = ?, last_modified_by = ? WHERE unicode = ?')
-        .run(items.length, ACTOR_USER, unicode)
-      db.prepare('DELETE FROM edit_history WHERE id = ?').run(row.id)
+        .run((JSON.parse(target.stroke_outlines) as unknown[]).length, ACTOR_USER, unicode)
       db.exec('COMMIT')
     } catch (error) {
       db.exec('ROLLBACK')
       throw error
     }
     return getCharacter(unicode)
+  }
+
+  function pushHistory(row: StrokeRow, action: string, by: string, undoable: 0 | 1) {
+    db.prepare(`
+      INSERT INTO strokes_history (char, radical, font_outline, stroke_outlines, median_line, origin, origin_url,
+                                   state_modified_at, state_modified_by, action_desc, changed_by, undoable)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(row.char, row.radical, row.font_outline, row.stroke_outlines, row.median_line, row.origin, row.origin_url,
+      row.last_modified_at, row.last_modified_by, action, by, undoable)
   }
 
   async function ensureReference(unicode: string) {
@@ -286,7 +301,7 @@ function createWorkspace(rootDir: string) {
           ...stroke,
           median_points: roundPoints(medianOrRecovered(hanja.value.medians[index], stroke.outline_path) ?? stroke.median_points),
           is_radical: radical.has(index) ? 1 : 0,
-        })), ACTOR_HANJA, { source: 'MMH', url: hanja.url })
+        })), ACTOR_HANJA, 'Hanja 중심선 갱신', { source: 'MMH', url: hanja.url })
       }
       return { unicode, source: hanja ? 'MMH' : 'DB', fetched: false }
     }
@@ -455,7 +470,6 @@ function createWorkspace(rootDir: string) {
     const split = splitByContours(contours, current.strokes.map((stroke) => stroke.median_points))
     if (!split?.widths) return 'REJECTED'
     const widths = split.widths
-    remember(unicode, current, '궁서체 윤곽으로 교체')
     db.exec('BEGIN')
     try {
       writeStrokes(unicode, current.strokes.map((stroke, index) => ({
@@ -465,14 +479,13 @@ function createWorkspace(rootDir: string) {
         is_radical: stroke.is_radical,
         start_cap_type: stroke.start_cap_type,
         end_cap_type: stroke.end_cap_type,
-      })), ACTOR_FONT, undefined, split.fontOutline)
+      })), ACTOR_FONT, ACTION_FONT, undefined, split.fontOutline)
       db.prepare('UPDATE characters SET last_modified_by = ? WHERE unicode = ?').run(ACTOR_FONT, unicode)
       db.exec('COMMIT')
     } catch (error) {
       db.exec('ROLLBACK')
       throw error
     }
-    trimHistory(unicode)
     return 'APPLIED'
   }
 
@@ -518,7 +531,7 @@ function createWorkspace(rootDir: string) {
         is_radical: radicalSet.has(index) ? 1 : 0,
         start_cap_type: 'NONE',
         end_cap_type: 'NONE',
-      })), by, { source, url }, fontOutline)
+      })), by, `${source} 가져오기`, { source, url }, fontOutline)
       db.prepare('UPDATE characters SET stroke_count = ?, last_modified_by = ? WHERE unicode = ?')
         .run(medians.length, by, unicode)
       clearIssue(unicode)
@@ -611,6 +624,39 @@ const STROKES_DDL = `
     origin_url TEXT
   )
 `
+
+// strokes가 바뀔 때마다, 바뀌기 전 행을 그대로 남긴다(삭제하지 않는다). 현재 상태는 strokes에 있다.
+const STROKES_HISTORY_DDL = `
+  CREATE TABLE IF NOT EXISTS strokes_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    char TEXT NOT NULL REFERENCES characters(char) ON DELETE CASCADE,
+    radical INTEGER NOT NULL,
+    font_outline JSON NOT NULL CHECK (json_valid(font_outline) AND json_type(font_outline) = 'array'),
+    stroke_outlines JSON NOT NULL CHECK (json_valid(stroke_outlines) AND json_type(stroke_outlines) = 'array'),
+    median_line JSON NOT NULL CHECK (json_valid(median_line) AND json_type(median_line) = 'array'),
+    origin TEXT NOT NULL,
+    origin_url TEXT,
+    state_modified_at DATETIME NOT NULL,
+    state_modified_by TEXT NOT NULL,
+    action_desc TEXT NOT NULL,
+    changed_by TEXT NOT NULL,
+    changed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    undoable INTEGER NOT NULL DEFAULT 1 CHECK (undoable IN (0, 1))
+  );
+  CREATE INDEX IF NOT EXISTS idx_strokes_history_char ON strokes_history(char, id DESC)
+`
+
+type StrokeRow = {
+  char: string
+  radical: number
+  font_outline: string
+  stroke_outlines: string
+  median_line: string
+  last_modified_at: string
+  last_modified_by: string
+  origin: string
+  origin_url: string | null
+}
 
 function charactersDdl(name: string): string {
   return `
@@ -756,14 +802,7 @@ function migrate(db: DatabaseSync) {
     ${charactersDdl('characters')};
     ${ISSUES_DDL};
     ${STROKES_DDL};
-    CREATE TABLE IF NOT EXISTS edit_history (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      unicode TEXT NOT NULL,
-      snapshot_json TEXT NOT NULL,
-      action_desc TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (unicode) REFERENCES characters(unicode) ON DELETE CASCADE
-    );
+    ${STROKES_HISTORY_DDL};
     CREATE TABLE IF NOT EXISTS reference_data (
       unicode TEXT NOT NULL,
       source TEXT NOT NULL,
@@ -776,7 +815,6 @@ function migrate(db: DatabaseSync) {
       PRIMARY KEY (unicode, source),
       FOREIGN KEY (unicode) REFERENCES characters(unicode) ON DELETE CASCADE
     );
-    CREATE INDEX IF NOT EXISTS idx_edit_history_unicode_time ON edit_history(unicode, created_at DESC);
     CREATE TRIGGER IF NOT EXISTS trg_characters_updated AFTER UPDATE ON characters
     WHEN NEW.last_modified_at = OLD.last_modified_at
     BEGIN
@@ -787,6 +825,46 @@ function migrate(db: DatabaseSync) {
   if (!version.user_version) db.exec('PRAGMA user_version = 1')
   addColumn(db, 'reference_data', 'source_url', 'TEXT')
   splitRadicalNames(db)
+  migrateEditHistory(db)
+}
+
+// 옛 edit_history(글자별 획 배열 스냅샷)를 strokes_history로 옮기고 지운다. 스냅샷에 없는 값은 지금 행에서 가져온다:
+// font_outline은 그때 획 윤곽과 같았고, origin·origin_url은 윤곽 교체로 바뀌지 않았다. 그 상태가 만들어진 시각은 알 수 없어 변경 시각으로 채운다.
+function migrateEditHistory(db: DatabaseSync) {
+  if (!db.prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'edit_history'`).get()) return
+  type OldItem = { outline_path: string; median_points: Pt[] | string; stroke_width: number; is_radical: number; start_cap_type: string; end_cap_type: string }
+  const rows = db.prepare(`
+    SELECT c.char, e.snapshot_json, e.action_desc, e.created_at, s.origin, s.origin_url
+    FROM edit_history e JOIN characters c ON c.unicode = e.unicode JOIN strokes s ON s.char = c.char
+    ORDER BY e.id
+  `).all() as { char: string; snapshot_json: string; action_desc: string | null; created_at: string; origin: string; origin_url: string | null }[]
+  const insert = db.prepare(`
+    INSERT INTO strokes_history (char, radical, font_outline, stroke_outlines, median_line, origin, origin_url,
+                                 state_modified_at, state_modified_by, action_desc, changed_by, changed_at, undoable)
+    VALUES (?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+  `)
+  db.exec('BEGIN')
+  try {
+    for (const row of rows) {
+      const items = (JSON.parse(row.snapshot_json) as { strokes: OldItem[] }).strokes
+      const outlines = items.map((item, index) => ({ order: index + 1, path: item.outline_path, radical: item.is_radical ? 1 : 0 }))
+      const lines = items.map((item, index) => ({
+        order: index + 1,
+        points: typeof item.median_points === 'string' ? JSON.parse(item.median_points) as Pt[] : item.median_points,
+        width: item.stroke_width,
+        start_cap: item.start_cap_type,
+        end_cap: item.end_cap_type,
+      }))
+      const action = row.action_desc ?? '편집'
+      insert.run(row.char, JSON.stringify(items.map((item) => item.outline_path)), JSON.stringify(outlines), JSON.stringify(lines),
+        row.origin, row.origin_url, row.created_at, ACTOR_MIGRATION, action, action === ACTION_FONT ? ACTOR_FONT : ACTOR_USER, row.created_at)
+    }
+    db.exec('DROP TABLE edit_history')
+    db.exec('COMMIT')
+  } catch (error) {
+    db.exec('ROLLBACK')
+    throw error
+  }
 }
 
 // 옛 name_kr('훈 음', 공백 하나)을 reading(음)과 meaning(훈)으로 나눠 새 테이블로 갈아끼운다.
@@ -1119,29 +1197,6 @@ function radicalOf(id: number | null, strokes: { is_radical: number }[]) {
     name: `${radical.meaning} ${radical.reading}`,
     strokeIndices: strokes.flatMap((stroke, index) => stroke.is_radical ? [index] : []),
   }
-}
-
-function remember(unicode: string, current: { strokes: unknown }, action: string) {
-  dbInsertHistory(unicode, JSON.stringify({ strokes: current.strokes }), action)
-}
-
-function dbInsertHistory(unicode: string, snapshot: string, action: string) {
-  const db = singletonDb()
-  db.prepare('INSERT INTO edit_history (unicode, snapshot_json, action_desc) VALUES (?, ?, ?)').run(unicode, snapshot, action)
-}
-
-function trimHistory(unicode: string) {
-  singletonDb().prepare(`
-    DELETE FROM edit_history WHERE unicode = ? AND id NOT IN (
-      SELECT id FROM edit_history WHERE unicode = ? ORDER BY id DESC LIMIT ${HISTORY_KEEP}
-    )
-  `).run(unicode, unicode)
-}
-
-let opened: DatabaseSync | null = null
-function singletonDb(): DatabaseSync {
-  if (!opened) throw new Error('DB가 아직 열리지 않았습니다.')
-  return opened
 }
 
 function unicodeOf(char: string): string {
