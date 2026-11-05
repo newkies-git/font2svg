@@ -714,13 +714,16 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <p class="hint" aria-live="polite" aria-atomic="true">{{ message }}</p>
+        <div class="status-row" aria-live="polite" aria-atomic="true">
+          <progress v-if="busy" class="loading-spinner" aria-label="작업 처리 중"></progress>
+          <p class="hint">{{ message }}</p>
+        </div>
         <p v-if="error" class="error" role="alert">{{ error }}</p>
       </section>
 
       <section class="panel" aria-labelledby="panel-heading">
         <h2 id="panel-heading" class="visually-hidden">획 관리 및 편집 패널</h2>
-        <div class="actions" role="toolbar" aria-label="데이터 관리 도구">
+        <div class="actions" role="toolbar" aria-label="데이터 관리 도구" :aria-busy="busy">
           <button :disabled="!selected || busy" @click="pullReference">레퍼런스 수신</button>
           <button :disabled="busy" @click="syncMissing">미완료 20자 동기화</button>
           <button class="primary" :disabled="!selected || busy" @click="saveStrokes('획 편집')">변경사항 저장</button>

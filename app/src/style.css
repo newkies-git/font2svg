@@ -638,11 +638,54 @@
     font-weight: 600;
   }
 
+  .status-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
   .hint {
     margin: 0;
     color: var(--color-text-muted);
     line-height: 1.5;
     font-size: 0.875rem;
+  }
+
+  /* Indeterminate loading spinner based on modern-web-guidance spinner */
+  progress.loading-spinner:indeterminate {
+    --size: 16px;
+    --thickness: 2px;
+    --spinner-color: var(--color-primary);
+    --track-color: var(--color-border-subtle);
+    inline-size: var(--size);
+    block-size: var(--size);
+    border-radius: 50%;
+    appearance: none;
+    border: var(--thickness) solid var(--track-color);
+    border-block-start-color: var(--spinner-color);
+    animation: spin 0.8s linear infinite;
+    flex-shrink: 0;
+  }
+
+  progress.loading-spinner:indeterminate::-webkit-progress-bar {
+    display: none;
+    background: none;
+  }
+
+  progress.loading-spinner:indeterminate::-webkit-progress-value {
+    display: none;
+    background: none;
+  }
+
+  progress.loading-spinner:indeterminate::-moz-progress-bar {
+    display: none;
+    background: none;
+  }
+
+  @keyframes spin {
+    to {
+      rotate: 1turn;
+    }
   }
 
   .error {
@@ -844,6 +887,9 @@
   @media (prefers-reduced-motion: reduce) {
     button {
       transition: none;
+    }
+    progress.loading-spinner:indeterminate {
+      animation-duration: 3s;
     }
   }
 
