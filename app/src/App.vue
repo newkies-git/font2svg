@@ -144,6 +144,19 @@ async function loadList() {
   }
 }
 
+// IME-safe enter handling according to modern-web-guidance
+function onSearchKeyDown(event: KeyboardEvent) {
+  if (event.key === 'Enter') {
+    if (event.isComposing || event.keyCode === 229) {
+      return
+    }
+    event.preventDefault()
+    if (chars.value.length > 0) {
+      openChar(chars.value[0])
+    }
+  }
+}
+
 async function openChar(row: CharacterSummary) {
   stop()
   error.value = ''
@@ -530,7 +543,12 @@ onBeforeUnmount(() => {
             class="search"
             placeholder="한자, 독음, 코드 검색"
             autocomplete="off"
+            autocorrect="off"
+            autocapitalize="off"
+            spellcheck="false"
+            enterkeyhint="search"
             @input="loadList"
+            @keydown="onSearchKeyDown"
           />
         </div>
       </header>
