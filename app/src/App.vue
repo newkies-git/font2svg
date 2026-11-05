@@ -5,6 +5,7 @@ import { recoverMedian, splitStrokeByKnife } from './lib/strokeCut.ts'
 import type { CapType, CharacterDetail, CharacterSummary, IssueStatus, Pt, StrokeRecord } from './types.ts'
 
 type ThemeMode = 'system' | 'light' | 'dark'
+type StatusFilter = 'ALL' | 'APPROVED' | 'DRAFT' | 'OPEN'
 
 const ISSUE_LABELS: Record<IssueStatus, string> = { OPEN: '작업 전', DRAFT: '승인 대기', APPROVED: '승인됨' }
 
@@ -15,6 +16,7 @@ function issueLabel(detail: CharacterDetail): string {
 
 const chars = ref<CharacterSummary[]>([])
 const query = ref('')
+const statusFilter = ref<StatusFilter>('ALL')
 const selected = ref<CharacterDetail | null>(null)
 const strokes = ref<StrokeRecord[]>([])
 const message = ref('편집할 한자를 목록에서 선택하세요.')
@@ -32,6 +34,65 @@ const svgFileInput = ref<HTMLInputElement | null>(null)
 const themeMode = ref<ThemeMode>('system')
 const confirmDialog = ref<HTMLDialogElement | null>(null)
 let confirmResolve: ((value: boolean) => void) | null = null
+
+const filteredChars = computed(() => {
+  if (statusFilter.value === 'ALL') return chars.value
+  return chars.value.filter((c) => c.issue_status === statusFilter.value)
+})
+
+const statusCounts = computed(() => {
+  const counts = { ALL: chars.value.length, APPROVED: 0, DRAFT: 0, OPEN: 0 }
+  for (const c of chars.value) {
+    if (c.issue_status && c.issue_status in counts) {
+      counts[c.issue_status as IssueStatus]++
+    }
+  }
+  return counts
+})
+
+function clearSearch() {
+  query.value = ''
+  loadList()
+}
+
+function selectStroke(order: number) {
+  stop()
+  shown.value = order
+  reveal.value = 1
+}
+
+function cancelKnife() {
+  knifeFrom.value = null
+  message.value = '획 분할이 취소되었습니다.'
+}
+
+function onGlobalKeyDown(event: KeyboardEvent) {
+  const tag = (event.target as HTMLElement)?.tagName
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+  if (!selected.value) return
+
+  if (event.key === 'ArrowLeft') {
+    event.preventDefault()
+    if (shown.value > 1) {
+      shown.value -= 1
+      reveal.value = 1
+    }
+  } else if (event.key === 'ArrowRight') {
+    event.preventDefault()
+    if (shown.value < strokes.value.length) {
+      shown.value += 1
+      reveal.value = 1
+    }
+  } else if (event.key === ' ') {
+    event.preventDefault()
+    if (playing.value) stop()
+    else play()
+  } else if (event.key === 'Escape') {
+    if (knifeFrom.value) {
+      cancelKnife()
+    }
+  }
+}
 
 function askConfirm(): Promise<boolean> {
   return new Promise((resolve) => {
@@ -478,6 +539,7 @@ onMounted(() => {
     }
   } catch {}
   window.addEventListener('storage', handleStorageChange)
+  window.addEventListener('keydown', onGlobalKeyDown)
   loadList()
 })
 
@@ -488,6 +550,7 @@ onBeforeUnmount(() => {
     motionMedia.removeEventListener('change', onMotionPreferenceChange)
   }
   window.removeEventListener('storage', handleStorageChange)
+  window.removeEventListener('keydown', onGlobalKeyDown)
 })
 </script>
 
@@ -497,7 +560,10 @@ onBeforeUnmount(() => {
     <aside class="side" aria-label="한자 탐색">
       <header class="side-header">
         <div class="brand-row">
-          <h1>추사 1817</h1>
+          <div class="brand-title">
+            <h1>추사 1817</h1>
+            <span class="brand-sub">한자 필순 스튜디오</span>
+          </div>
           <div class="theme-switch" role="group" aria-label="화면 테마">
             <button
               type="button"
@@ -534,22 +600,78 @@ onBeforeUnmount(() => {
             </button>
           </div>
         </div>
+
         <div class="search-box">
           <label for="char-search" class="visually-hidden">한자, 독음, 유니코드 검색</label>
-          <input
-            id="char-search"
-            v-model="query"
-            type="search"
-            class="search"
-            placeholder="한자, 독음, 코드 검색"
-            autocomplete="off"
-            autocorrect="off"
-            autocapitalize="off"
-            spellcheck="false"
-            enterkeyhint="search"
-            @input="loadList"
-            @keydown="onSearchKeyDown"
-          />
+          <div class="search-input-wrap">
+            <span class="search-icon" aria-hidden="true">🔍</span>
+            <input
+              id="char-search"
+              v-model="query"
+              type="search"
+              class="search"
+              placeholder="한자, 독음, 코드 검색"
+              autocomplete="off"
+              autocorrect="off"
+              autocapitalize="off"
+              spellcheck="false"
+              enterkeyhint="search"
+              @input="loadList"
+              @keydown="onSearchKeyDown"
+            />
+            <button
+              v-if="query"
+              type="button"
+              class="search-clear-btn"
+              aria-label="검색어 지우기"
+              @click="clearSearch"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+
+        <div class="filter-tabs" role="tablist" aria-label="상태별 필터">
+          <button
+            type="button"
+            role="tab"
+            class="tab-btn"
+            :class="{ active: statusFilter === 'ALL' }"
+            :aria-selected="statusFilter === 'ALL'"
+            @click="statusFilter = 'ALL'"
+          >
+            전체 <span class="tab-count">{{ statusCounts.ALL }}</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            class="tab-btn"
+            :class="{ active: statusFilter === 'APPROVED' }"
+            :aria-selected="statusFilter === 'APPROVED'"
+            @click="statusFilter = 'APPROVED'"
+          >
+            승인 <span class="tab-count count-approved">{{ statusCounts.APPROVED }}</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            class="tab-btn"
+            :class="{ active: statusFilter === 'DRAFT' }"
+            :aria-selected="statusFilter === 'DRAFT'"
+            @click="statusFilter = 'DRAFT'"
+          >
+            대기 <span class="tab-count count-draft">{{ statusCounts.DRAFT }}</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            class="tab-btn"
+            :class="{ active: statusFilter === 'OPEN' }"
+            :aria-selected="statusFilter === 'OPEN'"
+            @click="statusFilter = 'OPEN'"
+          >
+            미착수 <span class="tab-count count-open">{{ statusCounts.OPEN }}</span>
+          </button>
         </div>
       </header>
 
@@ -565,8 +687,11 @@ onBeforeUnmount(() => {
             @change="uploadInitial"
           />
         </div>
+        <div v-else-if="filteredChars.length === 0" class="empty-filter">
+          <p>해당 조건의 한자가 없습니다.</p>
+        </div>
         <ul v-else class="char-list" role="list">
-          <li v-for="row in chars" :key="row.unicode">
+          <li v-for="row in filteredChars" :key="row.unicode">
             <button
               class="char"
               :class="{ active: selected?.unicode === row.unicode }"
@@ -574,13 +699,20 @@ onBeforeUnmount(() => {
               @click="openChar(row)"
             >
               <span class="glyph" lang="zh-Hani">{{ row.char }}</span>
-              <span class="meta">
-                <span>{{ row.reading }}</span>
-                <span>{{ row.unicode }}</span>
-              </span>
-              <span class="badge">
-                {{ row.stroke_count }}획
-              </span>
+              <div class="meta">
+                <span class="meta-title">{{ row.reading ?? '독음 미등록' }}</span>
+                <span class="meta-sub">{{ row.unicode }} · {{ row.stroke_count }}획</span>
+              </div>
+              <div class="char-badges">
+                <span
+                  v-if="row.issue_status"
+                  class="status-tag"
+                  :class="`tag-${row.issue_status.toLowerCase()}`"
+                >
+                  {{ row.issue_status === 'APPROVED' ? '승인' : row.issue_status === 'DRAFT' ? '대기' : '작업전' }}
+                </span>
+                <span v-if="row.in_font" class="font-tag" title="궁서체 포함">궁서</span>
+              </div>
             </button>
           </li>
         </ul>
@@ -590,6 +722,48 @@ onBeforeUnmount(() => {
     <main id="main-content" class="main" tabindex="-1">
       <section class="stage-wrap" aria-labelledby="viewer-heading">
         <h2 id="viewer-heading" class="visually-hidden">획 뷰어</h2>
+
+        <!-- Character Meta Header Bar -->
+        <header v-if="selected" class="char-hero-bar">
+          <div class="hero-left">
+            <div class="hero-glyph" lang="zh-Hani">{{ selected.char }}</div>
+            <div class="hero-details">
+              <div class="hero-title-row">
+                <h2 class="hero-reading">{{ selected.reading ?? '독음 미등록' }}</h2>
+                <span v-if="selected.meaning" class="hero-meaning">{{ selected.meaning }}</span>
+                <span class="hero-unicode">{{ selected.unicode }}</span>
+              </div>
+              <div class="hero-meta-row">
+                <span v-if="selected.stroke_count" class="meta-pill">총 {{ selected.stroke_count }}획</span>
+                <span v-if="selected.grade" class="meta-pill">{{ selected.grade }}</span>
+                <span v-if="selected.origin" class="meta-pill origin-pill">출처: {{ selected.origin }}</span>
+                <span v-if="selected.working" class="meta-pill working-pill">작업 진행 중</span>
+                <span
+                  v-if="selected.issue_status"
+                  class="status-tag"
+                  :class="`tag-${selected.issue_status.toLowerCase()}`"
+                >
+                  {{ ISSUE_LABELS[selected.issue_status] }}
+                </span>
+              </div>
+            </div>
+          </div>
+          <div class="hero-right">
+            <div class="shortcut-hints" title="단축키 안내">
+              <span><kbd>←</kbd><kbd>→</kbd> 획 이동</span>
+              <span><kbd>Space</kbd> 재생</span>
+              <span><kbd>Esc</kbd> 자르기 취소</span>
+            </div>
+          </div>
+        </header>
+
+        <!-- Knife Mode Banner -->
+        <div v-if="knifeFrom" class="knife-banner" role="alert">
+          <span class="knife-icon" aria-hidden="true">✂️</span>
+          <span class="knife-text">획 분할 시작점이 지정되었습니다. 두 번째 점을 클릭하면 분할됩니다.</span>
+          <button type="button" class="knife-cancel-btn" @click="cancelKnife">자르기 취소 (Esc)</button>
+        </div>
+
         <div class="stage">
           <svg
             v-if="selected"
@@ -644,73 +818,99 @@ onBeforeUnmount(() => {
                 <circle :r="BADGE_RADIUS" class="num-badge" />
                 <text text-anchor="middle" dominant-baseline="central">{{ index + 1 }}</text>
               </g>
+
+              <!-- Knife start indicator point -->
+              <g v-if="knifeFrom" :transform="`translate(${knifeFrom[0]} ${knifeFrom[1]})`">
+                <circle r="14" class="knife-point-pulse" />
+                <circle r="5" class="knife-point" />
+              </g>
             </g>
           </svg>
-          <p v-else class="empty">편집할 한자를 왼쪽 목록에서 선택하세요.</p>
+          <div v-else class="empty-state">
+            <span class="empty-icon" aria-hidden="true">📖</span>
+            <h3>선택된 한자가 없습니다</h3>
+            <p>좌측 목록에서 편집할 한자를 선택하거나 검색하세요.</p>
+          </div>
 
           <div class="step-row" role="toolbar" aria-label="필순 탐색 도구">
             <button
               :disabled="!selected || shown <= 1"
-              aria-label="이전 획"
+              title="첫 획"
+              @click="shown = 1; reveal = 1"
+            >
+              처음
+            </button>
+            <button
+              :disabled="!selected || shown <= 1"
+              title="이전 획 (←)"
               @click="shown = Math.max(1, shown - 1); reveal = 1"
             >
               이전 획
             </button>
-            <strong aria-live="polite" aria-atomic="true">{{ shown }} / {{ strokes.length }}</strong>
+            <div class="step-counter" aria-live="polite" aria-atomic="true">
+              <span class="step-current">{{ shown }}</span>
+              <span class="step-divider">/</span>
+              <span class="step-total">{{ strokes.length }}</span>
+              <span class="step-unit">획</span>
+            </div>
             <button
               :disabled="!selected || shown >= strokes.length"
-              aria-label="다음 획"
+              title="다음 획 (→)"
               @click="shown = Math.min(strokes.length, shown + 1); reveal = 1"
             >
               다음 획
             </button>
-            <button :disabled="!selected" @click="showAll">전체 보기</button>
+            <button :disabled="!selected" title="전체 보기" @click="showAll">전체</button>
             <button
-              class="primary"
-              :disabled="!selected || playing"
-              :aria-label="playing ? '재생 중' : '필순 재생'"
-              @click="play"
+              class="primary play-btn"
+              :disabled="!selected"
+              :title="playing ? '일시정지 (Space)' : '필순 재생 (Space)'"
+              @click="playing ? stop() : play()"
             >
-              {{ playing ? '재생 중…' : '필순 재생' }}
+              {{ playing ? '⏸ 정지' : '▶ 재생' }}
             </button>
           </div>
 
           <div class="mode-row" role="group" aria-label="표시 설정">
-            <button
-              :class="{ on: background === 'outline' }"
-              :aria-pressed="background === 'outline'"
-              @click="background = 'outline'"
-            >
-              외곽선
-            </button>
-            <button
-              :class="{ on: background === 'silhouette' }"
-              :aria-pressed="background === 'silhouette'"
-              @click="background = 'silhouette'"
-            >
-              실루엣
-            </button>
-            <button
-              :class="{ on: background === 'none' }"
-              :aria-pressed="background === 'none'"
-              @click="background = 'none'"
-            >
-              배경 없음
-            </button>
-            <button
-              :class="{ on: showMedians }"
-              :aria-pressed="showMedians"
-              @click="showMedians = !showMedians"
-            >
-              중심선 표시
-            </button>
-            <button
-              :class="{ on: showNumbers }"
-              :aria-pressed="showNumbers"
-              @click="showNumbers = !showNumbers"
-            >
-              번호 표시
-            </button>
+            <div class="mode-btn-group">
+              <button
+                :class="{ on: background === 'outline' }"
+                :aria-pressed="background === 'outline'"
+                @click="background = 'outline'"
+              >
+                외곽선
+              </button>
+              <button
+                :class="{ on: background === 'silhouette' }"
+                :aria-pressed="background === 'silhouette'"
+                @click="background = 'silhouette'"
+              >
+                실루엣
+              </button>
+              <button
+                :class="{ on: background === 'none' }"
+                :aria-pressed="background === 'none'"
+                @click="background = 'none'"
+              >
+                배경 없음
+              </button>
+            </div>
+            <div class="mode-btn-group">
+              <button
+                :class="{ on: showMedians }"
+                :aria-pressed="showMedians"
+                @click="showMedians = !showMedians"
+              >
+                중심선
+              </button>
+              <button
+                :class="{ on: showNumbers }"
+                :aria-pressed="showNumbers"
+                @click="showNumbers = !showNumbers"
+              >
+                번호 표시
+              </button>
+            </div>
           </div>
         </div>
 
@@ -723,67 +923,132 @@ onBeforeUnmount(() => {
 
       <section class="panel" aria-labelledby="panel-heading">
         <h2 id="panel-heading" class="visually-hidden">획 관리 및 편집 패널</h2>
-        <div class="actions" role="toolbar" aria-label="데이터 관리 도구" :aria-busy="busy">
-          <button :disabled="!selected || busy" @click="pullReference">레퍼런스 수신</button>
-          <button :disabled="busy" @click="syncMissing">미완료 20자 동기화</button>
-          <button class="primary" :disabled="!selected || busy" @click="saveStrokes('획 편집')">변경사항 저장</button>
-          <button class="primary" :disabled="!selected?.working || strokes.length === 0 || busy" @click="approve">승인</button>
-          <input ref="svgFileInput" class="visually-hidden" tabindex="-1" aria-hidden="true" type="file" accept="image/svg+xml,.svg" @change="importSvg" />
-          <button :disabled="!selected || busy || (strokes.length > 0 && !selected.working)" @click="svgFileInput?.click()">SVG 가져오기</button>
-          <button :disabled="!selected || busy" @click="applyNaver">네이버 획순 적용</button>
-          <button :disabled="!selected" @click="undo">실행 취소</button>
-          <button :disabled="!selected" @click="compileChar">JSON 컴파일</button>
+
+        <!-- Card 1: Primary Workflow Actions -->
+        <div class="panel-card workflow-card">
+          <div class="card-header">
+            <h3>주요 편집 작업</h3>
+            <span v-if="selected?.history_count" class="history-badge">이력 {{ selected.history_count }}회</span>
+          </div>
+          <div class="card-actions" role="toolbar" aria-label="편집 작업 도구" :aria-busy="busy">
+            <button
+              class="primary primary-save"
+              :disabled="!selected || busy"
+              @click="saveStrokes('획 편집')"
+            >
+              💾 변경사항 저장
+            </button>
+            <button
+              class="success-btn"
+              :disabled="!selected?.working || strokes.length === 0 || busy"
+              @click="approve"
+            >
+              ✓ 작업 승인
+            </button>
+            <button
+              :disabled="!selected || busy"
+              @click="undo"
+            >
+              ↩ 실행 취소
+            </button>
+          </div>
         </div>
-        <p class="hint">획 위의 두 점을 순서대로 클릭하면 획이 분할됩니다. 부수 획은 붉은색 점선으로 강조됩니다.</p>
-        <ul class="type-list" role="list" aria-label="획 상세 목록">
-          <li v-for="(stroke, index) in strokes" :key="stroke.stroke_order" class="stroke-item">
-            <span class="stroke-num">{{ index + 1 }}획</span>
-            <label class="check-label">
-              <input v-model="stroke.is_radical" type="checkbox" :true-value="1" :false-value="0" />
-              <span>부수</span>
-            </label>
-            <label class="select-label">
-              <span class="visually-hidden">{{ index + 1 }}획 시작 캡</span>
-              <select
-                :value="stroke.start_cap_type"
-                :aria-label="`${index + 1}획 시작 캡`"
-                @change="setCap(index, 'start', ($event.target as HTMLSelectElement).value as CapType)"
-              >
-                <option value="NONE">시작 없음</option>
-                <option value="AUTO_ROUND">시작 둥글게</option>
-                <option value="REF_STAMP">시작 도장</option>
-              </select>
-            </label>
-            <label class="select-label">
-              <span class="visually-hidden">{{ index + 1 }}획 끝 캡</span>
-              <select
-                :value="stroke.end_cap_type"
-                :aria-label="`${index + 1}획 끝 캡`"
-                @change="setCap(index, 'end', ($event.target as HTMLSelectElement).value as CapType)"
-              >
-                <option value="NONE">끝 없음</option>
-                <option value="AUTO_ROUND">끝 둥글게</option>
-                <option value="REF_STAMP">끝 도장</option>
-              </select>
-            </label>
-            <div class="stroke-order-btns" role="group" :aria-label="`${index + 1}획 순서 조정`">
+
+        <!-- Card 2: Reference & Sync Tools -->
+        <div class="panel-card tools-card">
+          <div class="card-header">
+            <h3>데이터 동기화 및 도구</h3>
+          </div>
+          <div class="card-tools">
+            <button :disabled="!selected || busy" @click="applyNaver">네이버 획순 적용</button>
+            <button :disabled="!selected || busy" @click="pullReference">레퍼런스 수신</button>
+            <input ref="svgFileInput" class="visually-hidden" tabindex="-1" aria-hidden="true" type="file" accept="image/svg+xml,.svg" @change="importSvg" />
+            <button :disabled="!selected || busy || (strokes.length > 0 && !selected.working)" @click="svgFileInput?.click()">SVG 가져오기</button>
+            <button :disabled="!selected || busy" @click="compileChar">JSON 컴파일</button>
+            <button class="subtle-btn" :disabled="busy" @click="syncMissing">미완료 20자 동기화</button>
+          </div>
+        </div>
+
+        <!-- Card 3: Stroke Structure List -->
+        <div class="panel-card strokes-card">
+          <div class="card-header">
+            <h3>획 구성 및 순서 (총 {{ strokes.length }}획)</h3>
+            <span class="guide-text">클릭 시 해당 획으로 이동</span>
+          </div>
+          <ul class="type-list" role="list" aria-label="획 상세 목록">
+            <li
+              v-for="(stroke, index) in strokes"
+              :key="stroke.stroke_order"
+              class="stroke-item"
+              :class="{ 'is-current': index === shown - 1 }"
+            >
               <button
-                :disabled="index === 0"
-                :aria-label="`${index + 1}획 순서 위로 이동`"
-                @click="moveStroke(index, -1)"
+                type="button"
+                class="stroke-jump-btn"
+                :title="`${index + 1}획으로 이동`"
+                @click="selectStroke(index + 1)"
               >
-                위로
+                <span class="stroke-num">{{ index + 1 }}</span>
               </button>
-              <button
-                :disabled="index === strokes.length - 1"
-                :aria-label="`${index + 1}획 순서 아래로 이동`"
-                @click="moveStroke(index, 1)"
-              >
-                아래로
-              </button>
-            </div>
-          </li>
-        </ul>
+
+              <label class="radical-toggle-chip" :class="{ 'is-radical': stroke.is_radical }">
+                <input
+                  v-model="stroke.is_radical"
+                  type="checkbox"
+                  :true-value="1"
+                  :false-value="0"
+                />
+                <span>부수</span>
+              </label>
+
+              <div class="cap-group">
+                <label class="select-label" title="시작 캡 형태">
+                  <span class="visually-hidden">{{ index + 1 }}획 시작 캡</span>
+                  <select
+                    :value="stroke.start_cap_type"
+                    :aria-label="`${index + 1}획 시작 캡`"
+                    @change="setCap(index, 'start', ($event.target as HTMLSelectElement).value as CapType)"
+                  >
+                    <option value="NONE">시작 기본</option>
+                    <option value="AUTO_ROUND">시작 둥글게</option>
+                    <option value="REF_STAMP">시작 도장</option>
+                  </select>
+                </label>
+                <label class="select-label" title="끝 캡 형태">
+                  <span class="visually-hidden">{{ index + 1 }}획 끝 캡</span>
+                  <select
+                    :value="stroke.end_cap_type"
+                    :aria-label="`${index + 1}획 끝 캡`"
+                    @change="setCap(index, 'end', ($event.target as HTMLSelectElement).value as CapType)"
+                  >
+                    <option value="NONE">끝 기본</option>
+                    <option value="AUTO_ROUND">끝 둥글게</option>
+                    <option value="REF_STAMP">끝 도장</option>
+                  </select>
+                </label>
+              </div>
+
+              <div class="stroke-order-btns" role="group" :aria-label="`${index + 1}획 순서 조정`">
+                <button
+                  :disabled="index === 0"
+                  :aria-label="`${index + 1}획 순서 위로 이동`"
+                  title="위로 이동"
+                  @click="moveStroke(index, -1)"
+                >
+                  ↑
+                </button>
+                <button
+                  :disabled="index === strokes.length - 1"
+                  :aria-label="`${index + 1}획 순서 아래로 이동`"
+                  title="아래로 이동"
+                  @click="moveStroke(index, 1)"
+                >
+                  ↓
+                </button>
+              </div>
+            </li>
+          </ul>
+        </div>
       </section>
     </main>
 
