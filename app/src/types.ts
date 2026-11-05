@@ -1,6 +1,6 @@
 export type Pt = [number, number]
 
-export type RefSource = 'MMH' | 'IDS' | 'OLLAMA_IDS' | 'MANUAL' | 'FONT' | 'NONE'
+export type RefSource = 'MMH' | 'ACJK' | 'NAVER' | 'IDS' | 'OLLAMA_IDS' | 'MANUAL' | 'FONT' | 'NONE'
 export type IssueStatus = 'OPEN' | 'DRAFT' | 'APPROVED'
 export type CapType = 'NONE' | 'AUTO_ROUND' | 'REF_STAMP'
 export type BackgroundMode = 'outline' | 'silhouette' | 'none'

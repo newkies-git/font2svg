@@ -28,6 +28,7 @@ const shown = ref(0)
 const reveal = ref(1)
 const knifeFrom = ref<Pt | null>(null)
 const layer = ref<SVGGElement | null>(null)
+const svgFileInput = ref<HTMLInputElement | null>(null)
 const themeMode = ref<ThemeMode>('system')
 
 // Animation loop using requestAnimationFrame
@@ -217,6 +218,30 @@ async function approve() {
     await reload()
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : '승인 실패: 서버 상태를 확인하세요.'
+  } finally {
+    busy.value = false
+  }
+}
+
+async function importSvg(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!selected.value || !file) return
+  busy.value = true
+  error.value = ''
+  try {
+    const response = await fetch(`/api/characters/${encodeURIComponent(selected.value.unicode)}/import-svg`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ svg: await file.text() }),
+    })
+    const body = await response.json()
+    if (!response.ok) throw new Error(body.error ?? 'SVG 가져오기 실패: AnimCJK 형식 SVG인지 확인하세요.')
+    message.value = 'SVG를 작업 데이터로 가져왔습니다. 확인 후 승인하세요.'
+    await reload()
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : 'SVG 가져오기 실패: 서버 상태를 확인하세요.'
   } finally {
     busy.value = false
   }
@@ -646,6 +671,8 @@ onBeforeUnmount(() => {
           <button :disabled="busy" @click="syncMissing">미완료 20자 동기화</button>
           <button class="primary" :disabled="!selected || busy" @click="saveStrokes('획 편집')">변경사항 저장</button>
           <button class="primary" :disabled="!selected?.working || strokes.length === 0 || busy" @click="approve">승인</button>
+          <input ref="svgFileInput" class="visually-hidden" tabindex="-1" aria-hidden="true" type="file" accept="image/svg+xml,.svg" @change="importSvg" />
+          <button :disabled="!selected || busy || (strokes.length > 0 && !selected.working)" @click="svgFileInput?.click()">SVG 가져오기</button>
           <button :disabled="!selected" @click="undo">실행 취소</button>
           <button :disabled="!selected" @click="compileChar">JSON 컴파일</button>
         </div>

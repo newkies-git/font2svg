@@ -3,8 +3,10 @@ BiauKai.ttc
 Gungseouche.ttf
 NotoSerifKR-Regular.ttf
 
-# 내려받은 공개 IDS, 작업 전 백업 DB
+# 내려받은 공개 IDS·AnimCJK 데이터, 작업 전 백업 DB
 database/IDS.TXT
+database/graphics*.txt
+database/dictionary*.txt
 database/*.before-*.db
 
 # Python

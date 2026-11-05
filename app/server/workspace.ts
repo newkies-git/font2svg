@@ -2,9 +2,14 @@ import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
+import { parseAnimSvg, parseNaverSvg } from './animSvg.ts'
 import { KANGXI_RADICALS } from './radicals.ts'
 import {
+  ACJK_FILE_LIMIT,
   AREA_FLATNESS,
+  ANIM_PATH_LENGTH,
+  ANIM_STROKE_SECONDS,
+  ANIM_STROKE_STEP_SECONDS,
   CANVAS,
   COORD_ROUND,
   DB_BUSY_TIMEOUT_MS,
@@ -32,6 +37,18 @@ import { computeOptimalStrokeWidth, recoverMedian, segmentOutlineByMedians, simp
 import { loadFont, type FontFile } from './font.ts'
 
 const HANJA_VERSION = 'hanzi-writer-data@2.0'
+
+// AnimCJK: 커밋을 고정해 한 번만 내려받아 database/에 두고(저장소에는 올리지 않는다), 글자별 원본은 reference_data에 둔다.
+// 일본(Ja) → 대만(ZhHant) → 한국(Ko) 순으로 덮어쓰므로 뒤에 있는 Ko가 가장 우선한다.
+const ACJK_COMMIT = '1c8c8ef45aa9dfe1e1129cb5462ddf59a50a65ce'
+const ACJK_VERSION = `animCJK@${ACJK_COMMIT.slice(0, 10)}`
+const ACJK_RAW = `https://raw.githubusercontent.com/parsimonhi/animCJK/${ACJK_COMMIT}`
+const ACJK_BLOB = `https://github.com/parsimonhi/animCJK/blob/${ACJK_COMMIT}`
+const ACJK_VARIANTS = ['Ja', 'ZhHant', 'Ko']
+// 네이버 한자사전: 한국 한자 획순 팝업('획순 보기')이 쓰는 글자별 애니메이션 SVG. 글자별로 필요할 때 하나씩 받고 원본 SVG를 reference_data에 둔다.
+// 폴더는 코드의 앞 두 자리 + '00'이다(U+65E6 → 6500/65E6.svg). 배포 폴더명(aniSVG_연_월)이 바뀌면 NAVER_VERSION만 고치면 된다.
+const NAVER_VERSION = 'aniSVG_2026_04'
+const NAVER_BASE = `https://ssl.pstatic.net/dicimg/cckodict/${NAVER_VERSION}`
 const HANJA_CDN = 'https://cdn.jsdelivr.net/npm/hanzi-writer-data@2.0'
 const FONT_FILE = path.join('app', 'fonts', 'Gungseouche.ttf')
 const KIBIBYTE = 1024
@@ -58,9 +75,13 @@ const ACTOR_HANJA = 'system:hanja'
 const ACTOR_MIGRATION = 'system:migration'
 const ACTOR_IDS = 'system:ids'
 const ACTOR_FONT = 'system:font'
+const ACTOR_ACJK = 'system:acjk'
+const ACTOR_NAVER = 'system:naver'
 const ACTION_FONT = '궁서체 윤곽으로 교체'
 const ACTION_UNDO = '실행 취소'
+const ACTION_ACJK = 'AnimCJK로 교체'
 const ACTION_APPROVE = '작업 데이터 승인'
+const ACTION_SVG = 'SVG 가져오기'
 const ORIGIN_MANUAL = 'MANUAL'
 
 type StrokeOutline = { order: number; path: string; radical: 0 | 1 }
@@ -98,6 +119,7 @@ function createWorkspace(rootDir: string) {
   seed(db)
   let font: FontFile | null | undefined
   let idsIndex: Map<string, string[]> | undefined
+  let acjkIndex: Map<string, { raw: string; url: string }> | undefined
 
   function listCharacters(query: string) {
     const q = query.trim()
@@ -293,6 +315,17 @@ function createWorkspace(rootDir: string) {
     return getCharacter(unicode)
   }
 
+  // AnimCJK 형식 SVG를 작업 데이터로 가져온다. 승인 전에는 strokes를 건드리지 않으므로 strokes에 이미 있는 글자는 받지 않는다.
+  function importSvg(unicode: string, svg: string) {
+    const character = db.prepare('SELECT char FROM characters WHERE unicode = ?').get(unicode) as { char: string } | undefined
+    if (!character) throw new Error('등록되지 않은 글자입니다.')
+    if (readStrokeRow(unicode)) throw new Error('strokes에 이미 있는 글자는 SVG로 가져올 수 없습니다.')
+    const items = toItems(parseAnimSvg(svg, character.char), new Set())
+    const problems = validate(character.char, items)
+    if (problems.length) throw new Error(problems.join(' '))
+    return updateStrokes(unicode, items, ACTION_SVG)
+  }
+
   // 작업 데이터를 확인하고 승인하면 strokes로 옮기고, 옮긴 작업 데이터는 지운다. issues 행은 '승인됨'으로 남긴다.
   function approve(unicode: string) {
     const character = db.prepare('SELECT char FROM characters WHERE unicode = ?').get(unicode) as { char: string } | undefined
@@ -359,27 +392,27 @@ function createWorkspace(rootDir: string) {
     if (!character) throw new Error('등록되지 않은 글자입니다.')
     const existing = readStrokes(unicode)
     if (existing.length > 0) {
-      const hanja = await loadSource(unicode, 'MMH', hanjaUrl(character.char), () => fetchHanja(character.char))
-      const editedBy = (db.prepare('SELECT last_modified_by AS by FROM strokes WHERE char = ?').get(character.char) as { by: string }).by
-      // 사용자가 고쳤거나 궁서체 윤곽으로 바꾼 획은 Hanja 중심선으로 덮어쓰지 않는다.
-      if (hanja && hanja.value.medians.length === existing.length && editedBy !== ACTOR_USER && editedBy !== ACTOR_FONT) {
+      const hanja = await loadReference(unicode, character.char)
+      const row = db.prepare('SELECT last_modified_by AS by, origin FROM strokes WHERE char = ?').get(character.char) as { by: string; origin: string }
+      // 사용자가 고쳤거나 궁서체 윤곽으로 바꾼 획은 레퍼런스 중심선으로 덮어쓰지 않는다. 가져온 출처가 같을 때만 갱신한다.
+      if (hanja && hanja.source === row.origin && hanja.value.medians.length === existing.length && row.by !== ACTOR_USER && row.by !== ACTOR_FONT) {
         const radical = new Set(hanja.value.radical)
         writeStrokes(unicode, existing.map((stroke, index) => ({
           ...stroke,
           median_points: roundPoints(medianOrRecovered(hanja.value.medians[index], stroke.outline_path) ?? stroke.median_points),
           is_radical: radical.has(index) ? 1 : 0,
-        })), ACTOR_HANJA, 'Hanja 중심선 갱신', { source: 'MMH', url: hanja.url })
+        })), ACTOR_HANJA, '레퍼런스 중심선 갱신', { source: hanja.source, url: hanja.url })
       }
-      return { unicode, source: hanja ? 'MMH' : 'DB', fetched: false }
+      return { unicode, source: hanja ? hanja.source : 'DB', fetched: false }
     }
 
     if (db.prepare('SELECT 1 FROM working_data WHERE char = ?').get(character.char)) return { unicode, source: 'WORKING', fetched: false }
 
-    const hanja = await loadSource(unicode, 'MMH', hanjaUrl(character.char), () => fetchHanja(character.char))
+    const hanja = await loadReference(unicode, character.char)
     const imported = hanja ? hanjaStrokes(hanja.value) : null
     if (hanja && imported) {
-      saveImported(unicode, 'MMH', hanja.url, hanja.value.radical, fontOrGiven(character.char, imported.medians, imported.outlines))
-      return { unicode, source: 'MMH', fetched: true }
+      saveImported(unicode, hanja.source, hanja.url, hanja.value.radical, fontOrGiven(character.char, imported.medians, imported.outlines))
+      return { unicode, source: hanja.source, fetched: true }
     }
     // Hanja에 없는 글자는 strokes가 아니라 작업 데이터(working_data)에 쓰고 issues에 올린다. 승인해야 strokes로 간다.
     const composed = await composeIds(character.char)
@@ -449,6 +482,7 @@ function createWorkspace(rootDir: string) {
     clearIssue(unicode)
     const file = charFile(compiledDir, String(detail.char))
     fs.writeFileSync(file, `${JSON.stringify(compiled)}\n`)
+    fs.writeFileSync(charFile(compiledDir, String(detail.char), 'svg'), animatedSvg(unicode, compiled.strokes, compiled.medians, compiled.strokeWidths))
     return compiled
   }
 
@@ -486,9 +520,9 @@ function createWorkspace(rootDir: string) {
     return { imported }
   }
 
-  return { listCharacters, getCharacter, updateStrokes, approve, undo, ensureReference, syncMissing, applyFontBatch, compile, listRadicals, importInitial }
+  return { listCharacters, getCharacter, updateStrokes, importSvg, approve, undo, ensureReference, syncMissing, applyFontBatch, applyAcjkBatch, compile, listRadicals, importInitial }
 
-  async function loadSource<T>(unicode: string, source: 'MMH', url: string, fetchFresh: () => Promise<Remote<T>>): Promise<Remote<T> | null> {
+  async function loadSource<T>(unicode: string, source: 'MMH' | 'ACJK' | 'NAVER', url: string, fetchFresh: () => Promise<Remote<T>>): Promise<Remote<T> | null> {
     const cached = db.prepare('SELECT found, raw_data, source_url FROM reference_data WHERE unicode = ? AND source = ?')
       .get(unicode, source) as { found: number; raw_data: string | null; source_url: string | null } | undefined
     if (cached) {
@@ -505,7 +539,7 @@ function createWorkspace(rootDir: string) {
       `).run(
         unicode,
         source,
-        HANJA_VERSION,
+        source === 'MMH' ? HANJA_VERSION : source === 'ACJK' ? ACJK_VERSION : NAVER_VERSION,
         fresh.url,
         fresh.value ? fresh.raw : null,
         fresh.value ? createHash('sha256').update(fresh.raw).digest('hex') : null,
@@ -515,6 +549,81 @@ function createWorkspace(rootDir: string) {
     } catch {
       return null
     }
+  }
+
+  // 네이버 한자사전(한국 획순)을 먼저 보고, 없으면 AnimCJK, 그다음 Hanja(중국 기준)를 본다.
+  async function loadReference(unicode: string, char: string) {
+    const naver = await loadSource(unicode, 'NAVER', naverUrl(char), () => fetchNaver(char))
+    if (naver) return { source: 'NAVER' as const, ...naver }
+    const acjk = await loadSource(unicode, 'ACJK', ACJK_BLOB, () => fetchAcjk(char))
+    if (acjk) return { source: 'ACJK' as const, ...acjk }
+    const hanja = await loadSource(unicode, 'MMH', hanjaUrl(char), () => fetchHanja(char))
+    return hanja ? { source: 'MMH' as const, ...hanja } : null
+  }
+
+  // 글자별 원본은 graphics 한 줄에 dictionary의 분해식(acjk)을 붙인 JSON이다. 내려받지 못하면 던진다(없는 글자로 기록하지 않기 위해).
+  async function loadAcjk(): Promise<Map<string, { raw: string; url: string }>> {
+    if (acjkIndex) return acjkIndex
+    const read = async (name: string) => {
+      const file = path.join(rootDir, 'database', name)
+      if (!fs.existsSync(file)) {
+        const response = await fetchLimited(`${ACJK_RAW}/${name}`, ACJK_FILE_LIMIT)
+        if (!response.ok) throw new Error(`AnimCJK ${name} 응답 ${response.status}`)
+        fs.writeFileSync(file, response.text)
+      }
+      return fs.readFileSync(file, 'utf-8')
+    }
+    const lines = (text: string) => text.split('\n').filter(Boolean).map((line) => JSON.parse(line) as { character: string; strokes?: unknown; medians?: unknown; acjk?: string })
+    const index = new Map<string, { raw: string; url: string }>()
+    for (const variant of ACJK_VARIANTS) {
+      const graphics = `graphics${variant}.txt`
+      const dictionary = new Map(lines(await read(`dictionary${variant}.txt`)).map((entry) => [entry.character, entry.acjk]))
+      for (const entry of lines(await read(graphics))) {
+        index.set(entry.character, {
+          raw: JSON.stringify({ strokes: entry.strokes, medians: entry.medians, acjk: dictionary.get(entry.character) }),
+          url: `${ACJK_BLOB}/${graphics}`,
+        })
+      }
+    }
+    acjkIndex = index
+    return index
+  }
+
+  async function fetchAcjk(char: string): Promise<Remote<HanjaGlyph>> {
+    const found = (await loadAcjk()).get(char)
+    return { url: found?.url ?? ACJK_BLOB, raw: found?.raw ?? '', value: found ? parseHanja(found.raw) : null }
+  }
+
+  type AcjkResult = 'REPLACED' | 'EDITED' | 'ALREADY' | 'NOT_IN_ACJK'
+
+  // 이미 있는 글자(strokes 또는 승인 전 작업 데이터)를 AnimCJK 데이터로 바꾼다. 사람이 고친 글자는 건너뛴다.
+  // 바뀌기 전 strokes 행은 strokes_history에 남고, 같은 글자의 작업 데이터는 지워진다.
+  async function applyAcjk(unicode: string): Promise<AcjkResult> {
+    const character = db.prepare('SELECT char FROM characters WHERE unicode = ?').get(unicode) as { char: string } | undefined
+    if (!character) throw new Error('등록되지 않은 글자입니다.')
+    const acjk = await loadSource(unicode, 'ACJK', ACJK_BLOB, () => fetchAcjk(character.char))
+    const imported = acjk ? hanjaStrokes(acjk.value) : null
+    if (!acjk || !imported) return 'NOT_IN_ACJK'
+    const current = (db.prepare('SELECT origin, last_modified_by AS by FROM strokes WHERE char = ?').get(character.char) ??
+      db.prepare('SELECT source AS origin, last_modified_by AS by FROM working_data WHERE char = ?').get(character.char)) as { origin: string; by: string } | undefined
+    if (current?.by === ACTOR_USER) return 'EDITED'
+    if (current?.origin === 'ACJK') return 'ALREADY'
+    saveImported(unicode, 'ACJK', acjk.url, acjk.value.radical, fontOrGiven(character.char, imported.medians, imported.outlines), ACTION_ACJK)
+    return 'REPLACED'
+  }
+
+  // after 다음 유니코드부터 limit자를 처리한다. next가 null이면 끝.
+  async function applyAcjkBatch(after: string, limit = ACJK_BATCH_LIMIT) {
+    const rows = db.prepare('SELECT unicode, char FROM characters WHERE unicode > ? ORDER BY unicode LIMIT ?').all(after, limit) as { unicode: string; char: string }[]
+    const counts: Record<AcjkResult, number> = { REPLACED: 0, EDITED: 0, ALREADY: 0, NOT_IN_ACJK: 0 }
+    const edited: string[] = []
+    for (const row of rows) {
+      const result = await applyAcjk(row.unicode)
+      counts[result] += 1
+      if (result === 'EDITED') edited.push(row.char)
+    }
+    db.exec('PRAGMA wal_checkpoint(TRUNCATE)')
+    return { processed: rows.length, counts, edited, next: rows.length === limit ? rows[rows.length - 1].unicode : null }
   }
 
   // TTF는 처음 필요할 때 한 번만 읽는다. project_meta에 기록된 해시와 다르면 작업을 멈춘다.
@@ -606,12 +715,14 @@ function createWorkspace(rootDir: string) {
     db.prepare(`DELETE FROM issues WHERE char = (SELECT char FROM characters WHERE unicode = ?) AND status <> 'APPROVED'`).run(unicode)
   }
 
-  function saveImported(unicode: string, source: string, url: string | null, radical: number[], strokes: ImportedStrokes) {
+  function saveImported(unicode: string, source: string, url: string | null, radical: number[], strokes: ImportedStrokes, action = `${source} 가져오기`) {
     const { medians, fontOutline } = strokes
-    const by = source === 'MMH' ? ACTOR_HANJA : ACTOR_IDS
+    // 궁서체 윤곽으로 나눠졌으면 궁서체 교체와 같은 상태다(이후 레퍼런스가 중심선을 되덮지 않는다).
+    const by = fontOutline ? ACTOR_FONT : source === 'MMH' ? ACTOR_HANJA : source === 'NAVER' ? ACTOR_NAVER : ACTOR_ACJK
     db.exec('BEGIN')
     try {
-      writeStrokes(unicode, toItems(strokes, new Set(radical)), by, `${source} 가져오기`, { source, url }, fontOutline)
+      writeStrokes(unicode, toItems(strokes, new Set(radical)), by, action, { source, url }, fontOutline)
+      db.prepare('DELETE FROM working_data WHERE char = (SELECT char FROM characters WHERE unicode = ?)').run(unicode)
       db.prepare('UPDATE characters SET stroke_count = ?, last_modified_by = ? WHERE unicode = ?')
         .run(medians.length, by, unicode)
       clearIssue(unicode)
@@ -700,7 +811,7 @@ const STROKES_DDL = `
       CHECK (json_valid(median_line) AND json_type(median_line) = 'array' AND json_array_length(median_line) = json_array_length(stroke_outlines)),
     last_modified_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     last_modified_by TEXT NOT NULL,
-    origin TEXT NOT NULL CHECK (origin IN ('MMH', 'IDS', 'OLLAMA_IDS', 'MANUAL', 'NONE')),
+    origin TEXT NOT NULL CHECK (origin IN ('MMH', 'ACJK', 'NAVER', 'IDS', 'OLLAMA_IDS', 'MANUAL', 'NONE')),
     origin_url TEXT
   )
 `
@@ -850,10 +961,10 @@ function upgradeStrokesTable(db: DatabaseSync) {
   }
 }
 
-// origin CHECK에 'IDS'가 없는 옛 테이블이면 새 테이블로 갈아끼운다.
+// origin CHECK에 'NAVER'가 없는 옛 테이블이면 새 테이블로 갈아끼운다.
 function upgradeStrokeOrigins(db: DatabaseSync) {
   const row = db.prepare(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'strokes'`).get() as { sql: string } | undefined
-  if (!row || row.sql.includes(`'IDS'`)) return
+  if (!row || row.sql.includes(`'NAVER'`)) return
   db.exec('BEGIN')
   try {
     db.exec('ALTER TABLE strokes RENAME TO strokes_previous')
@@ -1168,14 +1279,35 @@ async function fetchHanja(char: string): Promise<Remote<HanjaGlyph>> {
   return { url, raw: response.text, value: parseHanja(response.text) }
 }
 
+function naverUrl(char: string): string {
+  const hex = char.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')
+  return `${NAVER_BASE}/${hex.slice(0, -2)}00/${hex}.svg`
+}
+
+// 없는 글자는 404다. SVG가 아니거나 다른 글자의 것이면 던진다(없는 글자로 기록하지 않기 위해).
+async function fetchNaver(char: string): Promise<Remote<HanjaGlyph>> {
+  const url = naverUrl(char)
+  const response = await fetchLimited(url)
+  if (response.status === 404) return { url, raw: '', value: null }
+  if (!response.ok) throw new Error(`네이버 한자사전 응답 ${response.status}`)
+  const { char: found, ...value } = parseNaverSvg(response.text)
+  if (found !== char) throw new Error(`네이버 한자사전 SVG의 글자(${found})가 요청한 글자(${char})와 다릅니다.`)
+  return { url, raw: response.text, value }
+}
+
 function parseHanja(text: string): HanjaGlyph | null {
   try {
-    const data = JSON.parse(text) as { medians?: unknown; strokes?: unknown; outlines?: unknown; radStrokes?: unknown; radical?: unknown }
+    if (text.trimStart().startsWith('<')) {
+      const { medians, outlines, radical } = parseNaverSvg(text)
+      return { medians, outlines, radical }
+    }
+    const data = JSON.parse(text) as { medians?: unknown; strokes?: unknown; outlines?: unknown; radStrokes?: unknown; radical?: unknown; acjk?: unknown }
     const medians = Array.isArray(data.medians) ? data.medians.map(asPoints) : []
     const strokeList = Array.isArray(data.strokes) ? data.strokes : data.outlines
     const outlines = Array.isArray(strokeList) ? strokeList.filter((item): item is string => typeof item === 'string') : []
     const radicalSource = Array.isArray(data.radStrokes) ? data.radStrokes : data.radical
-    const radical = Array.isArray(radicalSource) ? radicalSource.map(Number).filter(Number.isInteger) : []
+    const radical = Array.isArray(radicalSource) ? radicalSource.map(Number).filter(Number.isInteger)
+      : typeof data.acjk === 'string' ? radicalStrokes(data.acjk, medians.length) : []
     return medians.length || outlines.length ? { medians, outlines, radical } : null
   } catch {
     return null
@@ -1340,6 +1472,73 @@ function unicodeOf(char: string): string {
   return `U+${char.codePointAt(0)!.toString(16).toUpperCase().padStart(UNICODE_HEX_PAD, '0')}`
 }
 
+// AnimCJK 분해식(acjk)에서 부수 표시('.')가 붙은 부품의 획 번호(0부터)를 구한다. 부품은 그리는 순서대로 적혀 있으므로,
+// 구조 기호는 건너뛰고 '글자 + 표시 + 획수'를 차례로 읽어 획수를 누적한다. 예: 近⿺斤4辶.4 → [4, 5, 6, 7].
+// 첫 글자(풀이하는 글자)에 '.'가 있으면 글자 전체가 부수다. 해석하지 못하거나 획수 합이 맞지 않으면 빈 배열.
+function radicalStrokes(acjk: string, total: number): number[] {
+  const tokens = [...acjk]
+  let pos = 1
+  // 글자 뒤의 표시를 읽고 '.'가 있었는지 돌려준다. '~' 다음 글자는 같은 부품을 뜻하는 다른 글자, ':'·'::'는 나뉨·겹침(뒤의 영문자는 구분용).
+  const readMarks = (): boolean => {
+    let radical = false
+    for (;;) {
+      const token = tokens[pos]
+      if (token === '.') {
+        radical = true
+        pos += 1
+      } else if (token === '~') {
+        pos += 2
+      } else if (token === ':') {
+        pos += tokens[pos + 1] === ':' || /[a-z]/.test(tokens[pos + 1] ?? '') ? 2 : 1
+      } else return radical
+    }
+  }
+  if (readMarks()) return Array.from({ length: total }, (_, index) => index)
+  const radical: number[] = []
+  let count = 0
+  while (pos < tokens.length) {
+    if (IDS_OPERATOR.test(tokens[pos++])) continue
+    const marked = readMarks()
+    if (tokens[pos] >= '0' && tokens[pos] <= '9') {
+      let strokes = 0
+      while (tokens[pos] >= '0' && tokens[pos] <= '9') strokes = strokes * 10 + Number(tokens[pos++])
+      if (marked) for (let index = 0; index < strokes; index++) radical.push(count + index)
+      count += strokes
+    } else if (marked && IDS_OPERATOR.test(tokens[pos] ?? '')) return []
+  }
+  return count === total ? radical : []
+}
+
+// AnimCJK 방식 애니메이션 SVG: 획 윤곽을 clipPath로 쓰고, 그 위에 중심선을 점선으로 그려 점선 위치를 옮긴다.
+// 저장 좌표(y축 위쪽)를 뷰어와 같이 뒤집어 그린다. 획마다 폭이 달라 stroke-width를 획별로 준다.
+function animatedSvg(unicode: string, outlines: string[], medians: Pt[][], widths: number[]): string {
+  const id = `z${Number.parseInt(unicode.slice(2), 16)}`
+  const dash = ANIM_PATH_LENGTH + 4
+  const fills = outlines.map((outline, index) => `<path id="${id}d${index + 1}" d="${outline}"/>`).join('\n')
+  const clips = outlines.map((_, index) => `<clipPath id="${id}c${index + 1}"><use href="#${id}d${index + 1}"/></clipPath>`).join('\n')
+  const lines = medians.map((median, index) => {
+    const d = median.map(([x, y], pointIndex) => `${pointIndex === 0 ? 'M' : 'L'}${x} ${y}`).join('')
+    return `<path style="--d:${index * ANIM_STROKE_STEP_SECONDS}s;stroke-width:${widths[index]}" pathLength="${ANIM_PATH_LENGTH}" clip-path="url(#${id}c${index + 1})" d="${d}"/>`
+  }).join('\n')
+  return `<svg id="${id}" class="acjk" viewBox="0 0 ${CANVAS} ${CANVAS}" xmlns="http://www.w3.org/2000/svg">
+<style>
+<![CDATA[
+@keyframes zk { to { stroke-dashoffset:0; } }
+svg.acjk path[clip-path] { --t:${ANIM_STROKE_SECONDS}s; animation:zk var(--t) linear forwards var(--d); stroke-dasharray:${dash}; stroke-dashoffset:${dash + 2}; stroke-linecap:round; fill:none; stroke:#000; }
+svg.acjk path[id] { fill:#ccc; }
+]]>
+</style>
+<g transform="translate(0 ${CANVAS}) scale(1 -1)">
+${fills}
+<defs>
+${clips}
+</defs>
+${lines}
+</g>
+</svg>
+`
+}
+
 function outlinesAndLines(items: StrokeItem[]): { outlines: StrokeOutline[]; lines: MedianLine[] } {
   return {
     outlines: items.map((item, index) => ({ order: index + 1, path: item.outline_path, radical: item.is_radical ? 1 : 0 })),
@@ -1391,9 +1590,9 @@ function asPoints(value: unknown): Pt[] {
   })
 }
 
-function charFile(dir: string, char: string): string {
+function charFile(dir: string, char: string, extension = 'json'): string {
   if ([...char].length !== 1) throw new Error('한자 1자만 저장할 수 있습니다.')
-  const file = path.resolve(dir, `${char}.json`)
+  const file = path.resolve(dir, `${char}.${extension}`)
   if (!file.startsWith(path.resolve(dir) + path.sep)) throw new Error('경로가 올바르지 않습니다.')
   return file
 }

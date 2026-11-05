@@ -4,7 +4,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import vue from '@vitejs/plugin-vue'
 import type { Plugin } from 'vite'
 import { defineConfig } from 'vite'
-import { FONT_BATCH_LIMIT, MISSING_FETCH_LIMIT } from './src/lib/constants.ts'
+import { ACJK_BATCH_LIMIT, FONT_BATCH_LIMIT, MISSING_FETCH_LIMIT } from './src/lib/constants.ts'
 import { getWorkspace } from './server/workspace.ts'
 
 const appDir = path.dirname(fileURLToPath(import.meta.url))
@@ -64,6 +64,11 @@ function workspaceApi(): Plugin {
             const limit = Number(body.limit ?? FONT_BATCH_LIMIT)
             return send(res, 200, ws.applyFontBatch(String(body.after ?? ''), Number.isFinite(limit) ? limit : FONT_BATCH_LIMIT))
           }
+          if (req.method === 'POST' && url.pathname === '/api/apply-acjk') {
+            const body = await readBody(req)
+            const limit = Number(body.limit ?? ACJK_BATCH_LIMIT)
+            return send(res, 200, await ws.applyAcjkBatch(String(body.after ?? ''), Number.isFinite(limit) ? limit : ACJK_BATCH_LIMIT))
+          }
           const unicode = decodeURIComponent(parts[2] ?? '')
           if (parts[1] !== 'characters' || !unicode.startsWith('U+')) {
             return send(res, 404, { error: '없는 API입니다.' })
@@ -75,6 +80,10 @@ function workspaceApi(): Plugin {
           if (req.method === 'POST' && parts[3] === 'strokes') {
             const body = await readBody(req)
             return send(res, 200, ws.updateStrokes(unicode, body.strokes as never, String(body.action ?? '편집')))
+          }
+          if (req.method === 'POST' && parts[3] === 'import-svg') {
+            const body = await readBody(req)
+            return send(res, 200, ws.importSvg(unicode, String(body.svg ?? '')))
           }
           if (req.method === 'POST' && parts[3] === 'approve') {
             return send(res, 200, ws.approve(unicode))

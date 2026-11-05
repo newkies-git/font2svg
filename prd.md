@@ -96,7 +96,7 @@ CREATE TABLE characters (
 
     stroke_count INTEGER NOT NULL DEFAULT 0 CHECK (stroke_count >= 0),
     last_modified_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,   -- UTC
-    last_modified_by TEXT NOT NULL       -- 'user', 'system:hanja', 'system:ids', 'system:font', 'system:migration'
+    last_modified_by TEXT NOT NULL       -- 'user', 'system:hanja', 'system:acjk', 'system:ids', 'system:font', 'system:migration'
 );
 
 -- 3-1. 문제 테이블: 문제가 있거나 아직 사람이 작업해야 하는 글자(`ISSUE`)와 그 원인. 글자당 최대 1행이다.
@@ -145,7 +145,7 @@ CREATE TABLE strokes (
                AND json_array_length(median_line) = json_array_length(stroke_outlines)),
     last_modified_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,   -- UTC
     last_modified_by TEXT NOT NULL,      -- 'user', 'system:hanja', 'system:ids', 'system:migration'
-    origin TEXT NOT NULL CHECK (origin IN ('MMH', 'IDS', 'OLLAMA_IDS', 'MANUAL', 'NONE')),  -- 획 데이터의 출처. IDS=공개 IDS 합성, OLLAMA_IDS=Ollama 합성
+    origin TEXT NOT NULL CHECK (origin IN ('MMH', 'ACJK', 'NAVER', 'IDS', 'OLLAMA_IDS', 'MANUAL', 'NONE')),  -- 획 데이터의 출처. NAVER=네이버 한자사전(한국), ACJK=AnimCJK, IDS=공개 IDS 합성, OLLAMA_IDS=Ollama 합성
     origin_url TEXT                      -- 실제로 가져온 주소. 없으면 NULL
 );
 
@@ -170,9 +170,9 @@ CREATE TABLE strokes_history (
 -- 6. 레퍼런스 원본 캐시 (§4.5에서 가져온 원본을 변환 전 그대로 보관)
 CREATE TABLE reference_data (
     unicode TEXT NOT NULL,
-    source TEXT NOT NULL CHECK (source IN ('MMH')),
+    source TEXT NOT NULL CHECK (source IN ('MMH', 'ACJK', 'NAVER')),
     source_version TEXT NOT NULL,        -- 예: 'hanzi-writer-data@2.0.1'
-    raw_data TEXT,                       -- 원본 JSON(MMH). 없음 응답이면 NULL
+    raw_data TEXT,                       -- 원본 JSON. MMH는 응답 그대로, NAVER는 SVG 그대로, ACJK는 graphics 한 줄에 dictionary의 분해식(acjk)을 붙인 것. 없음 응답이면 NULL
     raw_sha256 TEXT,
     found INTEGER NOT NULL CHECK (found IN (0, 1)),  -- 0이면 해당 출처에 글자 없음(재조회 방지)
     fetched_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -205,12 +205,12 @@ END;
 | 상태 | 판단 방법 |
 | :--- | :--- |
 | 미등록 획 | `strokes` 행도 `working_data` 행도 없다 |
-| 레퍼런스 가져옴 | `strokes.origin = 'MMH'` |
+| 레퍼런스 가져옴 | `strokes.origin`이 `'NAVER'`·`'ACJK'`(한국 기준) 또는 `'MMH'`(중국 기준) |
 | 작업 전(`OPEN`) | `issues.status = 'OPEN'`. `working_data`가 없거나 궁서체 윤곽만 있다(`source = 'FONT'`). `in_font`로 궁서체 글리프 유무를 구분한다 |
 | 승인 대기(`DRAFT`) | `issues.status = 'DRAFT'`이고 `working_data`에 획이 있다 |
 | 승인됨 | `issues.status = 'APPROVED'`이고 `strokes`에 있다. `origin`이 `'IDS'`, `'OLLAMA_IDS'`, `'MANUAL'`이다 |
 
-- 사람 검수 완료(과거 `DONE`)는 기록하지 않는다. 컴파일 결과는 DB에 저장하지 않고 `output/compiled/<글자>.json` 파일로만 남기므로, 획을 수정한 뒤에는 다시 컴파일해야 한다.
+- 사람 검수 완료(과거 `DONE`)는 기록하지 않는다. 컴파일 결과는 DB에 저장하지 않고 `output/compiled/<글자>.json`(그리고 애니메이션 `<글자>.svg`) 파일로만 남기므로, 획을 수정한 뒤에는 다시 컴파일해야 한다.
 
 ## 4. 핵심 알고리즘 및 엔진 명세
 
@@ -280,6 +280,14 @@ END;
 
 **출처별로 가져오는 데이터**
 
+조회 순서는 **네이버 한자사전(한국 획순) → AnimCJK → Hanja(MMH) → 작업 데이터(IDS·Ollama·궁서체)**다. Hanja는 중국 기준이라 한국과 필순·획수가 다른 글자(辶·示·阝·艹가 든 글자 등)가 있어, 한국 기준인 AnimCJK가 있으면 그것을 먼저 쓴다.
+
+- **AnimCJK**(`parsimonhi/animCJK`, 커밋 고정): `graphics{Ja,ZhHant,Ko}.txt`(윤곽 `strokes`·중심선 `medians`, MMH와 같은 형식·좌표계)와 `dictionary{...}.txt`(분해식 `acjk`)를 처음 한 번 `database/`에 내려받아 두고(저장소에는 올리지 않는다) 글자별 원본을 `reference_data`(`source = 'ACJK'`, `source_version = 'animCJK@<커밋 앞 10자>'`)에 둔다. **일본(Ja) → 대만(ZhHant) → 한국(Ko) 순으로 덮어쓰므로 한국이 가장 우선**이고, 어느 파일에서 왔는지는 `origin_url`·`reference_data.source_url`에 남는다. 우리 1817자 중 Ja 1802자, ZhHant 1192자, Ko 520자이며 합쳐서 1810자가 있다(없는 글자: 屛 屢 悅 毁 畓 稅 銳). 내려받기에 실패하면 "없는 글자"로 기록하지 않는다. 라이선스는 Arphic Public License·LGPL(데이터는 Unihan 포함)이다. 부수 색을 따로 칠하려고 획을 쪼갠 `*Special` 폴더는 획수·필순이 달라지므로 쓰지 않고, 유니코드 없는 부품 위주인 `*Zoo`는 우리 글자와 겹치지 않아 쓰지 않는다.
+- **부수 획**: `acjk`의 `.` 표시가 붙은 부품의 획 번호를 `is_radical`로 쓴다(예: `近⿺斤4辶.4` → 5~8번째 획). 글자 첫머리에 `.`가 있으면 글자 전체가 부수다. 부품은 그리는 순서로 적혀 있어 구조 기호는 건너뛰고 획수를 누적하며, 합이 가져온 획수와 맞지 않으면 부수를 비운다. 535자 중 534자가 해석되고(由는 부수 표시가 없다) 나머지는 비어 있다.
+- **네이버 한자사전**(한국 한자 획순, 사전의 '획순 보기' 팝업이 쓰는 SVG): 글자마다 `https://ssl.pstatic.net/dicimg/cckodict/aniSVG_2026_04/{코드 앞 두 자리}00/{코드}.svg`(U+65E6 → `6500/65E6.svg`)를 필요할 때 하나씩 받아 원본 SVG를 `reference_data`(`source = 'NAVER'`, `source_version = 'aniSVG_2026_04'`)에 둔다. 없는 글자는 404이고, 일괄로 내려받지 않는다. 한국 기준이라 AnimCJK·Hanja와 획수가 다른 글자(迫 9획·菜 12획·飽 14획 등)도 한국식으로 나온다. SVG 읽는 법(`parseNaverSvg`): 윤곽은 `id="U{코드}d{번호}"`, 중심선은 `clip-path="url(#U{코드}c{번호})"`인 경로이고 **번호가 획순**이다(문서 순서는 획순이 아니다). `class="stroke-radical"`이면 부수 획이다. 좌표는 `<g transform="scale(1,-1) translate(tx, ty)">` 안에 있어 글자마다 이동량이 다르므로(`ty`는 -871·-879 등) `x' = x + tx`, `y' = 900 + ty + y`로 저장 좌표계에 옮긴다. 표본 61자에서 윤곽 수와 중심선 수가 모두 같았고 지연(`--d`) 순서와 번호 순서도 일치했다. 저작권 표기는 ©e-hanja(네이버 한자사전)이므로 사내 참고용이며 재배포는 별도 확인이 필요하다.
+- **교체**(`POST /api/apply-acjk`): 이미 있는 글자(`strokes` 또는 승인 전 `working_data`)를 AnimCJK로 바꾼다. 중심선을 길잡이로 궁서체 윤곽을 나누는 과정은 신규 가져오기와 같다. `last_modified_by = 'user'`인 글자는 건너뛰고, 이미 `ACJK`인 글자도 건너뛴다. 교체 전 `strokes` 행은 `strokes_history`('AnimCJK로 교체')에 남고, 같은 글자의 `working_data`는 지운 뒤 `issues`도 푼다(승인 기록은 남긴다). 궁서체 윤곽으로 나뉘면 `last_modified_by = 'system:font'`, 아니면 `'system:acjk'`다. 레퍼런스 수신은 가져온 출처가 같은 글자만 갱신한다.
+- **SVG 가져오기**(`POST /api/characters/:unicode/import-svg`, 화면의 "SVG 가져오기" 버튼): AnimCJK 형식 SVG(`makeSvgsFromGraphics.php`가 만드는 모양)를 승인 전 `working_data`로 받는다. 윤곽은 `id="z{코드}d{획}[a-z]"` 경로, 중심선은 `pathLength`가 있는 경로이며 둘 다 문서 순서가 획 순서다. 좌표는 `y = 900 - SVG y`로 바꾸고(`makeGraphicsFromSvgs.php`와 같다), 경로는 절대 좌표 `M L H V Q C Z`만 받아 H/V는 L로 바꾼다. `<svg id>`의 코드가 선택한 글자와 다르거나 윤곽·중심선 수가 다르면 거부한다. 쪼개진 획(`a`, `b` 접미사)은 원본 스크립트처럼 각각 별개의 획으로 가져오므로 획수가 늘 수 있다. `strokes`에 이미 있는 글자는 받지 않으며, 확인 후 승인해야 `strokes`로 옮겨진다.
+
 | 항목 | Hanja (MMH) |
 | :--- | :--- |
 | 조회 위치 | `hanzi-writer-data@{고정 버전}/{글자}.json` |
@@ -291,7 +299,7 @@ END;
 
 - **Hanja는 궁서체 윤곽을 주지 않는다.** MMH의 `strokes`는 Arphic 해서체에서 뽑은 윤곽이므로 최종 `outline_path`로 쓰지 않는다. 궁서체 윤곽은 TTF를 §4.2로 분할해 만든다. TTF에 글자가 없거나 분리가 어긋나 품질 검사를 통과하지 못한 글자만 MMH 윤곽을 그대로 둔다.
 - **궁서체 윤곽으로 일괄 교체**(`POST /api/apply-font`): 이미 획이 있는 글자는 기존(Hanja) 중심선을 길잡이로 TTF 윤곽을 획별로 나누고, 중심선과 폭은 새 윤곽에서 다시 계산한다(방향은 길잡이에 맞추고 점은 RDP 허용오차 3으로 줄인다). `last_modified_by = 'user'`인 글자(사람이 고친 것)와 이미 교체된 글자(`'system:font'`)는 건너뛰고, 교체 전 상태는 `strokes_history`에 남겨 실행 취소할 수 있다. 품질 검사: (1) 어느 획도 전체 윤곽 그대로이거나 비어 있으면 안 되고, (2) 획 하나의 면적이 글자 면적의 0.5% 이상이어야 하며, (3) 획 면적의 합이 글자 면적의 0.85~1.7배여야 한다. 하나라도 어기면 그 글자는 바꾸지 않고 목록으로 돌려준다. 교체된 글자는 Hanja 중심선으로 되덮이지 않는다(레퍼런스 수신이 `user`·`system:font` 글자의 중심선을 건드리지 않는다).
-- 가져온 중심선은 궁서체 글리프의 외곽 bbox에 맞춰 아핀 변환한 뒤 §4.2 분할에 넣는다. 결과는 `strokes.origin = 'MMH'`로 저장한다.
+- 가져온 중심선은 궁서체 글리프의 외곽 bbox에 맞춰 아핀 변환한 뒤 §4.2 분할에 넣는다. 결과는 출처에 따라 `strokes.origin = 'NAVER'`·`'ACJK'`·`'MMH'`로 저장한다.
 - **중심선은 Hanja 값을 그대로 복사한다. 어떤 획의 `medians`가 없거나 점이 2개 미만이면 그 획의 윤곽에서 직접 계산한다**(래스터화 → 골격 추출 → 가장 긴 경로, `recoverMedian`). 윤곽도 없는 글자는 계산할 수 없으므로 IDS 합성으로 넘긴다. 계산한 중심선은 모양은 맞지만(Hanja 값과의 평균 거리 약 1.6) 시작·끝 방향이 뒤집힐 수 있어(표본의 약 4.6%) 필순 검수에서 확인한다.
 - **윤곽이 없으면 TTF에서 추출한다.** Hanja에 윤곽이 없거나 IDS 합성으로 만든 글자는(작업 데이터의 `font_outline`; 승인하면 `strokes.font_outline`), 작업 폴더의 `app/fonts/Gungseouche.ttf`(opentype.js로 읽음)에서 글자 윤곽을 꺼내 `strokes.font_outline`에 저장한다. 합성한 중심선 묶음의 bbox를 글자 윤곽 bbox(안쪽으로 20)에 맞춰 늘린 뒤, 윤곽의 각 점을 가장 가까운 중심선에 배정해 획별 윤곽으로 나눈다(§4.2). 결과는 초안이므로 화면에서 칼 분할·중심선 편집으로 고친다. 폰트 파일이 없거나 글자가 없으면 중심선에 폭을 준 띠 모양으로 대신한다.
   - TTF를 처음 읽을 때 SHA-256을 `project_meta`에 기록하고, 이후 해시가 다르면 작업을 멈춘다(§8 보안).
@@ -371,6 +379,7 @@ Hanja에 없는 글자는 `strokes`에 바로 쓰지 않는다. IDS 합성·Olla
 - `radical.origin`은 글자 안에서 변형 부수가 쓰일 때 원형을 적는다(예: `江`이면 `char: "氵"`, `origin: "水"`). 변형이 아니면 `null`.
 - 배열 인덱스는 **0부터** 시작한다. DB `order`(1부터)와 혼동하지 않는다: `strokes[i]`는 `order = i + 1`.
 - `schemaVersion`은 뷰어가 하위 호환을 판단하는 기준이다. 필드 의미가 바뀌면 올린다.
+- **애니메이션 SVG**: 컴파일하면 같은 이름의 `output/compiled/<글자>.svg`도 만든다. AnimCJK 방식으로, 각 획 윤곽을 `clipPath`로 쓰고 그 위에 중심선을 `stroke-dasharray`(길이 3333으로 정규화한 `pathLength`) 점선으로 그려 `stroke-dashoffset`을 애니메이션한다. 획마다 지연(`--d`)을 1초씩 주고, 폭(`stroke-width`)은 `strokeWidths`를 쓴다. 저장 좌표(y축 위쪽)는 뷰어처럼 `scale(1 -1)`로 뒤집어 그린다.
 
 ## 7. 데이터 검증 규칙 (누락 보완)
 
