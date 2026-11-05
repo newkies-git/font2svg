@@ -247,6 +247,24 @@ async function importSvg(event: Event) {
   }
 }
 
+async function applyNaver() {
+  if (!selected.value) return
+  if (strokes.value.length > 0 && !window.confirm('현재 획 데이터를 네이버 한자사전 획순으로 바꿉니다. 바뀐 뒤에도 실행 취소로 되돌릴 수 있습니다.')) return
+  busy.value = true
+  error.value = ''
+  try {
+    const response = await fetch(`/api/characters/${encodeURIComponent(selected.value.unicode)}/apply-naver`, { method: 'POST' })
+    const body = await response.json()
+    if (!response.ok) throw new Error(body.error ?? '네이버 획순 적용 실패: 잠시 후 다시 시도하세요.')
+    message.value = '네이버 한자사전 획순을 적용했습니다.'
+    await reload()
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : '네이버 획순 적용 실패: 네트워크 상태를 확인하세요.'
+  } finally {
+    busy.value = false
+  }
+}
+
 async function undo() {
   if (!selected.value) return
   const response = await fetch(`/api/characters/${encodeURIComponent(selected.value.unicode)}/undo`, { method: 'POST' })
@@ -673,6 +691,7 @@ onBeforeUnmount(() => {
           <button class="primary" :disabled="!selected?.working || strokes.length === 0 || busy" @click="approve">승인</button>
           <input ref="svgFileInput" class="visually-hidden" tabindex="-1" aria-hidden="true" type="file" accept="image/svg+xml,.svg" @change="importSvg" />
           <button :disabled="!selected || busy || (strokes.length > 0 && !selected.working)" @click="svgFileInput?.click()">SVG 가져오기</button>
+          <button :disabled="!selected || busy" @click="applyNaver">네이버 획순 적용</button>
           <button :disabled="!selected" @click="undo">실행 취소</button>
           <button :disabled="!selected" @click="compileChar">JSON 컴파일</button>
         </div>

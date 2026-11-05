@@ -94,6 +94,9 @@ function workspaceApi(): Plugin {
           if (req.method === 'POST' && parts[3] === 'reference') {
             return send(res, 200, await ws.ensureReference(unicode))
           }
+          if (req.method === 'POST' && parts[3] === 'apply-naver') {
+            return send(res, 200, await ws.applyNaver(unicode))
+          }
           if (req.method === 'POST' && parts[3] === 'compile') {
             return send(res, 200, ws.compile(unicode))
           }

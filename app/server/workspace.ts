@@ -80,6 +80,7 @@ const ACTOR_NAVER = 'system:naver'
 const ACTION_FONT = '궁서체 윤곽으로 교체'
 const ACTION_UNDO = '실행 취소'
 const ACTION_ACJK = 'AnimCJK로 교체'
+const ACTION_NAVER = '네이버 획순 적용'
 const ACTION_APPROVE = '작업 데이터 승인'
 const ACTION_SVG = 'SVG 가져오기'
 const ORIGIN_MANUAL = 'MANUAL'
@@ -520,7 +521,7 @@ function createWorkspace(rootDir: string) {
     return { imported }
   }
 
-  return { listCharacters, getCharacter, updateStrokes, importSvg, approve, undo, ensureReference, syncMissing, applyFontBatch, applyAcjkBatch, compile, listRadicals, importInitial }
+  return { listCharacters, getCharacter, updateStrokes, importSvg, approve, undo, applyNaver, ensureReference, syncMissing, applyFontBatch, applyAcjkBatch, compile, listRadicals, importInitial }
 
   async function loadSource<T>(unicode: string, source: 'MMH' | 'ACJK' | 'NAVER', url: string, fetchFresh: () => Promise<Remote<T>>): Promise<Remote<T> | null> {
     const cached = db.prepare('SELECT found, raw_data, source_url FROM reference_data WHERE unicode = ? AND source = ?')
@@ -592,6 +593,18 @@ function createWorkspace(rootDir: string) {
   async function fetchAcjk(char: string): Promise<Remote<HanjaGlyph>> {
     const found = (await loadAcjk()).get(char)
     return { url: found?.url ?? ACJK_BLOB, raw: found?.raw ?? '', value: found ? parseHanja(found.raw) : null }
+  }
+
+  // 획순이 틀린 글자를 사람이 지정해 네이버 한자사전 획순으로 바꾼다. 사람이 고친 글자도 바꾸며(실행 취소로 되돌린다),
+  // 바뀌기 전 strokes 행은 strokes_history에 남고 같은 글자의 작업 데이터는 지워진다. 네이버에 없으면 아무것도 바꾸지 않는다.
+  async function applyNaver(unicode: string) {
+    const character = db.prepare('SELECT char FROM characters WHERE unicode = ?').get(unicode) as { char: string } | undefined
+    if (!character) throw new Error('등록되지 않은 글자입니다.')
+    const naver = await loadSource(unicode, 'NAVER', naverUrl(character.char), () => fetchNaver(character.char))
+    const imported = naver ? hanjaStrokes(naver.value) : null
+    if (!naver || !imported) throw new Error('네이버 한자사전에서 이 글자의 획순을 찾지 못했습니다.')
+    saveImported(unicode, 'NAVER', naver.url, naver.value.radical, fontOrGiven(character.char, imported.medians, imported.outlines), ACTION_NAVER)
+    return getCharacter(unicode)
   }
 
   type AcjkResult = 'REPLACED' | 'EDITED' | 'ALREADY' | 'NOT_IN_ACJK'
