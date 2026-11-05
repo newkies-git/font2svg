@@ -343,7 +343,9 @@
   }
 
   .char-list li {
-    display: contents;
+    display: block;
+    content-visibility: auto;
+    contain-intrinsic-size: auto none auto 48px;
   }
 
   .char {
