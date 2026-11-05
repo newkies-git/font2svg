@@ -75,7 +75,8 @@ CREATE TABLE radicals (
     id INTEGER PRIMARY KEY CHECK (id BETWEEN 1 AND 214),  -- 강희부수 번호
     radical_char TEXT NOT NULL UNIQUE,
     variant_chars TEXT,                  -- JSON 배열. 예: '["氵","氺"]'
-    name_kr TEXT NOT NULL,
+    reading TEXT NOT NULL,               -- 음. 예: '일'
+    meaning TEXT NOT NULL,               -- 훈. 예: '한'
     stroke_count INTEGER NOT NULL CHECK (stroke_count > 0)
 );
 

@@ -8,7 +8,8 @@ export type RadicalInfo = {
   id: number
   radical_char: string
   variant_chars: string[]
-  name_kr: string
+  reading: string
+  meaning: string
   stroke_count: number
 }
 

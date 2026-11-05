@@ -351,7 +351,7 @@ function createWorkspace(rootDir: string) {
   }
 
   function listRadicals() {
-    return db.prepare('SELECT id, radical_char, variant_chars, name_kr, stroke_count FROM radicals ORDER BY id').all()
+    return db.prepare('SELECT id, radical_char, variant_chars, reading, meaning, stroke_count FROM radicals ORDER BY id').all()
   }
 
   function importInitial(entries: unknown) {
@@ -749,7 +749,8 @@ function migrate(db: DatabaseSync) {
       id INTEGER PRIMARY KEY CHECK (id BETWEEN 1 AND ${KANGXI_COUNT}),
       radical_char TEXT NOT NULL UNIQUE,
       variant_chars TEXT,
-      name_kr TEXT NOT NULL,
+      reading TEXT NOT NULL,
+      meaning TEXT NOT NULL,
       stroke_count INTEGER NOT NULL
     );
     ${charactersDdl('characters')};
@@ -785,6 +786,38 @@ function migrate(db: DatabaseSync) {
   const version = db.prepare('PRAGMA user_version').get() as { user_version: number }
   if (!version.user_version) db.exec('PRAGMA user_version = 1')
   addColumn(db, 'reference_data', 'source_url', 'TEXT')
+  splitRadicalNames(db)
+}
+
+// 옛 name_kr('훈 음', 공백 하나)을 reading(음)과 meaning(훈)으로 나눠 새 테이블로 갈아끼운다.
+function splitRadicalNames(db: DatabaseSync) {
+  const columns = db.prepare('PRAGMA table_info(radicals)').all() as { name: string }[]
+  if (!columns.some((column) => column.name === 'name_kr')) return
+  db.exec('BEGIN')
+  try {
+    db.exec('ALTER TABLE radicals RENAME TO radicals_previous')
+    db.exec(`
+      CREATE TABLE radicals (
+        id INTEGER PRIMARY KEY CHECK (id BETWEEN 1 AND ${KANGXI_COUNT}),
+        radical_char TEXT NOT NULL UNIQUE,
+        variant_chars TEXT,
+        reading TEXT NOT NULL,
+        meaning TEXT NOT NULL,
+        stroke_count INTEGER NOT NULL
+      )
+    `)
+    db.exec(`
+      INSERT INTO radicals (id, radical_char, variant_chars, reading, meaning, stroke_count)
+      SELECT id, radical_char, variant_chars,
+             substr(name_kr, instr(name_kr, ' ') + 1), substr(name_kr, 1, instr(name_kr, ' ') - 1), stroke_count
+      FROM radicals_previous
+    `)
+    db.exec('DROP TABLE radicals_previous')
+    db.exec('COMMIT')
+  } catch (error) {
+    db.exec('ROLLBACK')
+    throw error
+  }
 }
 
 function addColumn(db: DatabaseSync, table: string, name: string, type: string) {
@@ -795,9 +828,9 @@ function addColumn(db: DatabaseSync, table: string, name: string, type: string) 
 function seed(db: DatabaseSync) {
   const count = db.prepare('SELECT COUNT(*) AS n FROM radicals').get() as { n: number }
   if (count.n === 0) {
-    const insert = db.prepare('INSERT INTO radicals (id, radical_char, variant_chars, name_kr, stroke_count) VALUES (?, ?, ?, ?, ?)')
+    const insert = db.prepare('INSERT INTO radicals (id, radical_char, variant_chars, reading, meaning, stroke_count) VALUES (?, ?, ?, ?, ?, ?)')
     for (const radical of KANGXI_RADICALS) {
-      insert.run(radical.id, radical.radical_char, JSON.stringify(radical.variant_chars), radical.name_kr, radical.stroke_count)
+      insert.run(radical.id, radical.radical_char, JSON.stringify(radical.variant_chars), radical.reading, radical.meaning, radical.stroke_count)
     }
   }
   const meta = db.prepare('SELECT id FROM project_meta WHERE id = 1').get()
@@ -1083,7 +1116,7 @@ function radicalOf(id: number | null, strokes: { is_radical: number }[]) {
     id,
     char: radical.radical_char,
     origin: null,
-    name: radical.name_kr,
+    name: `${radical.meaning} ${radical.reading}`,
     strokeIndices: strokes.flatMap((stroke, index) => stroke.is_radical ? [index] : []),
   }
 }
