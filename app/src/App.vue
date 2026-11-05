@@ -2,9 +2,16 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { BADGE_RADIUS, CANVAS, MISSING_FETCH_LIMIT, REVEAL_STEP } from './lib/constants.ts'
 import { recoverMedian, splitStrokeByKnife } from './lib/strokeCut.ts'
-import type { CapType, CharacterDetail, CharacterSummary, Pt, StrokeRecord } from './types.ts'
+import type { CapType, CharacterDetail, CharacterSummary, IssueStatus, Pt, StrokeRecord } from './types.ts'
 
 type ThemeMode = 'system' | 'light' | 'dark'
+
+const ISSUE_LABELS: Record<IssueStatus, string> = { OPEN: '작업 전', DRAFT: '승인 대기', APPROVED: '승인됨' }
+
+function issueLabel(detail: CharacterDetail): string {
+  if (!detail.issue_status) return ''
+  return `${ISSUE_LABELS[detail.issue_status]}${detail.in_font ? ' · 궁서체 있음' : ''}`
+}
 
 const chars = ref<CharacterSummary[]>([])
 const query = ref('')
@@ -129,7 +136,7 @@ async function openChar(row: CharacterSummary) {
     const response = await fetch(`/api/characters/${encodeURIComponent(row.unicode)}`)
     if (!response.ok) throw new Error('한자 정보 조회 실패: 잠시 후 다시 시도하세요.')
     const detail = (await response.json()) as CharacterDetail
-    if (detail.strokes.length === 0) {
+    if (detail.strokes.length === 0 && !detail.issue_status) {
       const fetched = await fetch(`/api/characters/${encodeURIComponent(row.unicode)}/reference`, { method: 'POST' })
       const fetchedBody = await fetched.json()
       if (!fetched.ok) throw new Error(fetchedBody.error ?? '레퍼런스 데이터 수신 실패: 잠시 후 다시 시도하세요.')
@@ -142,7 +149,7 @@ async function openChar(row: CharacterSummary) {
     }))
     shown.value = strokes.value.length
     reveal.value = 1
-    message.value = [detail.char, detail.reading, detail.origin, detail.origin_url].filter(Boolean).join(' · ')
+    message.value = [detail.char, detail.reading, detail.origin, detail.origin_url, issueLabel(detail), detail.issue_status === 'OPEN' ? detail.issue_reason : ''].filter(Boolean).join(' · ')
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : '한자 상세 정보 조회 실패: 잠시 후 다시 시도하세요.'
   } finally {
@@ -193,6 +200,23 @@ async function saveStrokes(action: string) {
     await loadList()
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : '획 데이터 저장 실패: 서버 상태를 확인하세요.'
+  } finally {
+    busy.value = false
+  }
+}
+
+async function approve() {
+  if (!selected.value) return
+  busy.value = true
+  error.value = ''
+  try {
+    const response = await fetch(`/api/characters/${encodeURIComponent(selected.value.unicode)}/approve`, { method: 'POST' })
+    const body = await response.json()
+    if (!response.ok) throw new Error(body.error ?? '승인 실패: 작업 데이터를 확인하세요.')
+    message.value = '작업 데이터를 승인해 strokes로 옮겼습니다.'
+    await reload()
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : '승인 실패: 서버 상태를 확인하세요.'
   } finally {
     busy.value = false
   }
@@ -621,6 +645,7 @@ onBeforeUnmount(() => {
           <button :disabled="!selected || busy" @click="pullReference">레퍼런스 수신</button>
           <button :disabled="busy" @click="syncMissing">미완료 20자 동기화</button>
           <button class="primary" :disabled="!selected || busy" @click="saveStrokes('획 편집')">변경사항 저장</button>
+          <button class="primary" :disabled="!selected?.working || strokes.length === 0 || busy" @click="approve">승인</button>
           <button :disabled="!selected" @click="undo">실행 취소</button>
           <button :disabled="!selected" @click="compileChar">JSON 컴파일</button>
         </div>

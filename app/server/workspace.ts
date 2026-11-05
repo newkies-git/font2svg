@@ -60,6 +60,7 @@ const ACTOR_IDS = 'system:ids'
 const ACTOR_FONT = 'system:font'
 const ACTION_FONT = '궁서체 윤곽으로 교체'
 const ACTION_UNDO = '실행 취소'
+const ACTION_APPROVE = '작업 데이터 승인'
 const ORIGIN_MANUAL = 'MANUAL'
 
 type StrokeOutline = { order: number; path: string; radical: 0 | 1 }
@@ -101,7 +102,7 @@ function createWorkspace(rootDir: string) {
   function listCharacters(query: string) {
     const q = query.trim()
     const rows = db.prepare(`
-      SELECT c.unicode, c.char, c.grade, i.reason AS issue_reason, COALESCE(s.origin, 'NONE') AS origin,
+      SELECT c.unicode, c.char, c.grade, i.reason AS issue_reason, i.status AS issue_status, i.in_font, COALESCE(s.origin, 'NONE') AS origin,
              c.reading, c.meaning, c.stroke_count, c.last_modified_at, c.last_modified_by
       FROM characters c
       LEFT JOIN issues i ON i.char = c.char
@@ -121,19 +122,26 @@ function createWorkspace(rootDir: string) {
   function getCharacter(unicode: string) {
     const row = db.prepare('SELECT * FROM characters WHERE unicode = ?').get(unicode) as Record<string, unknown> | undefined
     if (!row) return null
-    const strokes = readStrokes(unicode).map((stroke, index) => ({ stroke_order: index + 1, ...stroke }))
+    // strokes에 없으면(승인 전) 작업 데이터를 보여 준다.
     const meta = readStrokeRow(unicode)
+    const working = meta ? undefined : readWorkingRow(unicode)
+    const shown = meta ?? working
+    const strokes = (shown ? itemsOf(shown) : []).map((stroke, index) => ({ stroke_order: index + 1, ...stroke }))
     const history = db.prepare('SELECT COUNT(*) AS n FROM strokes_history WHERE char = ? AND undoable = 1').get(String(row.char)) as { n: number }
-    const issue = db.prepare('SELECT reason FROM issues WHERE char = ?').get(String(row.char)) as { reason: string } | undefined
+    const issue = db.prepare('SELECT reason, status, in_font FROM issues WHERE char = ?').get(String(row.char)) as
+      { reason: string; status: string; in_font: number } | undefined
     return {
       ...row,
       issue_reason: issue?.reason ?? null,
+      issue_status: issue?.status ?? null,
+      in_font: issue?.in_font ?? 0,
+      working: Boolean(working),
       variant_reading: JSON.parse(String(row.variant_reading)) as string[],
       variant_meaning: JSON.parse(String(row.variant_meaning)) as string[],
       radical: meta?.radical ?? 0,
-      font_outline: meta ? JSON.parse(meta.font_outline) as string[] : [],
-      origin: meta?.origin ?? null,
-      origin_url: meta?.origin_url ?? null,
+      font_outline: shown ? JSON.parse(shown.font_outline) as string[] : [],
+      origin: meta?.origin ?? working?.source ?? null,
+      origin_url: meta?.origin_url ?? working?.source_url ?? null,
       strokes,
       history_count: history.n,
     }
@@ -153,9 +161,19 @@ function createWorkspace(rootDir: string) {
     } | undefined
   }
 
+  function readWorkingRow(unicode: string) {
+    return db.prepare(`
+      SELECT w.source, w.source_url, w.font_outline, w.stroke_outlines, w.median_line
+      FROM working_data w JOIN characters c ON c.char = w.char WHERE c.unicode = ?
+    `).get(unicode) as { source: string; source_url: string | null; font_outline: string; stroke_outlines: string; median_line: string } | undefined
+  }
+
   function readStrokes(unicode: string): StrokeItem[] {
     const row = readStrokeRow(unicode)
-    if (!row) return []
+    return row ? itemsOf(row) : []
+  }
+
+  function itemsOf(row: { stroke_outlines: string; median_line: string }): StrokeItem[] {
     const outlines = JSON.parse(row.stroke_outlines) as StrokeOutline[]
     const lines = new Map((JSON.parse(row.median_line) as MedianLine[]).map((line) => [line.order, line]))
     return outlines.map((outline) => {
@@ -179,14 +197,7 @@ function createWorkspace(rootDir: string) {
       db.prepare('DELETE FROM strokes WHERE char = ?').run(character.char)
       return
     }
-    const outlines: StrokeOutline[] = items.map((item, index) => ({ order: index + 1, path: item.outline_path, radical: item.is_radical ? 1 : 0 }))
-    const lines: MedianLine[] = items.map((item, index) => ({
-      order: index + 1,
-      points: item.median_points,
-      width: item.stroke_width,
-      start_cap: item.start_cap_type,
-      end_cap: item.end_cap_type,
-    }))
+    const { outlines, lines } = outlinesAndLines(items)
     // 내용이 실제로 바뀔 때만, 바뀌기 전 행을 이력에 남긴다(같은 내용을 다시 쓰면 남기지 않는다).
     const before = db.prepare('SELECT * FROM strokes WHERE char = ?').get(character.char) as StrokeRow | undefined
     if (before && (
@@ -220,28 +231,84 @@ function createWorkspace(rootDir: string) {
     )
   }
 
+  // 승인 전 작업 데이터. strokes와 같은 모양으로 쓰되 획이 없어도 된다.
+  function writeWorking(unicode: string, work: { source: string; url: string | null; fontOutline: string[]; items: StrokeItem[] }, by: string) {
+    const { outlines, lines } = outlinesAndLines(work.items)
+    db.prepare(`
+      INSERT INTO working_data (char, source, source_url, font_outline, stroke_outlines, median_line, last_modified_by)
+      SELECT char, ?, ?, ?, ?, ?, ? FROM characters WHERE unicode = ?
+      ON CONFLICT(char) DO UPDATE SET
+        source = excluded.source,
+        source_url = excluded.source_url,
+        font_outline = excluded.font_outline,
+        stroke_outlines = excluded.stroke_outlines,
+        median_line = excluded.median_line,
+        last_modified_at = CURRENT_TIMESTAMP,
+        last_modified_by = excluded.last_modified_by
+    `).run(work.source, work.url, JSON.stringify(work.fontOutline), JSON.stringify(outlines), JSON.stringify(lines), by, unicode)
+  }
+
   function updateStrokes(unicode: string, strokes: StrokeItem[], action: string) {
     const current = getCharacter(unicode)
     if (!current) throw new Error('등록되지 않은 글자입니다.')
+    const items = strokes.map((stroke, index) => {
+      if (!Array.isArray(stroke.median_points) || stroke.median_points.length < 2) {
+        throw new Error(`${index + 1}획의 중심선이 없습니다.`)
+      }
+      return {
+        outline_path: stroke.outline_path,
+        median_points: roundPoints(stroke.median_points),
+        stroke_width: clampWidth(stroke.stroke_width),
+        is_radical: stroke.is_radical ? 1 : 0,
+        start_cap_type: cap(stroke.start_cap_type),
+        end_cap_type: cap(stroke.end_cap_type),
+      }
+    })
     db.exec('BEGIN')
     try {
-      writeStrokes(unicode, strokes.map((stroke, index) => {
-        if (!Array.isArray(stroke.median_points) || stroke.median_points.length < 2) {
-          throw new Error(`${index + 1}획의 중심선이 없습니다.`)
-        }
-        return {
-          outline_path: stroke.outline_path,
-          median_points: roundPoints(stroke.median_points),
-          stroke_width: clampWidth(stroke.stroke_width),
-          is_radical: stroke.is_radical ? 1 : 0,
-          start_cap_type: cap(stroke.start_cap_type),
-          end_cap_type: cap(stroke.end_cap_type),
-        }
-      }), ACTOR_USER, action)
-      db.prepare(`
-        UPDATE characters SET stroke_count = ?, last_modified_by = ?
-        WHERE unicode = ?
-      `).run(strokes.length, ACTOR_USER, unicode)
+      if (readStrokeRow(unicode)) {
+        writeStrokes(unicode, items, ACTOR_USER, action)
+        db.prepare('UPDATE characters SET stroke_count = ?, last_modified_by = ? WHERE unicode = ?').run(items.length, ACTOR_USER, unicode)
+      } else {
+        // strokes에 없는 글자는 승인 전 작업 데이터를 고친다. 궁서체 윤곽만 있던 글자에 획이 생기면 수작업이다.
+        const prev = readWorkingRow(unicode)
+        const keep = prev && (prev.source !== 'FONT' || items.length === 0)
+        writeWorking(unicode, {
+          source: keep ? prev.source : ORIGIN_MANUAL,
+          url: keep ? prev.source_url : null,
+          fontOutline: prev ? JSON.parse(prev.font_outline) as string[] : [],
+          items,
+        }, ACTOR_USER)
+        db.prepare(`
+          INSERT INTO issues (char, reason, status) SELECT char, '수작업 편집', ? FROM characters WHERE unicode = ?
+          ON CONFLICT(char) DO UPDATE SET status = excluded.status
+        `).run(items.length > 0 ? 'DRAFT' : 'OPEN', unicode)
+        db.prepare('UPDATE characters SET last_modified_by = ? WHERE unicode = ?').run(ACTOR_USER, unicode)
+      }
+      db.exec('COMMIT')
+    } catch (error) {
+      db.exec('ROLLBACK')
+      throw error
+    }
+    return getCharacter(unicode)
+  }
+
+  // 작업 데이터를 확인하고 승인하면 strokes로 옮기고, 옮긴 작업 데이터는 지운다. issues 행은 '승인됨'으로 남긴다.
+  function approve(unicode: string) {
+    const character = db.prepare('SELECT char FROM characters WHERE unicode = ?').get(unicode) as { char: string } | undefined
+    if (!character) throw new Error('등록되지 않은 글자입니다.')
+    const working = readWorkingRow(unicode)
+    if (!working || readStrokeRow(unicode)) throw new Error('승인할 작업 데이터가 없습니다.')
+    const items = itemsOf(working)
+    const problems = validate(character.char, items)
+    if (problems.length) throw new Error(problems.join(' '))
+    const fontOutline = JSON.parse(working.font_outline) as string[]
+    db.exec('BEGIN')
+    try {
+      writeStrokes(unicode, items, ACTOR_USER, ACTION_APPROVE, { source: working.source, url: working.source_url }, fontOutline.length > 0 ? fontOutline : undefined)
+      db.prepare('UPDATE characters SET stroke_count = ?, last_modified_by = ? WHERE unicode = ?').run(items.length, ACTOR_USER, unicode)
+      db.prepare(`UPDATE issues SET status = 'APPROVED' WHERE char = ?`).run(character.char)
+      db.prepare('DELETE FROM working_data WHERE char = ?').run(character.char)
       db.exec('COMMIT')
     } catch (error) {
       db.exec('ROLLBACK')
@@ -306,26 +373,45 @@ function createWorkspace(rootDir: string) {
       return { unicode, source: hanja ? 'MMH' : 'DB', fetched: false }
     }
 
+    if (db.prepare('SELECT 1 FROM working_data WHERE char = ?').get(character.char)) return { unicode, source: 'WORKING', fetched: false }
+
     const hanja = await loadSource(unicode, 'MMH', hanjaUrl(character.char), () => fetchHanja(character.char))
     const imported = hanja ? hanjaStrokes(hanja.value) : null
     if (hanja && imported) {
       saveImported(unicode, 'MMH', hanja.url, hanja.value.radical, fontOrGiven(character.char, imported.medians, imported.outlines))
       return { unicode, source: 'MMH', fetched: true }
     }
+    // Hanja에 없는 글자는 strokes가 아니라 작업 데이터(working_data)에 쓰고 issues에 올린다. 승인해야 strokes로 간다.
     const composed = await composeIds(character.char)
-    if (!composed) {
-      setIssue(unicode, 'Hanja, IDS 합성 모두 실패', ACTOR_IDS)
-      return { unicode, source: 'NONE', fetched: false }
+    const contours = getFont()?.contours(character.char) ?? null
+    db.exec('BEGIN')
+    try {
+      if (composed) {
+        // IDS 합성 중심선을 길잡이로 궁서체 윤곽을 획별로 나눈다. 못 나누면 전체 윤곽과 띠 모양 획을 둔다.
+        const split = contours && splitByContours(contours, composed.medians)
+        const [origin, originUrl] = IDS_ORIGINS[composed.source]
+        const strokes = split || { medians: composed.medians, outlines: [] }
+        writeWorking(unicode, { source: origin, url: originUrl, fontOutline: strokes.fontOutline ?? contours ?? [], items: toItems(strokes, new Set()) }, ACTOR_IDS)
+        setIssue(unicode, `Hanja에 없음: ${origin} 합성 초안`, ACTOR_IDS, 'DRAFT', Boolean(contours))
+      } else if (contours) {
+        writeWorking(unicode, { source: 'FONT', url: null, fontOutline: contours, items: [] }, ACTOR_FONT)
+        setIssue(unicode, 'Hanja에 없고 IDS 합성 실패: 궁서체 윤곽만 추출', ACTOR_FONT, 'OPEN', true)
+      } else {
+        setIssue(unicode, 'Hanja, 궁서체, IDS 합성 모두 실패', ACTOR_IDS)
+      }
+      db.exec('COMMIT')
+    } catch (error) {
+      db.exec('ROLLBACK')
+      throw error
     }
-    const [origin, originUrl] = IDS_ORIGINS[composed.source]
-    saveImported(unicode, origin, originUrl, [], fontOrGiven(character.char, composed.medians, []))
-    return { unicode, source: composed.source, fetched: true }
+    return { unicode, source: composed?.source ?? (contours ? 'FONT' : 'NONE'), fetched: Boolean(composed || contours) }
   }
 
   async function syncMissing(limit = MISSING_FETCH_LIMIT) {
     const rows = db.prepare(`
       SELECT c.unicode FROM characters c
       WHERE NOT EXISTS (SELECT 1 FROM strokes s WHERE s.char = c.char)
+        AND NOT EXISTS (SELECT 1 FROM working_data w WHERE w.char = c.char)
       ORDER BY c.unicode LIMIT ?
     `).all(limit) as { unicode: string }[]
     const results = []
@@ -337,6 +423,7 @@ function createWorkspace(rootDir: string) {
   function compile(unicode: string) {
     const detail = getCharacter(unicode)
     if (!detail) throw new Error('등록되지 않은 글자입니다.')
+    if (detail.working) throw new Error('승인 전 작업 데이터는 컴파일할 수 없습니다. 먼저 승인하세요.')
     const strokes = detail.strokes as { stroke_order: number; outline_path: string; median_points: Pt[]; stroke_width: number; is_radical: number }[]
     const problems = validate(String(detail.char), strokes)
     if (problems.length) {
@@ -399,7 +486,7 @@ function createWorkspace(rootDir: string) {
     return { imported }
   }
 
-  return { listCharacters, getCharacter, updateStrokes, undo, ensureReference, syncMissing, applyFontBatch, compile, listRadicals, importInitial }
+  return { listCharacters, getCharacter, updateStrokes, approve, undo, ensureReference, syncMissing, applyFontBatch, compile, listRadicals, importInitial }
 
   async function loadSource<T>(unicode: string, source: 'MMH', url: string, fetchFresh: () => Promise<Remote<T>>): Promise<Remote<T> | null> {
     const cached = db.prepare('SELECT found, raw_data, source_url FROM reference_data WHERE unicode = ? AND source = ?')
@@ -506,32 +593,25 @@ function createWorkspace(rootDir: string) {
     return { processed: rows.length, counts, rejected, noGlyph, next: rows.length === limit ? rows[rows.length - 1].unicode : null }
   }
 
-  function setIssue(unicode: string, reason: string, by: string) {
+  function setIssue(unicode: string, reason: string, by: string, status: 'OPEN' | 'DRAFT' = 'OPEN', inFont = false) {
     db.prepare('UPDATE characters SET last_modified_by = ? WHERE unicode = ?').run(by, unicode)
     db.prepare(`
-      INSERT INTO issues (char, reason) SELECT char, ? FROM characters WHERE unicode = ?
-      ON CONFLICT(char) DO UPDATE SET reason = excluded.reason, created_at = CURRENT_TIMESTAMP
-    `).run(reason, unicode)
+      INSERT INTO issues (char, reason, status, in_font) SELECT char, ?, ?, ? FROM characters WHERE unicode = ?
+      ON CONFLICT(char) DO UPDATE SET reason = excluded.reason, status = excluded.status, in_font = excluded.in_font, created_at = CURRENT_TIMESTAMP
+    `).run(reason, status, inFont ? 1 : 0, unicode)
   }
 
+  // 승인된 기록('APPROVED')은 남긴다.
   function clearIssue(unicode: string) {
-    db.prepare('DELETE FROM issues WHERE char = (SELECT char FROM characters WHERE unicode = ?)').run(unicode)
+    db.prepare(`DELETE FROM issues WHERE char = (SELECT char FROM characters WHERE unicode = ?) AND status <> 'APPROVED'`).run(unicode)
   }
 
   function saveImported(unicode: string, source: string, url: string | null, radical: number[], strokes: ImportedStrokes) {
-    const { medians, outlines, widths, fontOutline } = strokes
-    const radicalSet = new Set(radical)
+    const { medians, fontOutline } = strokes
     const by = source === 'MMH' ? ACTOR_HANJA : ACTOR_IDS
     db.exec('BEGIN')
     try {
-      writeStrokes(unicode, medians.map((median, index) => ({
-        outline_path: outlines[index] || ribbonPath(median, DEFAULT_STROKE_WIDTH),
-        median_points: roundPoints(median),
-        stroke_width: widths?.[index] ?? DEFAULT_STROKE_WIDTH,
-        is_radical: radicalSet.has(index) ? 1 : 0,
-        start_cap_type: 'NONE',
-        end_cap_type: 'NONE',
-      })), by, `${source} 가져오기`, { source, url }, fontOutline)
+      writeStrokes(unicode, toItems(strokes, new Set(radical)), by, `${source} 가져오기`, { source, url }, fontOutline)
       db.prepare('UPDATE characters SET stroke_count = ?, last_modified_by = ? WHERE unicode = ?')
         .run(medians.length, by, unicode)
       clearIssue(unicode)
@@ -675,11 +755,32 @@ function charactersDdl(name: string): string {
   `
 }
 
+// status: OPEN(작업 전) / DRAFT(작업 데이터가 있어 승인 대기) / APPROVED(승인해 strokes로 옮김). in_font: 궁서체에 글리프가 있는지.
+const ISSUE_STATUS_COLUMN = `status TEXT NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN', 'DRAFT', 'APPROVED'))`
+const ISSUE_IN_FONT_COLUMN = 'in_font INTEGER NOT NULL DEFAULT 0 CHECK (in_font IN (0, 1))'
 const ISSUES_DDL = `
   CREATE TABLE IF NOT EXISTS issues (
     char TEXT PRIMARY KEY REFERENCES characters(char) ON DELETE CASCADE,
     reason TEXT NOT NULL,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    ${ISSUE_STATUS_COLUMN},
+    ${ISSUE_IN_FONT_COLUMN}
+  )
+`
+
+// Hanja에 없는 글자의 IDS 합성 초안·궁서체 추출 데이터·수작업 데이터. 승인하면 strokes로 옮기고 지운다.
+// FONT는 궁서체 윤곽만 있고 획이 없는 경우다.
+const WORKING_DATA_DDL = `
+  CREATE TABLE IF NOT EXISTS working_data (
+    char TEXT PRIMARY KEY REFERENCES characters(char) ON DELETE CASCADE,
+    source TEXT NOT NULL CHECK (source IN ('IDS', 'OLLAMA_IDS', 'MANUAL', 'FONT')),
+    source_url TEXT,
+    font_outline JSON NOT NULL CHECK (json_valid(font_outline) AND json_type(font_outline) = 'array'),
+    stroke_outlines JSON NOT NULL CHECK (json_valid(stroke_outlines) AND json_type(stroke_outlines) = 'array'),
+    median_line JSON NOT NULL
+      CHECK (json_valid(median_line) AND json_type(median_line) = 'array' AND json_array_length(median_line) = json_array_length(stroke_outlines)),
+    last_modified_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_modified_by TEXT NOT NULL
   )
 `
 
@@ -826,6 +927,42 @@ function migrate(db: DatabaseSync) {
   addColumn(db, 'reference_data', 'source_url', 'TEXT')
   splitRadicalNames(db)
   migrateEditHistory(db)
+  introduceWorkingData(db)
+}
+
+// 작업 데이터(working_data)를 도입하면서, strokes에 있던 IDS·Ollama·수작업 초안을 승인 대기 작업 데이터로 되돌린다.
+// 처음 한 번만 한다(이후 승인한 글자는 같은 origin으로 strokes에 있어야 한다). 되돌리기 전 strokes 행은 이력에 남긴다.
+// 궁서체 글리프 유무(in_font)는 폰트를 읽어야 알 수 있어 여기서는 0으로 둔다.
+function introduceWorkingData(db: DatabaseSync) {
+  if (db.prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'working_data'`).get()) return
+  addColumn(db, 'issues', 'status', ISSUE_STATUS_COLUMN)
+  addColumn(db, 'issues', 'in_font', ISSUE_IN_FONT_COLUMN)
+  const drafts = `FROM strokes WHERE origin IN ('IDS', 'OLLAMA_IDS', 'MANUAL')`
+  db.exec('BEGIN')
+  try {
+    db.exec(WORKING_DATA_DDL)
+    db.exec(`
+      INSERT INTO strokes_history (char, radical, font_outline, stroke_outlines, median_line, origin, origin_url,
+                                   state_modified_at, state_modified_by, action_desc, changed_by, undoable)
+      SELECT char, radical, font_outline, stroke_outlines, median_line, origin, origin_url,
+             last_modified_at, last_modified_by, '작업 데이터로 이동', '${ACTOR_MIGRATION}', 0 ${drafts}
+    `)
+    db.exec(`
+      INSERT INTO working_data (char, source, source_url, font_outline, stroke_outlines, median_line, last_modified_at, last_modified_by)
+      SELECT char, origin, origin_url, font_outline, stroke_outlines, median_line, last_modified_at, last_modified_by ${drafts}
+    `)
+    db.exec(`
+      INSERT INTO issues (char, reason, status)
+      SELECT char, 'Hanja에 없음: ' || origin || ' 합성 초안', 'DRAFT' ${drafts}
+      ON CONFLICT(char) DO UPDATE SET reason = excluded.reason, status = excluded.status
+    `)
+    db.exec(`UPDATE characters SET stroke_count = 0, last_modified_by = '${ACTOR_MIGRATION}' WHERE char IN (SELECT char ${drafts})`)
+    db.exec(`DELETE ${drafts}`)
+    db.exec('COMMIT')
+  } catch (error) {
+    db.exec('ROLLBACK')
+    throw error
+  }
 }
 
 // 옛 edit_history(글자별 획 배열 스냅샷)를 strokes_history로 옮기고 지운다. 스냅샷에 없는 값은 지금 행에서 가져온다:
@@ -1201,6 +1338,31 @@ function radicalOf(id: number | null, strokes: { is_radical: number }[]) {
 
 function unicodeOf(char: string): string {
   return `U+${char.codePointAt(0)!.toString(16).toUpperCase().padStart(UNICODE_HEX_PAD, '0')}`
+}
+
+function outlinesAndLines(items: StrokeItem[]): { outlines: StrokeOutline[]; lines: MedianLine[] } {
+  return {
+    outlines: items.map((item, index) => ({ order: index + 1, path: item.outline_path, radical: item.is_radical ? 1 : 0 })),
+    lines: items.map((item, index) => ({
+      order: index + 1,
+      points: item.median_points,
+      width: item.stroke_width,
+      start_cap: item.start_cap_type,
+      end_cap: item.end_cap_type,
+    })),
+  }
+}
+
+// 가져온 중심선·윤곽을 저장용 획으로 바꾼다. 윤곽이 없는 획은 중심선을 따라 띠 모양으로 만든다.
+function toItems(strokes: ImportedStrokes, radical: Set<number>): StrokeItem[] {
+  return strokes.medians.map((median, index) => ({
+    outline_path: strokes.outlines[index] || ribbonPath(median, DEFAULT_STROKE_WIDTH),
+    median_points: roundPoints(median),
+    stroke_width: strokes.widths?.[index] ?? DEFAULT_STROKE_WIDTH,
+    is_radical: radical.has(index) ? 1 : 0,
+    start_cap_type: 'NONE',
+    end_cap_type: 'NONE',
+  }))
 }
 
 function roundPoints(points: Pt[]): Pt[] {

@@ -76,6 +76,9 @@ function workspaceApi(): Plugin {
             const body = await readBody(req)
             return send(res, 200, ws.updateStrokes(unicode, body.strokes as never, String(body.action ?? '편집')))
           }
+          if (req.method === 'POST' && parts[3] === 'approve') {
+            return send(res, 200, ws.approve(unicode))
+          }
           if (req.method === 'POST' && parts[3] === 'undo') {
             return send(res, 200, ws.undo(unicode))
           }

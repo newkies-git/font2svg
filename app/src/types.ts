@@ -1,6 +1,7 @@
 export type Pt = [number, number]
 
-export type RefSource = 'MMH' | 'IDS' | 'OLLAMA_IDS' | 'MANUAL' | 'NONE'
+export type RefSource = 'MMH' | 'IDS' | 'OLLAMA_IDS' | 'MANUAL' | 'FONT' | 'NONE'
+export type IssueStatus = 'OPEN' | 'DRAFT' | 'APPROVED'
 export type CapType = 'NONE' | 'AUTO_ROUND' | 'REF_STAMP'
 export type BackgroundMode = 'outline' | 'silhouette' | 'none'
 
@@ -18,6 +19,8 @@ export type CharacterSummary = {
   char: string
   grade: string | null
   issue_reason: string | null
+  issue_status: IssueStatus | null
+  in_font: 0 | 1
   origin: RefSource
   reading: string | null
   meaning: string | null
@@ -64,6 +67,9 @@ export type CharacterDetail = {
   char: string
   grade: string | null
   issue_reason: string | null
+  issue_status: IssueStatus | null
+  in_font: 0 | 1
+  working: boolean
   reading: string | null
   meaning: string | null
   variant_reading: string[]

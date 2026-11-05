@@ -28,7 +28,7 @@
 ## 2. 시스템 아키텍처 및 데이터 파이프라인
 
 1. **Input Layer**: 궁서체 `.ttf` 파일 + 대상 한자 리스트 + 레퍼런스 DB(Make Me a Hanja) + IDS 데이터(CHISE/BabelStone IDS) + 로컬 Ollama(`qwen3.5:9b`).
-2. **AI & Import Engine**: 화면에서 글자 등록 → DB에 데이터가 없으면 레퍼런스 가져오기(Hanja, §4.5) → 없으면 IDS 조회(공개 IDS 데이터 우선, 없으면 Ollama 추론) → 아핀 변환(Affine Transform)을 통한 초기 중심선 합성.
+2. **AI & Import Engine**: 화면에서 글자 등록 → DB에 데이터가 없으면 레퍼런스 가져오기(Hanja, §4.5) → 없으면 `issues`에 올리고 IDS 조회(공개 IDS 데이터 우선, 없으면 Ollama 추론)·궁서체 윤곽 추출 → 아핀 변환(Affine Transform)을 통한 초기 중심선 합성. 이 결과는 `strokes`가 아니라 작업 데이터(`working_data`)에 두고, 사람이 확인해 승인하면 `strokes`로 옮긴다(§4.5).
 3. **Pre-processing Engine (Geometry)**: 좌표 정규화(§2.1) → 구멍(Hole) 보존형 섬(Island) 분해 → 브러시 교집합 분할(Boolean Intersect) → 잔여 조각(Residue) 흡수 및 `strokeWidth` 자동 확장 → 숨겨진 끝점 복원(§4.3).
 4. **Admin Editor**: 수동 보정, 나이프 툴 편집, 부수 태깅, 실시간 프리뷰(§4.4).
 5. **Validation**: 배포 전 자동 검증(§7). 실패 시 `issues`에 사유를 기록(이하 `ISSUE`).
@@ -99,11 +99,30 @@ CREATE TABLE characters (
     last_modified_by TEXT NOT NULL       -- 'user', 'system:hanja', 'system:ids', 'system:font', 'system:migration'
 );
 
--- 3-1. 문제 사유 테이블: 문제가 있는 글자(`ISSUE`)의 원인. 글자당 최대 1행이며, 문제가 풀리면 지운다.
+-- 3-1. 문제 테이블: 문제가 있거나 아직 사람이 작업해야 하는 글자(`ISSUE`)와 그 원인. 글자당 최대 1행이다.
+--    status : 'OPEN' 작업 전 / 'DRAFT' 작업 데이터가 있어 승인 대기 / 'APPROVED' 승인해 strokes로 옮김(기록으로 남긴다)
+--    in_font: 궁서체에 글리프가 있으면 1
 CREATE TABLE issues (
     char TEXT PRIMARY KEY REFERENCES characters(char) ON DELETE CASCADE,
     reason TEXT NOT NULL,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    status TEXT NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN', 'DRAFT', 'APPROVED')),
+    in_font INTEGER NOT NULL DEFAULT 0 CHECK (in_font IN (0, 1))
+);
+
+-- 3-2. 작업 데이터 테이블: Hanja에 없는 글자의 IDS 합성 초안, 궁서체에서 뽑은 윤곽, 수작업 데이터. 글자당 1행.
+--    strokes와 같은 모양이지만 획이 없어도 된다. 승인하면 strokes로 옮기고 이 행은 지운다. reference_data(외부 원본 캐시)와는 다르다.
+--    source: 'IDS', 'OLLAMA_IDS', 'MANUAL' / 'FONT'는 궁서체 윤곽만 있고 획이 없는 경우(획이 생기면 'MANUAL')
+CREATE TABLE working_data (
+    char TEXT PRIMARY KEY REFERENCES characters(char) ON DELETE CASCADE,
+    source TEXT NOT NULL CHECK (source IN ('IDS', 'OLLAMA_IDS', 'MANUAL', 'FONT')),
+    source_url TEXT,
+    font_outline JSON NOT NULL CHECK (json_valid(font_outline) AND json_type(font_outline) = 'array'),
+    stroke_outlines JSON NOT NULL CHECK (json_valid(stroke_outlines) AND json_type(stroke_outlines) = 'array'),
+    median_line JSON NOT NULL
+        CHECK (json_valid(median_line) AND json_type(median_line) = 'array' AND json_array_length(median_line) = json_array_length(stroke_outlines)),
+    last_modified_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_modified_by TEXT NOT NULL
 );
 
 -- 4. 획(Stroke) 테이블: 글자당 1행. font_outline, stroke_outlines, median_line은 JSON이다.
@@ -185,10 +204,11 @@ END;
 
 | 상태 | 판단 방법 |
 | :--- | :--- |
-| 미등록 획 | `strokes` 행이 없다 |
+| 미등록 획 | `strokes` 행도 `working_data` 행도 없다 |
 | 레퍼런스 가져옴 | `strokes.origin = 'MMH'` |
-| 합성 초안 | `strokes.origin`이 `'IDS'`, `'OLLAMA_IDS'`, `'MANUAL'` |
-| 문제(`ISSUE`) | `issues` 행이 있다 |
+| 작업 전(`OPEN`) | `issues.status = 'OPEN'`. `working_data`가 없거나 궁서체 윤곽만 있다(`source = 'FONT'`). `in_font`로 궁서체 글리프 유무를 구분한다 |
+| 승인 대기(`DRAFT`) | `issues.status = 'DRAFT'`이고 `working_data`에 획이 있다 |
+| 승인됨 | `issues.status = 'APPROVED'`이고 `strokes`에 있다. `origin`이 `'IDS'`, `'OLLAMA_IDS'`, `'MANUAL'`이다 |
 
 - 사람 검수 완료(과거 `DONE`)는 기록하지 않는다. 컴파일 결과는 DB에 저장하지 않고 `output/compiled/<글자>.json` 파일로만 남기므로, 획을 수정한 뒤에는 다시 컴파일해야 한다.
 
@@ -253,10 +273,10 @@ END;
 
 **판단 순서**
 
-1. `characters`에 글자가 있고 `strokes` 행이 1개 이상이면 기존 데이터를 연다. 외부 조회는 하지 않는다.
+1. `characters`에 글자가 있고 `strokes` 행이 1개 이상이면 기존 데이터를 연다. `working_data`만 있는 글자는 그 작업 데이터를 연다. 외부 조회는 하지 않는다.
 2. 없으면 `characters`에 등록하고, `reference_data`의 캐시를 확인한다. 캐시가 있으면(`found = 0` 포함) 다시 내려받지 않는다.
 3. **Hanja**(hanzi-writer-data, Make Me a Hanja 기반)에서 찾는다. 있으면 그 데이터로 채운다.
-4. Hanja에 없으면 §4.1 IDS 자소 합성으로 넘긴다.
+4. Hanja에 없으면 `strokes`가 아니라 **작업 데이터**에 쓰고 `issues`에 올린다(아래 "작업 데이터와 승인").
 
 **출처별로 가져오는 데이터**
 
@@ -273,13 +293,27 @@ END;
 - **궁서체 윤곽으로 일괄 교체**(`POST /api/apply-font`): 이미 획이 있는 글자는 기존(Hanja) 중심선을 길잡이로 TTF 윤곽을 획별로 나누고, 중심선과 폭은 새 윤곽에서 다시 계산한다(방향은 길잡이에 맞추고 점은 RDP 허용오차 3으로 줄인다). `last_modified_by = 'user'`인 글자(사람이 고친 것)와 이미 교체된 글자(`'system:font'`)는 건너뛰고, 교체 전 상태는 `strokes_history`에 남겨 실행 취소할 수 있다. 품질 검사: (1) 어느 획도 전체 윤곽 그대로이거나 비어 있으면 안 되고, (2) 획 하나의 면적이 글자 면적의 0.5% 이상이어야 하며, (3) 획 면적의 합이 글자 면적의 0.85~1.7배여야 한다. 하나라도 어기면 그 글자는 바꾸지 않고 목록으로 돌려준다. 교체된 글자는 Hanja 중심선으로 되덮이지 않는다(레퍼런스 수신이 `user`·`system:font` 글자의 중심선을 건드리지 않는다).
 - 가져온 중심선은 궁서체 글리프의 외곽 bbox에 맞춰 아핀 변환한 뒤 §4.2 분할에 넣는다. 결과는 `strokes.origin = 'MMH'`로 저장한다.
 - **중심선은 Hanja 값을 그대로 복사한다. 어떤 획의 `medians`가 없거나 점이 2개 미만이면 그 획의 윤곽에서 직접 계산한다**(래스터화 → 골격 추출 → 가장 긴 경로, `recoverMedian`). 윤곽도 없는 글자는 계산할 수 없으므로 IDS 합성으로 넘긴다. 계산한 중심선은 모양은 맞지만(Hanja 값과의 평균 거리 약 1.6) 시작·끝 방향이 뒤집힐 수 있어(표본의 약 4.6%) 필순 검수에서 확인한다.
-- **윤곽이 없으면 TTF에서 추출한다.** Hanja에 윤곽이 없거나 IDS 합성으로 만든 글자는, 작업 폴더의 `app/fonts/Gungseouche.ttf`(opentype.js로 읽음)에서 글자 윤곽을 꺼내 `strokes.font_outline`에 저장한다. 합성한 중심선 묶음의 bbox를 글자 윤곽 bbox(안쪽으로 20)에 맞춰 늘린 뒤, 윤곽의 각 점을 가장 가까운 중심선에 배정해 획별 윤곽으로 나눈다(§4.2). 결과는 초안이므로 화면에서 칼 분할·중심선 편집으로 고친다. 폰트 파일이 없거나 글자가 없으면 중심선에 폭을 준 띠 모양으로 대신한다.
+- **윤곽이 없으면 TTF에서 추출한다.** Hanja에 윤곽이 없거나 IDS 합성으로 만든 글자는(작업 데이터의 `font_outline`; 승인하면 `strokes.font_outline`), 작업 폴더의 `app/fonts/Gungseouche.ttf`(opentype.js로 읽음)에서 글자 윤곽을 꺼내 `strokes.font_outline`에 저장한다. 합성한 중심선 묶음의 bbox를 글자 윤곽 bbox(안쪽으로 20)에 맞춰 늘린 뒤, 윤곽의 각 점을 가장 가까운 중심선에 배정해 획별 윤곽으로 나눈다(§4.2). 결과는 초안이므로 화면에서 칼 분할·중심선 편집으로 고친다. 폰트 파일이 없거나 글자가 없으면 중심선에 폭을 준 띠 모양으로 대신한다.
   - TTF를 처음 읽을 때 SHA-256을 `project_meta`에 기록하고, 이후 해시가 다르면 작업을 멈춘다(§8 보안).
   - 이 폰트는 cmap에 Mac Roman 하위 표가 섞여 있어 opentype.js가 그대로는 읽지 못한다. 메모리 사본에서만 그 표를 무효로 해 유니코드 표(format 4, BMP)를 쓰게 하며 디스크 파일은 바꾸지 않는다. BMP 밖 글자(예: U+2E569)는 이 폰트에 없다.
   - 궁서체 글자는 Hanja 데이터보다 낮게 그려져 있어 y축으로 95만큼 올려 같은 높이에 놓는다.
   - Ollama는 `ids`(구조식) 하나만 답하게 하고(구조화 출력, `think: false`), 부품 칸(box)은 구조식 기호로 코드가 정한다. 모델이 준 비율은 신뢰할 수 없었다. 구조식이 형식에 맞지 않거나 부품이 DB에 없으면 실패로 처리한다. 공개 IDS에도 없는 글자에만 쓰며, 결과 품질이 낮아 반드시 화면에서 고친다.
   - IDS 부품의 중심선은 부품 글자의 모든 획을 한 덩어리로 보고 box에 맞춘다.
 - 가져온 필순은 초안이다. 한국 기준과 다를 수 있으므로 §7.3 검수를 거쳐야 한다.
+
+**작업 데이터와 승인**
+
+Hanja에 없는 글자는 `strokes`에 바로 쓰지 않는다. IDS 합성·Ollama·궁서체 추출 결과는 `working_data`에 기록하고 `issues`에 올린 뒤, 사람이 화면에서 확인·수정하고 **승인**해야 `strokes`로 간다.
+
+| 경우 | `working_data` | `issues` |
+| :--- | :--- | :--- |
+| IDS 합성 성공 (궁서체 유무 무관) | 합성 중심선을 길잡이로 궁서체 윤곽을 획별로 나눈 초안(`source = 'IDS'`·`'OLLAMA_IDS'`·`'MANUAL'`). 분리가 어긋나면 궁서체 전체 윤곽(`font_outline`)과 띠 모양 획. 궁서체에 글자가 없으면 `font_outline = []`에 띠 모양 획 | `DRAFT`, `in_font`는 궁서체 글리프 유무 |
+| IDS 합성 실패, 궁서체에 있음 | 궁서체 전체 윤곽만(`source = 'FONT'`, 획 없음) | `OPEN`, `in_font = 1` |
+| 둘 다 실패 | 행 없음 | `OPEN`, `in_font = 0` |
+
+- 작업 데이터는 화면의 편집기로 고치며, 편집 내용은 `working_data`에 저장한다(`strokes_history`에는 남기지 않는다). 획이 없던 글자에 획이 생기면 `source`는 `'MANUAL'`이 되고, 획이 1개 이상이면 `issues.status`는 `DRAFT`가 된다. 처음부터 사람이 만드는 수작업의 상세 방식은 별도로 정한다.
+- **승인**(`POST /api/characters/{unicode}/approve`): 획 경로·중심선 검증(§7)을 통과하면 작업 데이터를 `strokes`로 옮긴다(`origin = source`, `last_modified_by = 'user'`). 옮긴 `working_data` 행은 삭제하고, `issues`는 지우지 않고 `status = 'APPROVED'`로 바꿔 기록을 남긴다. 승인 전 작업 데이터는 컴파일할 수 없고, 합성에 쓰는 부품(`mediansOfChar`)으로도 쓰이지 않는다.
+- 승인된 글자는 `strokes`의 일반 글자처럼 편집·이력 관리(`strokes_history`)를 따른다.
 
 **획수 대조**
 
@@ -375,7 +409,7 @@ END;
 - **Boolean 연산 비용**: Paper.js의 `intersect`/`subtract`/`unite`는 세그먼트 수에 따라 비용이 급격히 커지고 UI 스레드를 막는다. 분할은 **Web Worker**에서 실행하고, 편집 시 전체 글자가 아니라 변경된 섬만 다시 계산한다.
 - **경로 단순화**: 브러시 띠는 곡선 그대로 Boolean 연산에 넣지 말고, 허용 오차(예: 0.5 단위)로 평탄화한 뒤 연산하고 결과를 다시 곡선으로 맞춘다.
 - **Ollama**: `qwen3.5:9b`는 모델 크기가 약 6.6GB이고 그만큼의 메모리가 필요하다. 생각(thinking) 모드를 켜면 응답이 1분 안에 끝나지 않으므로 요청에 `think: false`를 준다. 동시 요청은 1개로 제한하고, 요청당 타임아웃(예: 60초)과 재시도 1회를 둔다. 같은 글자의 결과는 DB에 캐시하여 다시 호출하지 않는다.
-- **일괄 처리 중단·재개**: 글자 단위로 커밋하여, 중단 후 재실행하면 획이 없거나 `issues`에 있는 글자만 처리한다.
+- **일괄 처리 중단·재개**: 글자 단위로 커밋하여, 중단 후 재실행하면 `strokes`에도 `working_data`에도 없는 글자만 처리한다.
 - **레퍼런스 조회(§4.5)**: 글자를 등록할 때마다 CDN에 요청하지 않도록, 고정 버전의 hanzi-writer-data를 처음 한 번 로컬에 내려받아 두고 로컬에서 찾는 방식을 기본으로 한다. 원격 조회를 쓸 경우 동시 요청 4개 이하, 요청 간 지연, 요청당 타임아웃 10초를 둔다. 캐시(`reference_data`)에 있는 글자는 조회하지 않는다.
 
 ### 8.2. DB 성능
