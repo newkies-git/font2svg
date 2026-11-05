@@ -162,6 +162,7 @@
     color: var(--color-text-main);
     background-color: var(--color-bg-canvas);
     font-family: var(--font-sans);
+    font-size-adjust: from-font;
     font-synthesis: none;
     line-height: 1.5;
     text-rendering: optimizeLegibility;
