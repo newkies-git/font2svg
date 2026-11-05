@@ -103,7 +103,7 @@ export function extractFromShapes(model: GlyphModel, startId: number, endId: num
 export function recoverMedian(path: string, defaultStrokeWidth = DEFAULT_STROKE_WIDTH): { median: Pt[]; width: number; radii: number[] } {
   try {
     const model = prepareGlyph([path])
-    const chain = longestTipChain(model)
+    const chain = ridgeChain(model)
     if (chain.length < 2) return { median: [], width: defaultStrokeWidth, radii: [] }
     const median = chainMedian(model.raster, orientHeuristic(model.raster, chain))
     const radii = coverRadii(path, median)
@@ -272,6 +272,42 @@ function chainForShapes(model: GlyphModel, startId: number, endId: number, start
   const ids = shortestSegments(model, startId, endId)
   if (!ids) return null
   return stitch(model, ids)
+}
+
+function ridgeChain(model: GlyphModel): number[] {
+  const { skeleton, raster } = model
+  const start = skeleton.findIndex((value) => value === 1)
+  if (start < 0) return longestTipChain(model)
+  const first = farthestSkeleton(model, start)
+  const second = farthestSkeleton(model, first.pixel)
+  const chain: number[] = []
+  let cur = second.pixel
+  while (cur >= 0) {
+    chain.push(cur)
+    if (cur === first.pixel) break
+    cur = second.prev[cur]
+  }
+  return chain.length > 1 ? chain : longestTipChain(model)
+}
+
+function farthestSkeleton(model: GlyphModel, source: number): { pixel: number; prev: Int32Array } {
+  const { skeleton, raster } = model
+  const dist = new Int32Array(skeleton.length).fill(-1)
+  const prev = new Int32Array(skeleton.length).fill(-1)
+  const queue = [source]
+  dist[source] = 0
+  let pixel = source
+  for (let index = 0; index < queue.length; index++) {
+    const cur = queue[index]
+    if (dist[cur] > dist[pixel]) pixel = cur
+    for (const next of skelNeighbors(skeleton, raster.w, raster.h, cur)) {
+      if (dist[next] >= 0) continue
+      dist[next] = dist[cur] + 1
+      prev[next] = cur
+      queue.push(next)
+    }
+  }
+  return { pixel, prev }
 }
 
 function longestTipChain(model: GlyphModel): number[] {
@@ -990,6 +1026,10 @@ function rdp(points: Pt[], epsilon: number): Pt[] {
   const right = rdp(body.slice(index), epsilon)
   const merged = left.slice(0, -1).concat(right)
   return closed ? [...merged, merged[0]] : merged
+}
+
+export function simplifyPolyline(points: Pt[], tolerance: number): Pt[] {
+  return rdp(points, tolerance)
 }
 
 function pointLineDistance(p: Pt, a: Pt, b: Pt): number {

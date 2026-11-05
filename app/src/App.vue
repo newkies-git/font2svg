@@ -142,7 +142,7 @@ async function openChar(row: CharacterSummary) {
     }))
     shown.value = strokes.value.length
     reveal.value = 1
-    message.value = [detail.char, detail.korean_reading, detail.ref_source, detail.ref_url, detail.status].filter(Boolean).join(' · ')
+    message.value = [detail.char, detail.reading, detail.origin, detail.origin_url, detail.status].filter(Boolean).join(' · ')
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : '한자 상세 정보 조회 실패: 잠시 후 다시 시도하세요.'
   } finally {
@@ -166,7 +166,7 @@ async function pullReference() {
     const response = await fetch(`/api/characters/${encodeURIComponent(selected.value.unicode)}/reference`, { method: 'POST' })
     const body = await response.json()
     if (!response.ok) throw new Error(body.error ?? '레퍼런스 데이터 수신 실패: 잠시 후 다시 시도하세요.')
-    message.value = body.source === 'NONE' ? '참조 출처(Hanzi, KanjiVG, IDS) 검색 결과 없음' : `${body.source} 레퍼런스 데이터 반영 완료`
+    message.value = body.source === 'NONE' ? '참조 출처(Hanja, IDS) 검색 결과 없음' : `${body.source} 레퍼런스 데이터 반영 완료`
     await reload()
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : '레퍼런스 데이터 수신 실패: 네트워크 상태를 확인하세요.'
@@ -472,7 +472,7 @@ onBeforeUnmount(() => {
             >
               <span class="glyph" lang="zh-Hani">{{ row.char }}</span>
               <span class="meta">
-                <span>{{ row.korean_reading }}</span>
+                <span>{{ row.reading }}</span>
                 <span>{{ row.unicode }}</span>
               </span>
               <span class="badge" :class="{ done: row.status === 'DONE' }">
@@ -491,12 +491,12 @@ onBeforeUnmount(() => {
           <svg
             v-if="selected"
             role="img"
-            :aria-label="`${selected.char} (${selected.korean_reading ?? ''}) ${selected.stroke_count}획 필순 뷰어`"
+            :aria-label="`${selected.char} (${selected.reading ?? ''}) ${selected.stroke_count}획 필순 뷰어`"
             :viewBox="`0 0 ${CANVAS} ${CANVAS}`"
             tabindex="0"
             @pointerdown="onPointerDown"
           >
-            <title>{{ selected.char }} {{ selected.korean_reading ? `(${selected.korean_reading})` : '' }} 획 외곽선 및 중심선</title>
+            <title>{{ selected.char }} {{ selected.reading ? `(${selected.reading})` : '' }} 획 외곽선 및 중심선</title>
             <g ref="layer" :transform="`translate(0 ${CANVAS}) scale(1 -1)`">
               <path v-if="background === 'outline'" class="guide-outline" :d="fullOutline" />
               <path v-else-if="background === 'silhouette'" class="guide-silhouette" :d="fullOutline" />

@@ -1,4 +1,4 @@
-# [Master PRD] 한자 획 분리 및 필순 애니메이션 데이터 구축 시스템 (Hanzi Stroke Master Studio)
+# [Master PRD] 한자 획 분리 및 필순 애니메이션 데이터 구축 시스템 (Hanja Stroke Master Studio)
 
 ## 1. 프로젝트 개요 (Overview)
 
@@ -7,7 +7,7 @@
   - 통짜 외곽선(Merged Outline) 구조의 TTF 한계를 극복하기 위한 자동 브러시 교집합 분할 및 잔여 조각 흡수 알고리즘 적용.
   - 중/일 오픈소스에 없는 한국 고유 한자 및 정자체의 Ollama IDS 자소 합성 및 획수 자동 추론.
   - 획 교차점 및 숨겨진 기필/수필(시작점·끝점)의 공백 문제 해결.
-  - **한국 필순 기준 준수**: 레퍼런스 데이터의 필순은 출처 국가의 기준을 따른다. Make Me a Hanzi는 중국 대륙 기준, KanjiVG는 일본 기준이므로 한국 교육용 필순과 다를 수 있다(예: `必`, `右`, `王`, `火` 계열). 레퍼런스 필순은 초안일 뿐이며 최종 필순은 한국 기준으로 검수한다(§7.3).
+  - **한국 필순 기준 준수**: 레퍼런스 데이터의 필순은 출처 국가의 기준을 따른다. Make Me a Hanja는 중국 대륙 기준이므로 한국 교육용 필순과 다를 수 있다(예: `必`, `右`, `王`, `火` 계열). 레퍼런스 필순은 초안일 뿐이며 최종 필순은 한국 기준으로 검수한다(§7.3).
 
 ### 1.1. 범위 (Scope)
 
@@ -27,8 +27,8 @@
 
 ## 2. 시스템 아키텍처 및 데이터 파이프라인
 
-1. **Input Layer**: 궁서체 `.ttf` 파일 + 대상 한자 리스트 + 레퍼런스 DB(Make Me a Hanzi, KanjiVG) + IDS 데이터(CHISE/BabelStone IDS) + 로컬 Ollama(`qwen2.5:14b`).
-2. **AI & Import Engine**: 화면에서 글자 등록 → DB에 데이터가 없으면 레퍼런스 가져오기(Hanzi 우선, 없으면 KanjiVG, §4.5) → 두 곳 모두 없으면 IDS 조회(공개 IDS 데이터 우선, 없으면 Ollama 추론) → 아핀 변환(Affine Transform)을 통한 초기 중심선 합성.
+1. **Input Layer**: 궁서체 `.ttf` 파일 + 대상 한자 리스트 + 레퍼런스 DB(Make Me a Hanja) + IDS 데이터(CHISE/BabelStone IDS) + 로컬 Ollama(`qwen3.5:9b`).
+2. **AI & Import Engine**: 화면에서 글자 등록 → DB에 데이터가 없으면 레퍼런스 가져오기(Hanja, §4.5) → 없으면 IDS 조회(공개 IDS 데이터 우선, 없으면 Ollama 추론) → 아핀 변환(Affine Transform)을 통한 초기 중심선 합성.
 3. **Pre-processing Engine (Geometry)**: 좌표 정규화(§2.1) → 구멍(Hole) 보존형 섬(Island) 분해 → 브러시 교집합 분할(Boolean Intersect) → 잔여 조각(Residue) 흡수 및 `strokeWidth` 자동 확장 → 숨겨진 끝점 복원(§4.3).
 4. **Admin Editor**: 수동 보정, 나이프 툴 편집, 부수 태깅, 실시간 프리뷰(§4.4).
 5. **Validation**: 배포 전 자동 검증(§7). 실패 시 `ISSUE` 상태로 전환.
@@ -41,8 +41,7 @@
 | 출처 | 원본 좌표계 | 변환 |
 | :--- | :--- | :--- |
 | TTF | `unitsPerEm`(보통 1000 또는 2048), y축 위쪽, 기준선 0 | `canvas_size / unitsPerEm` 배율, 기준선·descender 보정 |
-| Make Me a Hanzi | 1024 × 1024, y축 위쪽, y = 900이 상단 기준 | 평행이동 후 y축 정렬 |
-| KanjiVG | 109 × 109, y축 아래쪽 | `1024 / 109` 배율 + y축 반전 |
+| Make Me a Hanja | 1024 × 1024, y축 위쪽, y = 900이 상단 기준 | 평행이동 후 y축 정렬 |
 
 - 저장 좌표계는 `0 ≤ x, y ≤ canvas_size`(기본 1024), **y축 위쪽(폰트 기준)**으로 고정하고, 뷰어는 `scale(1, -1)`로 뒤집어 그린다. 이 규약은 `compiled_json.coordinateSystem`에 명시한다(§6).
 - 경로 좌표는 소수점 1자리로 반올림해 저장한다(용량과 비교 안정성).
@@ -87,46 +86,49 @@ CREATE TABLE characters (
     grade TEXT,
     status TEXT NOT NULL DEFAULT 'TODO'
         CHECK (status IN ('TODO', 'AUTO_MATCHED', 'AI_ASSISTED', 'ISSUE', 'DONE')),
-    issue_reason TEXT,                   -- status = 'ISSUE'일 때 원인
 
-    -- 원본 및 레퍼런스
-    raw_ttf_path TEXT,                   -- 통짜 전체 아웃라인 (fullOutline용)
-    ref_source TEXT NOT NULL DEFAULT 'NONE'
-        CHECK (ref_source IN ('MMH', 'KANJIVG', 'OLLAMA_IDS', 'MANUAL', 'NONE')),
-
-    -- 부수 및 음훈 정보
-    radical_id INTEGER REFERENCES radicals(id),
-    radical_form TEXT,                   -- 글자 안에 실제로 쓰인 형태(변형 포함). 예: '氵'
-    korean_reading TEXT,                 -- 예: '물 강'
-
-    -- AI 추론 데이터
-    ids_structure TEXT,                  -- 예: '⿱水田'
-    ids_source TEXT CHECK (ids_source IN ('CHISE', 'BABELSTONE', 'OLLAMA', 'MANUAL')),
-    ai_stroke_count INTEGER,
+    -- 음훈 정보
+    reading TEXT,                        -- 대표 음. 예: '락'
+    meaning TEXT,                        -- 대표 훈. 예: '즐길'
+    variant_reading JSON NOT NULL DEFAULT '[]'  -- 다른 음 배열. 예: '["악", "요"]'
+        CHECK (json_valid(variant_reading) AND json_type(variant_reading) = 'array'),
+    variant_meaning JSON NOT NULL DEFAULT '[]'  -- 다른 훈 배열. 예: '["노래", "좋아할"]'
+        CHECK (json_valid(variant_meaning) AND json_type(variant_meaning) = 'array'),
 
     stroke_count INTEGER NOT NULL DEFAULT 0 CHECK (stroke_count >= 0),
-    compiled_json TEXT,                  -- 뷰어 배포용 최종 캐시 JSON
-    compiled_hash TEXT,                  -- 컴파일 입력(strokes 행)의 해시. 불일치 시 재컴파일
-    compiled_at DATETIME,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    last_modified_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,   -- UTC
+    last_modified_by TEXT NOT NULL       -- 'user', 'system:hanja', 'system:ids', 'system:font', 'system:migration'
 );
 
--- 4. 개별 획(Stroke) 상세 테이블
+-- 3-1. 문제 사유 테이블: status = 'ISSUE'인 글자의 원인. 글자당 최대 1행이며, 상태가 바뀌면 지운다.
+CREATE TABLE issues (
+    char TEXT PRIMARY KEY REFERENCES characters(char) ON DELETE CASCADE,
+    reason TEXT NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 4. 획(Stroke) 테이블: 글자당 1행. font_outline, stroke_outlines, median_line은 JSON이다.
+--    SQLite에는 별도 JSON 타입이 없으므로 JSON 선언 타입 + json_valid CHECK로 검증한다.
+--    radical         : 강희부수 번호. 0이면 미지정.
+--    font_outline    : 글자 전체 윤곽. SVG Path 문자열의 배열 ('["M ... Z", ...]'). 편집해도 바뀌지 않는다.
+--    stroke_outlines : 획별 윤곽. [{ "order": 1, "path": "M ... Z", "radical": 1 }, ...]
+--                      order는 1부터 시작하는 필순(§6 JSON 배열 인덱스는 0부터), radical은 부수 획이면 1, 아니면 0.
+--    median_line     : 획별 중심선. [{ "order": 1, "points": [[x,y], ...], "width": 135,
+--                      "start_cap": "NONE|AUTO_ROUND|REF_STAMP", "end_cap": "..." }, ...]
+--                      points는 2점 이상, 개수는 stroke_outlines와 같아야 한다.
 CREATE TABLE strokes (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    unicode TEXT NOT NULL,
-    stroke_order INTEGER NOT NULL CHECK (stroke_order >= 1),  -- 1부터 시작. JSON 배열 인덱스는 0부터(§6)
-
-    outline_path TEXT NOT NULL,          -- 분할 완료된 닫힌 SVG Path ('M ... Z')
-    median_points TEXT NOT NULL,         -- 중심선 좌표 배열 JSON ('[[x1,y1], ...]'), 2점 이상
-    stroke_width INTEGER NOT NULL DEFAULT 135 CHECK (stroke_width > 0),  -- 잔여 조각 흡수에 따라 가변
-
-    is_radical INTEGER NOT NULL DEFAULT 0 CHECK (is_radical IN (0, 1)),
-    start_cap_type TEXT NOT NULL DEFAULT 'NONE' CHECK (start_cap_type IN ('NONE', 'AUTO_ROUND', 'REF_STAMP')),
-    end_cap_type TEXT NOT NULL DEFAULT 'NONE' CHECK (end_cap_type IN ('NONE', 'AUTO_ROUND', 'REF_STAMP')),
-
-    FOREIGN KEY (unicode) REFERENCES characters(unicode) ON DELETE CASCADE,
-    UNIQUE (unicode, stroke_order)       -- 이 제약이 (unicode, stroke_order) 인덱스를 자동 생성한다
+    char TEXT PRIMARY KEY REFERENCES characters(char) ON DELETE CASCADE,
+    radical INTEGER NOT NULL DEFAULT 0 CHECK (radical BETWEEN 0 AND 214),
+    font_outline JSON NOT NULL CHECK (json_valid(font_outline) AND json_type(font_outline) = 'array'),
+    stroke_outlines JSON NOT NULL
+        CHECK (json_valid(stroke_outlines) AND json_type(stroke_outlines) = 'array' AND json_array_length(stroke_outlines) >= 1),
+    median_line JSON NOT NULL
+        CHECK (json_valid(median_line) AND json_type(median_line) = 'array'
+               AND json_array_length(median_line) = json_array_length(stroke_outlines)),
+    last_modified_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,   -- UTC
+    last_modified_by TEXT NOT NULL,      -- 'user', 'system:hanja', 'system:ids', 'system:migration'
+    origin TEXT NOT NULL CHECK (origin IN ('MMH', 'IDS', 'OLLAMA_IDS', 'MANUAL', 'NONE')),  -- 획 데이터의 출처. IDS=공개 IDS 합성, OLLAMA_IDS=Ollama 합성
+    origin_url TEXT                      -- 실제로 가져온 주소. 없으면 NULL
 );
 
 -- 5. 작업 히스토리 (Undo / 버전 백업)
@@ -142,9 +144,9 @@ CREATE TABLE edit_history (
 -- 6. 레퍼런스 원본 캐시 (§4.5에서 가져온 원본을 변환 전 그대로 보관)
 CREATE TABLE reference_data (
     unicode TEXT NOT NULL,
-    source TEXT NOT NULL CHECK (source IN ('MMH', 'KANJIVG')),
-    source_version TEXT NOT NULL,        -- 예: 'hanzi-writer-data@2.0.1', KanjiVG 릴리스 태그
-    raw_data TEXT,                       -- 원본 JSON(MMH) 또는 SVG(KanjiVG). 없음 응답이면 NULL
+    source TEXT NOT NULL CHECK (source IN ('MMH')),
+    source_version TEXT NOT NULL,        -- 예: 'hanzi-writer-data@2.0.1'
+    raw_data TEXT,                       -- 원본 JSON(MMH). 없음 응답이면 NULL
     raw_sha256 TEXT,
     found INTEGER NOT NULL CHECK (found IN (0, 1)),  -- 0이면 해당 출처에 글자 없음(재조회 방지)
     fetched_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -155,44 +157,45 @@ CREATE TABLE reference_data (
 CREATE INDEX idx_characters_status ON characters(status);
 CREATE INDEX idx_edit_history_unicode_time ON edit_history(unicode, created_at DESC);
 
--- updated_at 자동 갱신 (DEFAULT는 INSERT에만 적용된다)
+-- last_modified_at 자동 갱신 (DEFAULT는 INSERT에만 적용된다). last_modified_by는 쓰는 쪽이 UPDATE에 직접 넣는다.
 CREATE TRIGGER trg_characters_updated AFTER UPDATE ON characters
-WHEN NEW.updated_at = OLD.updated_at
+WHEN NEW.last_modified_at = OLD.last_modified_at
 BEGIN
-    UPDATE characters SET updated_at = CURRENT_TIMESTAMP WHERE unicode = NEW.unicode;
+    UPDATE characters SET last_modified_at = CURRENT_TIMESTAMP WHERE unicode = NEW.unicode;
 END;
 ```
 
 **수정 사항 요약**
 
-- `idx_strokes_unicode_order`는 `UNIQUE(unicode, stroke_order)`가 이미 만드는 인덱스와 중복이므로 삭제했다.
-- `radical_char`는 `radicals.radical_char`와 중복되어 불일치 위험이 있으므로, 글자 안의 실제 형태만 담는 `radical_form`으로 바꿨다.
+- `strokes`는 글자당 1행이다. `char` 기본키만으로 조회하므로 별도 인덱스가 필요 없고, 획 순서는 `order` 필드가 담는다.
+- `characters`에서 `ids_structure`, `ids_source`, `ai_stroke_count`(IDS 분해 결과는 저장하지 않고 합성에만 쓴다), `compiled_json`, `compiled_hash`, `compiled_at`, `raw_ttf_path`, `ref_source`, `ref_url`, `radical_id`, `radical_form`, `issue_reason`을 뺐다. 전체 윤곽·출처·부수는 `strokes`(`font_outline`, `origin`, `origin_url`, `radical`)가 담고, 문제 사유는 `issues`로 분리했다. 부수의 변형 형태(예: 氵)는 저장하지 않고 컴파일 결과에는 강희부수 대표 글자를 쓴다.
 - 상태·출처·캡 종류에 `CHECK` 제약을 두어 잘못된 값의 저장을 막는다. SQLite에는 BOOLEAN 타입이 없으므로 `is_radical`은 `INTEGER 0/1`로 명시했다.
 - `unicode`는 `U+` + 대문자 16진수(4~6자리)로 고정한다. 확장 B 이후 글자(예: `𮕩` U+2E569)는 UTF-16 서로게이트 쌍이므로, 코드에서 `str.length`나 `str[0]` 대신 `codePointAt`/`[...str]`로 다룬다.
-- 획 순서 변경 시 `UNIQUE(unicode, stroke_order)`에 걸리지 않도록, 한 트랜잭션 안에서 해당 글자의 획을 지우고 다시 넣는다.
+- 획 순서 변경·분할·삭제는 `stroke_outlines`와 `median_line`을 함께 새로 만들어 한 번의 `UPDATE`로 교체하고, 이때 `last_modified_at`/`last_modified_by`를 갱신한다. 글자 단위로 원자적이다.
 
 ### 3.1. 작업 상태 전이 (누락 보완)
 
 ```
 화면에서 글자 등록 → TODO
-TODO ──Hanzi 또는 KanjiVG에서 가져옴(§4.5)──▶ AUTO_MATCHED ──검수 통과──▶ DONE
+TODO ──Hanja에서 가져옴(§4.5)──▶ AUTO_MATCHED ──검수 통과──▶ DONE
   │                                              │
-  └──두 곳 모두 없음 → IDS 합성(§4.1)──▶ AI_ASSISTED ┤
+  └──Hanja에 없음 → IDS 합성(§4.1)──▶ AI_ASSISTED ┤
                                                  └──검증 실패──▶ ISSUE ──수동 보정──▶ (재검증)
 IDS 합성 실패 ──▶ ISSUE
 DONE ──획 수정──▶ AUTO_MATCHED 또는 AI_ASSISTED (재검수 필요)
 ```
 
-- `DONE`은 §7의 자동 검증 통과와 사람 검수가 모두 끝난 상태다. `DONE` 글자의 획을 수정하면 상태를 되돌리고 `compiled_json`을 무효화한다.
+- `DONE`은 §7의 자동 검증 통과와 사람 검수가 모두 끝난 상태다. `DONE` 글자의 획을 수정하면 상태를 되돌린다. 컴파일 결과는 DB에 저장하지 않고 `output/compiled/<글자>.json` 파일로만 남기므로, 수정 후 다시 컴파일해야 한다.
 
 ## 4. 핵심 알고리즘 및 엔진 명세
 
 ### 4.1. IDS 자소 합성 알고리즘 (Affine Transformation)
 
-- 미등록 한자 발생 시 **공개 IDS 데이터(CHISE, BabelStone)를 먼저 조회**하고, 없을 때만 Ollama(`qwen2.5:14b`)로 IDS 구조식(예: `⿱水田`)과 자소별 비율(`bbox_ratio`)을 추론한다. LLM은 IDS를 지어낼 수 있으므로 공개 데이터보다 우선하지 않는다.
+- 미등록 한자 발생 시 **코드 안의 수기 IDS(`IDS_BOOK`) → 공개 IDS 데이터(BabelStone `IDS.TXT`) → Ollama(`qwen3.5:9b`)** 순서로 IDS 구조식(예: `⿱水田`)을 구한다. LLM은 IDS를 지어낼 수 있으므로 공개 데이터보다 우선하지 않는다.
+  - 구현 메모: `IDS.TXT`(고정 URL `https://www.babelstone.co.uk/CJK/IDS.TXT`)는 처음 필요할 때 한 번 내려받아 `database/IDS.TXT`에 두고 다시 내려받지 않는다(저장소에는 올리지 않는다). 한 글자에 표기가 여럿이면 한국(K) 표기를 먼저 쓰고, `*` 동치 표기와 `{}`·`&;`·`\`가 든 표기는 건너뛴다. 구조식은 트리로 풀어 부품마다 칸(box)을 나눈다(⿰ ⿱ ⿲ ⿳ 및 감싸는 구조 ⿴~⿺, ⿻). 부품 글자가 DB에 없으면 공개 IDS로 한 단계씩 더 쪼개며(최대 3단계), 변형 부수(亻 → 人 등)는 원래 글자의 획을 쓴다. 더 쪼갤 수 없는 부품이 DB에 없으면 실패한다. 결과는 `origin = 'IDS'`, `origin_url`에 `IDS.TXT` 주소를 기록한다. 내려받은 파일의 SHA-256은 아직 기록하지 않는다.
 - 기존 DB에 있는 자소(`水`, `田`)의 중심선 Bounding Box를 계산한 뒤, 타겟 궁서체 영역에 맞춰 스케일링 및 평행이동(`transformMediansToTarget`)을 수행하여 초기 medians를 자동 생성한다.
 - **Ollama 요청/응답 규약** (누락 보완):
-  - `format`에 JSON Schema를 지정한 구조화 출력(structured outputs)을 사용하고, `temperature: 0`과 고정 `seed`로 재현성을 확보한다. 모델은 태그까지 고정한다(예: `qwen2.5:14b`). 모델 변경 시 결과가 달라지므로 `project_meta`에 기록한다.
+  - `format`에 JSON Schema를 지정한 구조화 출력(structured outputs)을 사용하고, `temperature: 0`과 고정 `seed`로 재현성을 확보한다. 모델은 태그까지 고정한다(예: `qwen3.5:9b`). 모델 변경 시 결과가 달라지므로 `project_meta`에 기록한다.
   - 응답 스키마:
 
     ```json
@@ -239,7 +242,7 @@ DONE ──획 수정──▶ AUTO_MATCHED 또는 AI_ASSISTED (재검수 필요
 - **필순 변경**: 획 목록 드래그로 순서를 바꾼다. 저장은 단일 트랜잭션으로 처리한다(§3).
 - **Undo/Redo**: 편집 단위마다 `edit_history`에 스냅샷을 남긴다. 보존 정책은 §8.3.
 
-### 4.5. 등록 글자의 레퍼런스 가져오기 (Hanzi → KanjiVG → IDS)
+### 4.5. 등록 글자의 레퍼런스 가져오기 (Hanja → IDS)
 
 화면에서 글자를 등록하면, DB에 그 글자의 획 데이터가 있는지 먼저 확인하고 없을 때만 외부 레퍼런스를 가져온다.
 
@@ -247,30 +250,35 @@ DONE ──획 수정──▶ AUTO_MATCHED 또는 AI_ASSISTED (재검수 필요
 
 1. `characters`에 글자가 있고 `strokes` 행이 1개 이상이면 기존 데이터를 연다. 외부 조회는 하지 않는다.
 2. 없으면 `characters`에 `TODO`로 등록하고, `reference_data`의 캐시를 확인한다. 캐시가 있으면(`found = 0` 포함) 다시 내려받지 않는다.
-3. **Hanzi**(hanzi-writer-data, Make Me a Hanzi 기반)에서 찾는다. 있으면 그 데이터로 채운다.
-4. Hanzi에 없으면 **KanjiVG**에서 찾는다. 있으면 그 데이터로 채운다.
-5. 두 곳 모두 없으면 §4.1 IDS 자소 합성으로 넘긴다.
+3. **Hanja**(hanzi-writer-data, Make Me a Hanja 기반)에서 찾는다. 있으면 그 데이터로 채운다.
+4. Hanja에 없으면 §4.1 IDS 자소 합성으로 넘긴다.
 
 **출처별로 가져오는 데이터**
 
-| 항목 | Hanzi (MMH) | KanjiVG |
-| :--- | :--- | :--- |
-| 조회 위치 | `hanzi-writer-data@{고정 버전}/{글자}.json` | `kanji/{코드포인트 5자리 소문자 16진수}.svg` (예: `07553.svg`) |
-| 중심선 | `medians` (점 배열) | 획별 `path`(3차 베지어 중심선). 일정 간격으로 표본점을 뽑아 점 배열로 변환 |
-| 필순 | 배열 순서 (중국 기준) | `kvg:...-s1`, `-s2` … 순서 (일본 기준) |
-| 부수 획 | `radStrokes` (0부터 인덱스) | `kvg:radical` 속성이 있는 그룹(`general`/`tradit`)에 속한 획 |
-| 획 윤곽 | `strokes` (Arphic 해서체 윤곽) | 없음 |
-| 좌표 변환 | §2.1 MMH 규칙 | §2.1 KanjiVG 규칙 |
+| 항목 | Hanja (MMH) |
+| :--- | :--- |
+| 조회 위치 | `hanzi-writer-data@{고정 버전}/{글자}.json` |
+| 중심선 | `medians` (점 배열) |
+| 필순 | 배열 순서 (중국 기준) |
+| 부수 획 | `radStrokes` (0부터 인덱스) |
+| 획 윤곽 | `strokes` (Arphic 해서체 윤곽) |
+| 좌표 변환 | §2.1 MMH 규칙 |
 
-- **두 출처 모두 궁서체 윤곽을 주지 않는다.** MMH의 `strokes`는 Arphic 해서체에서 뽑은 윤곽이므로 최종 `outline_path`로 쓰지 않는다. 궁서체 윤곽은 항상 TTF를 §4.2로 분할해 만들고, MMH 윤곽은 §4.3 `REF_STAMP`의 캡 모양 참고용으로만 보관한다.
-- 가져온 중심선은 궁서체 글리프의 외곽 bbox에 맞춰 아핀 변환한 뒤 §4.2 분할에 넣는다. 결과는 `ref_source = 'MMH'` 또는 `'KANJIVG'`, 상태는 `AUTO_MATCHED`로 저장한다.
+- **Hanja는 궁서체 윤곽을 주지 않는다.** MMH의 `strokes`는 Arphic 해서체에서 뽑은 윤곽이므로 최종 `outline_path`로 쓰지 않는다. 궁서체 윤곽은 TTF를 §4.2로 분할해 만든다. TTF에 글자가 없거나 분리가 어긋나 품질 검사를 통과하지 못한 글자만 MMH 윤곽을 그대로 둔다.
+- **궁서체 윤곽으로 일괄 교체**(`POST /api/apply-font`): 이미 획이 있는 글자는 기존(Hanja) 중심선을 길잡이로 TTF 윤곽을 획별로 나누고, 중심선과 폭은 새 윤곽에서 다시 계산한다(방향은 길잡이에 맞추고 점은 RDP 허용오차 3으로 줄인다). `last_modified_by = 'user'`인 글자(사람이 고친 것)와 이미 교체된 글자(`'system:font'`)는 건너뛰고, 교체 전 상태는 `edit_history`에 남겨 실행 취소할 수 있다. 품질 검사: (1) 어느 획도 전체 윤곽 그대로이거나 비어 있으면 안 되고, (2) 획 하나의 면적이 글자 면적의 0.5% 이상이어야 하며, (3) 획 면적의 합이 글자 면적의 0.85~1.7배여야 한다. 하나라도 어기면 그 글자는 바꾸지 않고 목록으로 돌려준다. 교체된 글자는 Hanja 중심선으로 되덮이지 않는다(레퍼런스 수신이 `user`·`system:font` 글자의 중심선을 건드리지 않는다).
+- 가져온 중심선은 궁서체 글리프의 외곽 bbox에 맞춰 아핀 변환한 뒤 §4.2 분할에 넣는다. 결과는 `strokes.origin = 'MMH'`, 상태는 `AUTO_MATCHED`로 저장한다.
+- **중심선은 Hanja 값을 그대로 복사한다. 어떤 획의 `medians`가 없거나 점이 2개 미만이면 그 획의 윤곽에서 직접 계산한다**(래스터화 → 골격 추출 → 가장 긴 경로, `recoverMedian`). 윤곽도 없는 글자는 계산할 수 없으므로 IDS 합성으로 넘긴다. 계산한 중심선은 모양은 맞지만(Hanja 값과의 평균 거리 약 1.6) 시작·끝 방향이 뒤집힐 수 있어(표본의 약 4.6%) 필순 검수에서 확인한다.
+- **윤곽이 없으면 TTF에서 추출한다.** Hanja에 윤곽이 없거나 IDS 합성으로 만든 글자는, 작업 폴더의 `app/fonts/Gungseouche.ttf`(opentype.js로 읽음)에서 글자 윤곽을 꺼내 `strokes.font_outline`에 저장한다. 합성한 중심선 묶음의 bbox를 글자 윤곽 bbox(안쪽으로 20)에 맞춰 늘린 뒤, 윤곽의 각 점을 가장 가까운 중심선에 배정해 획별 윤곽으로 나눈다(§4.2). 결과는 초안이므로 화면에서 칼 분할·중심선 편집으로 고친다. 폰트 파일이 없거나 글자가 없으면 중심선에 폭을 준 띠 모양으로 대신한다.
+  - TTF를 처음 읽을 때 SHA-256을 `project_meta`에 기록하고, 이후 해시가 다르면 작업을 멈춘다(§8 보안).
+  - 이 폰트는 cmap에 Mac Roman 하위 표가 섞여 있어 opentype.js가 그대로는 읽지 못한다. 메모리 사본에서만 그 표를 무효로 해 유니코드 표(format 4, BMP)를 쓰게 하며 디스크 파일은 바꾸지 않는다. BMP 밖 글자(예: U+2E569)는 이 폰트에 없다.
+  - 궁서체 글자는 Hanja 데이터보다 낮게 그려져 있어 y축으로 95만큼 올려 같은 높이에 놓는다.
+  - Ollama는 `ids`(구조식) 하나만 답하게 하고(구조화 출력, `think: false`), 부품 칸(box)은 구조식 기호로 코드가 정한다. 모델이 준 비율은 신뢰할 수 없었다. 구조식이 형식에 맞지 않거나 부품이 DB에 없으면 실패로 처리한다. 공개 IDS에도 없는 글자에만 쓰며, 결과 품질이 낮아 반드시 화면에서 고친다.
+  - IDS 부품의 중심선은 부품 글자의 모든 획을 한 덩어리로 보고 box에 맞춘다.
 - 가져온 필순은 초안이다. 한국 기준과 다를 수 있으므로 §7.3 검수를 거쳐야 `DONE`이 된다.
-- KanjiVG에는 같은 글자의 이체 파일(예: `07553-Kaisho.svg`)이 있을 수 있다. 기본 파일(접미사 없음)만 쓴다.
 
 **획수 대조**
 
-- 가져온 획수가 Unihan `kTotalStrokes` 및 궁서체 글리프와 맞지 않으면(정자체/이체자 차이, 예: `靑`/`青`) 자동 매칭하지 않고 `ISSUE`로 보낸다. 이때 `issue_reason`에 출처와 두 획수를 기록한다.
-- Hanzi의 획수가 맞지 않고 KanjiVG의 획수는 맞으면 KanjiVG를 쓴다. 이 경우에만 Hanzi 우선 규칙의 예외를 둔다.
+- 가져온 획수가 Unihan `kTotalStrokes` 및 궁서체 글리프와 맞지 않으면(정자체/이체자 차이, 예: `靑`/`青`) 자동 매칭하지 않고 `ISSUE`로 보낸다. 이때 `issues.reason`에 출처와 두 획수를 기록한다.
 
 **저장**
 
@@ -322,7 +330,7 @@ DONE ──획 수정──▶ AUTO_MATCHED 또는 AI_ASSISTED (재검수 필요
 
 - 위 예시의 `strokes`, `medians`는 지면상 줄였으며, 실제 파일에서는 길이가 모두 `strokeCount`(9)와 같아야 한다.
 - `radical.origin`은 글자 안에서 변형 부수가 쓰일 때 원형을 적는다(예: `江`이면 `char: "氵"`, `origin: "水"`). 변형이 아니면 `null`.
-- 배열 인덱스는 **0부터** 시작한다. DB의 `stroke_order`(1부터)와 혼동하지 않는다: `strokes[i]`는 `stroke_order = i + 1`.
+- 배열 인덱스는 **0부터** 시작한다. DB `order`(1부터)와 혼동하지 않는다: `strokes[i]`는 `order = i + 1`.
 - `schemaVersion`은 뷰어가 하위 호환을 판단하는 기준이다. 필드 의미가 바뀌면 올린다.
 
 ## 7. 데이터 검증 규칙 (누락 보완)
@@ -345,7 +353,7 @@ DONE ──획 수정──▶ AUTO_MATCHED 또는 AI_ASSISTED (재검수 필요
 
 ### 7.3. 필순 검수
 
-- 레퍼런스(MMH/KanjiVG)에서 가져온 필순과 한국 기준이 다른 글자 목록을 관리하고, 해당 글자는 사람 검수 전 `DONE`이 될 수 없다.
+- 레퍼런스(MMH)에서 가져온 필순과 한국 기준이 다른 글자 목록을 관리하고, 해당 글자는 사람 검수 전 `DONE`이 될 수 없다.
 - 획수는 Unihan `kTotalStrokes`와 비교한다. 다르면 정자체/이체자 차이(예: `靑`/`青`)인지 확인한다.
 
 ## 8. 성능 요구사항 (누락 보완)
@@ -361,15 +369,15 @@ DONE ──획 수정──▶ AUTO_MATCHED 또는 AI_ASSISTED (재검수 필요
 
 - **Boolean 연산 비용**: Paper.js의 `intersect`/`subtract`/`unite`는 세그먼트 수에 따라 비용이 급격히 커지고 UI 스레드를 막는다. 분할은 **Web Worker**에서 실행하고, 편집 시 전체 글자가 아니라 변경된 섬만 다시 계산한다.
 - **경로 단순화**: 브러시 띠는 곡선 그대로 Boolean 연산에 넣지 말고, 허용 오차(예: 0.5 단위)로 평탄화한 뒤 연산하고 결과를 다시 곡선으로 맞춘다.
-- **Ollama**: `qwen2.5:14b`는 VRAM 약 10GB 이상이 필요하다. 동시 요청은 1개로 제한하고, 요청당 타임아웃(예: 60초)과 재시도 1회를 둔다. 같은 글자의 결과는 DB에 캐시하여 다시 호출하지 않는다.
+- **Ollama**: `qwen3.5:9b`는 모델 크기가 약 6.6GB이고 그만큼의 메모리가 필요하다. 생각(thinking) 모드를 켜면 응답이 1분 안에 끝나지 않으므로 요청에 `think: false`를 준다. 동시 요청은 1개로 제한하고, 요청당 타임아웃(예: 60초)과 재시도 1회를 둔다. 같은 글자의 결과는 DB에 캐시하여 다시 호출하지 않는다.
 - **일괄 처리 중단·재개**: 글자 단위로 커밋하여, 중단 후 재실행하면 `TODO`/`ISSUE` 글자만 처리한다.
-- **레퍼런스 조회(§4.5)**: 글자를 등록할 때마다 CDN에 요청하지 않도록, 고정 버전의 hanzi-writer-data와 KanjiVG 릴리스를 처음 한 번 로컬에 내려받아 두고 로컬에서 찾는 방식을 기본으로 한다. 원격 조회를 쓸 경우 동시 요청 4개 이하, 요청 간 지연, 요청당 타임아웃 10초를 둔다. 캐시(`reference_data`)에 있는 글자는 조회하지 않는다.
+- **레퍼런스 조회(§4.5)**: 글자를 등록할 때마다 CDN에 요청하지 않도록, 고정 버전의 hanzi-writer-data를 처음 한 번 로컬에 내려받아 두고 로컬에서 찾는 방식을 기본으로 한다. 원격 조회를 쓸 경우 동시 요청 4개 이하, 요청 간 지연, 요청당 타임아웃 10초를 둔다. 캐시(`reference_data`)에 있는 글자는 조회하지 않는다.
 
 ### 8.2. DB 성능
 
 - 일괄 쓰기는 글자 단위 트랜잭션으로 묶는다(행마다 커밋하면 수십 배 느려진다).
 - WAL 모드에서 장시간 읽기 트랜잭션은 체크포인트를 막아 WAL 파일이 계속 커진다. 일괄 처리 후 `PRAGMA wal_checkpoint(TRUNCATE)`를 실행한다.
-- `compiled_json`은 `compiled_hash`가 입력과 같으면 다시 만들지 않는다.
+- 컴파일은 요청할 때마다 `strokes` 행에서 새로 만든다. 결과는 DB에 두지 않고 파일로만 쓴다.
 
 ### 8.3. 용량 관리
 
@@ -388,10 +396,9 @@ DONE ──획 수정──▶ AUTO_MATCHED 또는 AI_ASSISTED (재검수 필요
 ### 9.2. 입력 파일
 
 - **폰트**: TTF 파서는 악성 폰트로 공격받을 수 있다. 신뢰할 수 있는 출처의 폰트만 쓰고, `ttf_sha256`이 `project_meta`와 다르면 작업을 멈추고 경고한다.
-- **레퍼런스 데이터**: MMH, KanjiVG, IDS 데이터는 버전(커밋 해시 또는 릴리스)을 고정하고 내려받은 파일의 SHA-256을 확인한다. CDN에서 직접 불러올 때는 버전을 고정한 URL과 SRI(`integrity`)를 쓴다.
+- **레퍼런스 데이터**: MMH, IDS 데이터는 버전(커밋 해시 또는 릴리스)을 고정하고 내려받은 파일의 SHA-256을 확인한다. CDN에서 직접 불러올 때는 버전을 고정한 URL과 SRI(`integrity`)를 쓴다.
 - **JSON 가져오기**: 에디터에 불러오는 JSON은 §7.1 구조 검증과 §9.3 경로 검증을 통과해야 저장된다. 파일 크기 상한(예: 1MB)을 둔다.
-- **레퍼런스 조회(§4.5)**: 요청 주소는 코드에 고정한 출처(hanzi-writer-data, KanjiVG)만 허용하고, 사용자가 주소를 입력할 수 없게 한다. 글자는 대상 한자 1자(코드포인트 1개)만 받아 URL 인코딩한다. 응답 크기 상한(예: 512KB)을 둔다.
-- **KanjiVG SVG 파싱**: 외부 SVG는 DOM에 넣어 렌더링하지 않는다. XML 파서로 `path`의 `d`와 `kvg:` 속성만 읽고, 외부 엔티티(XXE)와 DTD 처리를 끈다. 읽은 `d`는 §9.3 경로 문법 검증을 통과해야 한다.
+- **레퍼런스 조회(§4.5)**: 요청 주소는 코드에 고정한 출처(hanzi-writer-data)만 허용하고, 사용자가 주소를 입력할 수 없게 한다. 글자는 대상 한자 1자(코드포인트 1개)만 받아 URL 인코딩한다. 응답 크기 상한(예: 512KB)을 둔다.
 
 ### 9.3. 출력 및 렌더링
 
@@ -415,18 +422,15 @@ DONE ──획 수정──▶ AUTO_MATCHED 또는 AI_ASSISTED (재검수 필요
 
 | 자료 | 라이선스 | 영향 |
 | :--- | :--- | :--- |
-| Make Me a Hanzi 획 데이터 | Arphic Public License | 파생 데이터 배포 시 라이선스 사본 동봉, 출처 표기 |
-| KanjiVG | CC BY-SA 3.0 | **동일 조건 변경 허락(SA)**: KanjiVG에서 파생한 데이터는 같은 라이선스로 공개해야 한다 |
+| Make Me a Hanja 획 데이터 | Arphic Public License | 파생 데이터 배포 시 라이선스 사본 동봉, 출처 표기 |
 | 궁서체 TTF | 폰트별 상이 | 많은 상용 폰트가 윤곽 추출·파생 데이터 재배포를 금지한다. 폰트 EULA에서 "글꼴 데이터의 변형·추출" 허용 여부를 확인한다 |
 | CHISE/BabelStone IDS | 데이터별 상이 | 출처 표기 조건 확인 |
 
 - `compiled_json.source`에 글자별 데이터 출처를 기록하여, 출처별로 배포 가능 여부를 가려낼 수 있게 한다.
-- KanjiVG 파생 데이터와 그렇지 않은 데이터가 섞여 배포되면 SA 조건이 전체에 걸릴 수 있으므로, 배포본별 출처 구성을 관리한다.
 
 ## 11. 미결 사항 (Open Questions)
 
 - 한국 필순의 기준 문헌(교육부 교육용 기초한자 필순 등)을 무엇으로 할지.
-- §4.5에서 Hanzi와 KanjiVG의 필순이 서로 다를 때, 검수자에게 두 필순을 함께 보여줄지.
 - 사용할 궁서체 폰트와 그 라이선스가 윤곽 데이터 재배포를 허용하는지.
 - 뷰어 배포 대상(웹, 앱)과 지원 브라우저 범위.
 - 사람 검수의 담당자와 검수 기준(합격·불합격 판단 예시).

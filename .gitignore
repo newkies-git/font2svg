@@ -2,6 +2,10 @@
 BiauKai.ttc
 Gungseouche.ttf
 
+# 내려받은 공개 IDS, 작업 전 백업 DB
+database/IDS.TXT
+database/*.before-font.db
+
 # Python
 __pycache__/
 *.pyc

@@ -4,7 +4,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import vue from '@vitejs/plugin-vue'
 import type { Plugin } from 'vite'
 import { defineConfig } from 'vite'
-import { MISSING_FETCH_LIMIT } from './src/lib/constants.ts'
+import { FONT_BATCH_LIMIT, MISSING_FETCH_LIMIT } from './src/lib/constants.ts'
 import { getWorkspace } from './server/workspace.ts'
 
 const appDir = path.dirname(fileURLToPath(import.meta.url))
@@ -36,7 +36,7 @@ function send(res: ServerResponse, status: number, body: unknown) {
 function workspaceApi(): Plugin {
   const ws = getWorkspace(rootDir)
   return {
-    name: 'hanzi-workspace-api',
+    name: 'hanja-workspace-api',
     configureServer(server) {
       server.middlewares.use(async (req, res, next) => {
         const url = new URL(req.url ?? '/', 'http://localhost')
@@ -58,6 +58,11 @@ function workspaceApi(): Plugin {
             const body = await readBody(req)
             const limit = Number(body.limit ?? MISSING_FETCH_LIMIT)
             return send(res, 200, await ws.syncMissing(Number.isFinite(limit) ? limit : MISSING_FETCH_LIMIT))
+          }
+          if (req.method === 'POST' && url.pathname === '/api/apply-font') {
+            const body = await readBody(req)
+            const limit = Number(body.limit ?? FONT_BATCH_LIMIT)
+            return send(res, 200, ws.applyFontBatch(String(body.after ?? ''), Number.isFinite(limit) ? limit : FONT_BATCH_LIMIT))
           }
           const unicode = decodeURIComponent(parts[2] ?? '')
           if (parts[1] !== 'characters' || !unicode.startsWith('U+')) {
