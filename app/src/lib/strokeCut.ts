@@ -275,7 +275,7 @@ function chainForShapes(model: GlyphModel, startId: number, endId: number, start
 }
 
 function ridgeChain(model: GlyphModel): number[] {
-  const { skeleton, raster } = model
+  const { skeleton } = model
   const start = skeleton.findIndex((value) => value === 1)
   if (start < 0) return longestTipChain(model)
   const first = farthestSkeleton(model, start)
