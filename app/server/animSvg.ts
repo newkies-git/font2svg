@@ -1,6 +1,5 @@
-import { ACJK_SVG_Y_ORIGIN, COORD_ROUND } from '../src/lib/constants.ts'
-
-type Pt = [number, number]
+import { ACJK_SVG_Y_ORIGIN, ANIM_PATH_LENGTH, ANIM_STROKE_SECONDS, ANIM_STROKE_STEP_SECONDS, CANVAS, COORD_ROUND } from '../src/lib/constants.ts'
+import type { Pt } from '../src/types.ts'
 type Segment = { command: string; values: number[] }
 
 // 명령별 인자 수. AnimCJK SVG가 쓰는 절대 좌표 명령만 받는다.
@@ -129,4 +128,34 @@ export function parseNaverSvg(svg: string): { char: string; outlines: string[]; 
     medians: order.map((number) => medians.get(number)!),
     radical: order.flatMap((number, index) => (outlines.get(number)!.radical ? [index] : [])),
   }
+}
+
+// AnimCJK 방식 애니메이션 SVG: 획 윤곽을 clipPath로 쓰고, 그 위에 중심선을 점선으로 그려 점선 위치를 옮긴다.
+// 저장 좌표(y축 위쪽)를 뷰어와 같이 뒤집어 그린다. 획마다 폭이 달라 stroke-width를 획별로 준다.
+export function animatedSvg(unicode: string, outlines: string[], medians: Pt[][], widths: number[]): string {
+  const id = `z${Number.parseInt(unicode.slice(2), 16)}`
+  const dash = ANIM_PATH_LENGTH + 4
+  const fills = outlines.map((outline, index) => `<path id="${id}d${index + 1}" d="${outline}"/>`).join('\n')
+  const clips = outlines.map((_, index) => `<clipPath id="${id}c${index + 1}"><use href="#${id}d${index + 1}"/></clipPath>`).join('\n')
+  const lines = medians.map((median, index) => {
+    const d = median.map(([x, y], pointIndex) => `${pointIndex === 0 ? 'M' : 'L'}${x} ${y}`).join('')
+    return `<path style="--d:${index * ANIM_STROKE_STEP_SECONDS}s;stroke-width:${widths[index]}" pathLength="${ANIM_PATH_LENGTH}" clip-path="url(#${id}c${index + 1})" d="${d}"/>`
+  }).join('\n')
+  return `<svg id="${id}" class="acjk" viewBox="0 0 ${CANVAS} ${CANVAS}" xmlns="http://www.w3.org/2000/svg">
+<style>
+<![CDATA[
+@keyframes zk { to { stroke-dashoffset:0; } }
+svg.acjk path[clip-path] { --t:${ANIM_STROKE_SECONDS}s; animation:zk var(--t) linear forwards var(--d); stroke-dasharray:${dash}; stroke-dashoffset:${dash + 2}; stroke-linecap:round; fill:none; stroke:#000; }
+svg.acjk path[id] { fill:#ccc; }
+]]>
+</style>
+<g transform="translate(0 ${CANVAS}) scale(1 -1)">
+${fills}
+<defs>
+${clips}
+</defs>
+${lines}
+</g>
+</svg>
+`
 }
