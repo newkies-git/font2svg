@@ -100,6 +100,52 @@ function workspaceApi(): Plugin {
           if (req.method === 'POST' && parts[3] === 'compile') {
             return send(res, 200, ws.compile(unicode))
           }
+          if (req.method === 'POST' && parts[3] === 'layers-meta') {
+            const body = await readBody(req)
+            return send(res, 200, ws.updateLayersMeta(unicode, body.patches as never))
+          }
+          if (req.method === 'POST' && parts[3] === 'resegment') {
+            const body = await readBody(req)
+            return send(res, 200, ws.resegmentLayer(unicode, body.medians))
+          }
+          if (req.method === 'POST' && parts[3] === 'layers' && parts.length === 4) {
+            const body = await readBody(req)
+            return send(
+              res,
+              200,
+              ws.duplicateLayer(
+                unicode,
+                typeof body.sourceLayerId === 'string' ? body.sourceLayerId : undefined,
+                typeof body.name === 'string' ? body.name : undefined,
+              ),
+            )
+          }
+          if (parts[3] === 'layers' && parts[4]) {
+            const layerId = decodeURIComponent(parts[4])
+            const subAction = parts[5]
+            if (req.method === 'DELETE' && !subAction) {
+              return send(res, 200, ws.deleteLayer(unicode, layerId))
+            }
+            if (req.method === 'POST' && subAction === 'save') {
+              const body = await readBody(req)
+              return send(res, 200, ws.saveLayer(unicode, layerId, {
+                strokes: body.strokes,
+                paths: body.paths,
+                action: typeof body.action === 'string' ? body.action : undefined,
+              }))
+            }
+            if (req.method === 'POST' && subAction === 'reset') {
+              return send(res, 200, ws.resetLayer(unicode, layerId))
+            }
+            if (req.method === 'POST' && subAction === 'fetch') {
+              return send(res, 200, await ws.fetchLayer(unicode, layerId))
+            }
+            if (req.method === 'POST' && subAction === 'apply') {
+              const body = await readBody(req)
+              const mode = body.mode === 'fit_font' ? 'fit_font' : 'direct'
+              return send(res, 200, ws.applyLayerToStrokes(unicode, layerId, mode))
+            }
+          }
           return send(res, 404, { error: '없는 API입니다.' })
         } catch (error) {
           send(res, 400, { error: error instanceof Error ? error.message : '요청을 처리하지 못했습니다.' })

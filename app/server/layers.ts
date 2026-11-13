@@ -1,0 +1,396 @@
+import { randomUUID } from 'node:crypto'
+import type { DatabaseSync } from 'node:sqlite'
+import { DEFAULT_STROKE_WIDTH, MIN_STROKE_WIDTH, STROKE_WIDTH_CAP_RATIO } from '../src/lib/constants.ts'
+import { isValidSvgPath } from '../src/lib/paths.ts'
+import type { CapType, LayerColor, LayerKind, LayerMetaPatch, LayerRecord, Pt, StrokeRecord } from '../src/types.ts'
+import { transaction } from './db.ts'
+import { ribbonPath, roundPoints } from './geometry.ts'
+import { hanjaStrokes, parseHanja } from './references.ts'
+import type { CharacterLayerRow } from './schema.ts'
+
+type BuiltinLayerSpec = {
+  id: string
+  kind: LayerKind
+  name: string
+  z_index: number
+  visible: boolean
+  opacity: number
+  locked: boolean
+  label_color: LayerColor
+}
+
+// PhotoCraft 합성 순서: 배열 앞쪽(z_index 작은 값)이 아래쪽 레이어, 패널 UI는 역순(위→아래)으로 표시한다.
+export const BUILTIN_LAYERS: readonly BuiltinLayerSpec[] = [
+  { id: 'font', kind: 'FONT', name: '궁서체 (TTF)', z_index: 0, visible: true, opacity: 0.35, locked: true, label_color: 'slate' },
+  { id: 'mmh', kind: 'MMH', name: 'Hanzi (MMH)', z_index: 1, visible: false, opacity: 0.6, locked: true, label_color: 'violet' },
+  { id: 'acjk', kind: 'ACJK', name: 'AnimCJK', z_index: 2, visible: false, opacity: 0.6, locked: true, label_color: 'blue' },
+  { id: 'naver', kind: 'NAVER', name: '네이버 획순', z_index: 3, visible: false, opacity: 0.65, locked: true, label_color: 'green' },
+  { id: 'strokes', kind: 'STROKES', name: '작업 획', z_index: 4, visible: true, opacity: 1.0, locked: false, label_color: 'ink' },
+  { id: 'medians', kind: 'MEDIANS', name: '중심선', z_index: 5, visible: true, opacity: 1.0, locked: false, label_color: 'amber' },
+  { id: 'numbers', kind: 'NUMBERS', name: '획순 번호', z_index: 6, visible: true, opacity: 1.0, locked: false, label_color: 'rose' },
+]
+
+const VALID_COLORS = new Set<LayerColor>(['none', 'ink', 'slate', 'blue', 'violet', 'green', 'amber', 'rose'])
+
+function normalizeCap(value: unknown): CapType {
+  return value === 'AUTO_ROUND' || value === 'REF_STAMP' ? value : 'NONE'
+}
+
+function clampStrokeWidth(value: number): number {
+  const max = Math.round(DEFAULT_STROKE_WIDTH * STROKE_WIDTH_CAP_RATIO)
+  return Math.max(MIN_STROKE_WIDTH, Math.min(max, Math.round(value) || DEFAULT_STROKE_WIDTH))
+}
+
+function clampOpacity(value: unknown, fallback: number): number {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return fallback
+  return Math.max(0, Math.min(1, Math.round(n * 100) / 100))
+}
+
+function normalizeColor(value: unknown, fallback: LayerColor): LayerColor {
+  return typeof value === 'string' && VALID_COLORS.has(value as LayerColor) ? (value as LayerColor) : fallback
+}
+
+export function sanitizeLayerStrokes(raw: unknown): StrokeRecord[] {
+  if (!Array.isArray(raw)) throw new Error('획 목록 형식이 올바르지 않습니다.')
+  return raw.map((item, index) => {
+    const stroke = item as Partial<StrokeRecord>
+    if (!Array.isArray(stroke.median_points) || stroke.median_points.length < 2) {
+      throw new Error(`${index + 1}획의 중심선은 2점 이상이어야 합니다.`)
+    }
+    const median = roundPoints(stroke.median_points as Pt[])
+    const outline = typeof stroke.outline_path === 'string' && stroke.outline_path.trim()
+      ? stroke.outline_path.trim()
+      : ribbonPath(median, stroke.stroke_width ?? DEFAULT_STROKE_WIDTH)
+    if (!isValidSvgPath(outline)) {
+      throw new Error(`${index + 1}획의 SVG 외곽선 경로가 올바르지 않습니다.`)
+    }
+    return {
+      stroke_order: index + 1,
+      outline_path: outline,
+      median_points: median,
+      stroke_width: clampStrokeWidth(Number(stroke.stroke_width ?? DEFAULT_STROKE_WIDTH)),
+      is_radical: stroke.is_radical ? 1 : 0,
+      start_cap_type: normalizeCap(stroke.start_cap_type),
+      end_cap_type: normalizeCap(stroke.end_cap_type),
+    }
+  })
+}
+
+export function sanitizeLayerPaths(raw: unknown): string[] {
+  if (!Array.isArray(raw)) throw new Error('윤곽 경로 목록 형식이 올바르지 않습니다.')
+  return raw.map((entry, index) => {
+    const path = String(entry ?? '').trim()
+    if (!isValidSvgPath(path)) throw new Error(`${index + 1}번째 윤곽 경로가 올바르지 않습니다.`)
+    return path
+  })
+}
+
+function readCachedRefStrokes(
+  db: DatabaseSync,
+  unicode: string,
+  source: 'MMH' | 'ACJK' | 'NAVER',
+): { strokes: StrokeRecord[]; url: string | null } {
+  const row = db
+    .prepare('SELECT found, raw_data, source_url FROM reference_data WHERE unicode = ? AND source = ?')
+    .get(unicode, source) as { found: number; raw_data: string | null; source_url: string | null } | undefined
+  if (!row || !row.found || !row.raw_data) return { strokes: [], url: row?.source_url ?? null }
+  const glyph = parseHanja(row.raw_data)
+  const imported = glyph ? hanjaStrokes(glyph) : null
+  if (!glyph || !imported) return { strokes: [], url: row.source_url }
+  const radicalSet = new Set(glyph.radical)
+  const strokes: StrokeRecord[] = imported.medians.map((median, index) => ({
+    stroke_order: index + 1,
+    outline_path: imported.outlines[index] || ribbonPath(median, DEFAULT_STROKE_WIDTH),
+    median_points: roundPoints(median),
+    stroke_width: DEFAULT_STROKE_WIDTH,
+    is_radical: radicalSet.has(index) ? 1 : 0,
+    start_cap_type: 'NONE',
+    end_cap_type: 'NONE',
+  }))
+  return { strokes, url: row.source_url }
+}
+
+export function buildCharacterLayers(
+  db: DatabaseSync,
+  params: {
+    unicode: string
+    char: string
+    working: boolean
+    historyCount: number
+    originUrl: string | null
+    strokes: StrokeRecord[]
+    fontContours: string[]
+  },
+): LayerRecord[] {
+  const savedRows = db
+    .prepare('SELECT * FROM character_layers WHERE char = ? ORDER BY z_index ASC')
+    .all(params.char) as CharacterLayerRow[]
+  const savedById = new Map(savedRows.map((row) => [row.layer_id, row]))
+
+  const records: LayerRecord[] = []
+
+  for (const spec of BUILTIN_LAYERS) {
+    const saved = savedById.get(spec.id)
+    const visible = saved ? Boolean(saved.visible) : spec.visible
+    const opacity = saved ? clampOpacity(saved.opacity, spec.opacity) : spec.opacity
+    const locked = saved ? Boolean(saved.locked) : spec.locked
+    const zIndex = saved ? saved.z_index : spec.z_index
+    const labelColor = saved ? normalizeColor(saved.label_color, spec.label_color) : spec.label_color
+    const defaultName = spec.id === 'strokes' && params.working ? '작업 획 (초안)' : spec.name
+    const name = saved?.name ? saved.name : defaultName
+
+    if (spec.kind === 'FONT') {
+      const customPaths = saved?.modified && saved.paths_json ? (JSON.parse(saved.paths_json) as string[]) : null
+      const customStrokes = saved?.modified && saved.strokes_json ? (JSON.parse(saved.strokes_json) as StrokeRecord[]) : []
+      const paths = customPaths ?? params.fontContours
+      records.push({
+        id: spec.id,
+        kind: spec.kind,
+        name,
+        z_index: zIndex,
+        visible,
+        opacity,
+        locked,
+        label_color: labelColor,
+        available: paths.length > 0 || customStrokes.length > 0,
+        modified: Boolean(saved?.modified),
+        source_url: null,
+        strokes: customStrokes,
+        paths,
+      })
+      continue
+    }
+
+    if (spec.kind === 'MMH' || spec.kind === 'ACJK' || spec.kind === 'NAVER') {
+      const ref = readCachedRefStrokes(db, params.unicode, spec.kind)
+      const customStrokes = saved?.modified && saved.strokes_json ? (JSON.parse(saved.strokes_json) as StrokeRecord[]) : null
+      const strokes = customStrokes ?? ref.strokes
+      records.push({
+        id: spec.id,
+        kind: spec.kind,
+        name,
+        z_index: zIndex,
+        visible,
+        opacity,
+        locked,
+        label_color: labelColor,
+        available: strokes.length > 0,
+        modified: Boolean(saved?.modified),
+        source_url: ref.url,
+        strokes,
+        paths: [],
+      })
+      continue
+    }
+
+    if (spec.kind === 'STROKES') {
+      records.push({
+        id: spec.id,
+        kind: spec.kind,
+        name,
+        z_index: zIndex,
+        visible,
+        opacity,
+        locked,
+        label_color: labelColor,
+        available: params.strokes.length > 0,
+        modified: params.historyCount > 0 || params.working,
+        source_url: params.originUrl,
+        strokes: params.strokes,
+        paths: [],
+      })
+      continue
+    }
+
+    // MEDIANS / NUMBERS 오버레이 레이어
+    records.push({
+      id: spec.id,
+      kind: spec.kind,
+      name,
+      z_index: zIndex,
+      visible,
+      opacity,
+      locked,
+      label_color: labelColor,
+      available: true,
+      modified: false,
+      source_url: null,
+      strokes: [],
+      paths: [],
+    })
+  }
+
+  for (const saved of savedRows) {
+    if (saved.kind !== 'CUSTOM') continue
+    const strokes = saved.strokes_json ? (JSON.parse(saved.strokes_json) as StrokeRecord[]) : []
+    const paths = saved.paths_json ? (JSON.parse(saved.paths_json) as string[]) : []
+    records.push({
+      id: saved.layer_id,
+      kind: 'CUSTOM',
+      name: saved.name,
+      z_index: saved.z_index,
+      visible: Boolean(saved.visible),
+      opacity: clampOpacity(saved.opacity, 0.85),
+      locked: Boolean(saved.locked),
+      label_color: normalizeColor(saved.label_color, 'none'),
+      available: strokes.length > 0 || paths.length > 0,
+      modified: Boolean(saved.modified),
+      source_url: null,
+      strokes,
+      paths,
+    })
+  }
+
+  return records.sort((a, b) => a.z_index - b.z_index)
+}
+
+export function patchLayersMeta(db: DatabaseSync, char: string, patches: LayerMetaPatch[]): void {
+  const builtinById = new Map(BUILTIN_LAYERS.map((b) => [b.id, b]))
+  const selectOne = db.prepare('SELECT * FROM character_layers WHERE char = ? AND layer_id = ?')
+  const upsert = db.prepare(`
+    INSERT INTO character_layers (char, layer_id, kind, name, z_index, visible, opacity, locked, label_color, strokes_json, paths_json, modified, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(char, layer_id) DO UPDATE SET
+      name = excluded.name,
+      z_index = excluded.z_index,
+      visible = excluded.visible,
+      opacity = excluded.opacity,
+      locked = excluded.locked,
+      label_color = excluded.label_color,
+      updated_at = CURRENT_TIMESTAMP
+  `)
+
+  transaction(db, () => {
+    for (const patch of patches) {
+      if (!patch || typeof patch.id !== 'string') continue
+      const existing = selectOne.get(char, patch.id) as CharacterLayerRow | undefined
+      const builtin = builtinById.get(patch.id)
+      if (!existing && !builtin) continue
+
+      const kind = existing?.kind ?? builtin!.kind
+      const baseName = existing?.name ?? builtin!.name
+      const nextName = typeof patch.name === 'string' && patch.name.trim() ? patch.name.trim() : baseName
+      const nextZ = typeof patch.z_index === 'number' && Number.isFinite(patch.z_index)
+        ? Math.round(patch.z_index)
+        : (existing?.z_index ?? builtin!.z_index)
+      const nextVisible = typeof patch.visible === 'boolean'
+        ? (patch.visible ? 1 : 0)
+        : (existing?.visible ?? (builtin!.visible ? 1 : 0))
+      const nextOpacity = patch.opacity !== undefined
+        ? clampOpacity(patch.opacity, existing?.opacity ?? builtin!.opacity)
+        : (existing?.opacity ?? builtin!.opacity)
+      const nextLocked = typeof patch.locked === 'boolean'
+        ? (patch.locked ? 1 : 0)
+        : (existing?.locked ?? (builtin!.locked ? 1 : 0))
+      const nextColor = patch.label_color !== undefined
+        ? normalizeColor(patch.label_color, (existing?.label_color as LayerColor) ?? builtin!.label_color)
+        : ((existing?.label_color as LayerColor) ?? builtin!.label_color)
+
+      upsert.run(
+        char,
+        patch.id,
+        kind,
+        nextName,
+        nextZ,
+        nextVisible,
+        nextOpacity,
+        nextLocked,
+        nextColor,
+        existing?.strokes_json ?? null,
+        existing?.paths_json ?? null,
+        existing?.modified ?? 0,
+      )
+    }
+  })
+}
+
+export function saveNonStrokeLayerContent(
+  db: DatabaseSync,
+  char: string,
+  layerId: string,
+  payload: { strokes?: unknown; paths?: unknown },
+): void {
+  const builtin = BUILTIN_LAYERS.find((b) => b.id === layerId)
+  const existing = db
+    .prepare('SELECT * FROM character_layers WHERE char = ? AND layer_id = ?')
+    .get(char, layerId) as CharacterLayerRow | undefined
+  if (!builtin && !existing) throw new Error('존재하지 않는 레이어입니다.')
+  const kind = (existing?.kind ?? builtin!.kind) as LayerKind
+  if (kind === 'MEDIANS' || kind === 'NUMBERS') {
+    throw new Error('오버레이 레이어는 직접 도형을 저장하지 않습니다.')
+  }
+
+  const strokesJson = payload.strokes !== undefined
+    ? JSON.stringify(sanitizeLayerStrokes(payload.strokes))
+    : (existing?.strokes_json ?? null)
+  const pathsJson = payload.paths !== undefined
+    ? JSON.stringify(sanitizeLayerPaths(payload.paths))
+    : (existing?.paths_json ?? null)
+
+  db.prepare(`
+    INSERT INTO character_layers (char, layer_id, kind, name, z_index, visible, opacity, locked, label_color, strokes_json, paths_json, modified, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP)
+    ON CONFLICT(char, layer_id) DO UPDATE SET
+      strokes_json = excluded.strokes_json,
+      paths_json = excluded.paths_json,
+      modified = 1,
+      updated_at = CURRENT_TIMESTAMP
+  `).run(
+    char,
+    layerId,
+    kind,
+    existing?.name ?? builtin!.name,
+    existing?.z_index ?? builtin!.z_index,
+    existing?.visible ?? (builtin!.visible ? 1 : 0),
+    existing?.opacity ?? builtin!.opacity,
+    existing?.locked ?? 0,
+    existing?.label_color ?? builtin!.label_color,
+    strokesJson,
+    pathsJson,
+  )
+}
+
+export function resetNonStrokeLayer(db: DatabaseSync, char: string, layerId: string): void {
+  const builtin = BUILTIN_LAYERS.find((b) => b.id === layerId)
+  if (!builtin || builtin.kind === 'STROKES' || builtin.kind === 'MEDIANS' || builtin.kind === 'NUMBERS') {
+    throw new Error('원본으로 초기화할 수 있는 레퍼런스/폰트 레이어가 아닙니다.')
+  }
+  db.prepare(`
+    UPDATE character_layers
+    SET strokes_json = NULL, paths_json = NULL, modified = 0, updated_at = CURRENT_TIMESTAMP
+    WHERE char = ? AND layer_id = ?
+  `).run(char, layerId)
+}
+
+export function createCustomLayer(
+  db: DatabaseSync,
+  char: string,
+  allLayers: LayerRecord[],
+  sourceLayerId?: string,
+  customName?: string,
+): string {
+  const source = sourceLayerId ? allLayers.find((l) => l.id === sourceLayerId) : undefined
+  const maxZ = allLayers.reduce((max, l) => Math.max(max, l.z_index), 0)
+  const id = `custom-${randomUUID().slice(0, 8)}`
+  const name = customName?.trim() || (source ? `${source.name} 사본` : '새 레이어')
+  const strokesJson = source && source.strokes.length > 0 ? JSON.stringify(source.strokes) : '[]'
+  const pathsJson = source && source.paths.length > 0 ? JSON.stringify(source.paths) : '[]'
+  const color: LayerColor = source?.label_color && source.label_color !== 'ink' ? source.label_color : 'blue'
+
+  db.prepare(`
+    INSERT INTO character_layers (char, layer_id, kind, name, z_index, visible, opacity, locked, label_color, strokes_json, paths_json, modified)
+    VALUES (?, ?, 'CUSTOM', ?, ?, 1, 0.85, 0, ?, ?, ?, 1)
+  `).run(char, id, name, maxZ + 1, color, strokesJson, pathsJson)
+  return id
+}
+
+export function deleteCustomLayer(db: DatabaseSync, char: string, layerId: string): void {
+  const row = db
+    .prepare('SELECT kind FROM character_layers WHERE char = ? AND layer_id = ?')
+    .get(char, layerId) as { kind: string } | undefined
+  if (!row || row.kind !== 'CUSTOM') {
+    throw new Error('기본 시스템 레이어는 삭제할 수 없습니다. 눈 아이콘으로 숨기거나 초기화하세요.')
+  }
+  db.prepare('DELETE FROM character_layers WHERE char = ? AND layer_id = ?').run(char, layerId)
+}

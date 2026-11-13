@@ -1,4 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite'
+import { transaction } from './db.ts'
 import { CANVAS, DEFAULT_STROKE_WIDTH, KANGXI_COUNT, SHA256_HEX_LENGTH } from '../src/lib/constants.ts'
 import { ACTION_FONT, ACTOR_FONT, ACTOR_MIGRATION, ACTOR_USER } from './model.ts'
 import type { Pt } from '../src/types.ts'
@@ -114,6 +115,41 @@ const WORKING_DATA_DDL = `
   )
 `
 
+const CHARACTER_LAYERS_DDL = `
+  CREATE TABLE IF NOT EXISTS character_layers (
+    char TEXT NOT NULL REFERENCES characters(char) ON DELETE CASCADE,
+    layer_id TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('FONT', 'MMH', 'ACJK', 'NAVER', 'STROKES', 'MEDIANS', 'NUMBERS', 'CUSTOM')),
+    name TEXT NOT NULL,
+    z_index INTEGER NOT NULL,
+    visible INTEGER NOT NULL DEFAULT 1 CHECK (visible IN (0, 1)),
+    opacity REAL NOT NULL DEFAULT 1.0 CHECK (opacity >= 0 AND opacity <= 1),
+    locked INTEGER NOT NULL DEFAULT 0 CHECK (locked IN (0, 1)),
+    label_color TEXT NOT NULL DEFAULT 'none',
+    strokes_json JSON CHECK (strokes_json IS NULL OR (json_valid(strokes_json) AND json_type(strokes_json) = 'array')),
+    paths_json JSON CHECK (paths_json IS NULL OR (json_valid(paths_json) AND json_type(paths_json) = 'array')),
+    modified INTEGER NOT NULL DEFAULT 0 CHECK (modified IN (0, 1)),
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (char, layer_id)
+  )
+`
+
+export type CharacterLayerRow = {
+  char: string
+  layer_id: string
+  kind: string
+  name: string
+  z_index: number
+  visible: number
+  opacity: number
+  locked: number
+  label_color: string
+  strokes_json: string | null
+  paths_json: string | null
+  modified: number
+  updated_at: string
+}
+
 function upgradeCharactersTable(db: DatabaseSync) {
   const columns = (db.prepare('PRAGMA table_info(characters)').all() as { name: string }[]).map((column) => column.name)
   if (columns.length === 0) return
@@ -124,31 +160,28 @@ function upgradeCharactersTable(db: DatabaseSync) {
   if (columns.includes('last_modified_by')) return
   // 자식 테이블이 characters를 참조하므로, 외래키를 끄고 새 테이블로 갈아끼운다(자식 행이 연쇄 삭제되지 않게).
   db.exec('PRAGMA foreign_keys = OFF')
-  db.exec('BEGIN')
   try {
-    db.exec(ISSUES_DDL)
-    if (columns.includes('issue_reason')) {
+    transaction(db, () => {
+      db.exec(ISSUES_DDL)
+      if (columns.includes('issue_reason')) {
+        db.exec(`
+          INSERT OR IGNORE INTO issues (char, reason)
+          SELECT char, issue_reason FROM characters WHERE issue_reason IS NOT NULL AND issue_reason <> ''
+        `)
+      }
+      db.exec(charactersDdl('characters_next'))
       db.exec(`
-        INSERT OR IGNORE INTO issues (char, reason)
-        SELECT char, issue_reason FROM characters WHERE issue_reason IS NOT NULL AND issue_reason <> ''
+        INSERT INTO characters_next (unicode, char, grade, reading, meaning, variant_reading, variant_meaning,
+                                     stroke_count, last_modified_at, last_modified_by)
+        SELECT unicode, char, grade, reading, meaning, variant_reading, variant_meaning,
+               stroke_count, updated_at, '${ACTOR_MIGRATION}'
+        FROM characters
       `)
-    }
-    db.exec(charactersDdl('characters_next'))
-    db.exec(`
-      INSERT INTO characters_next (unicode, char, grade, reading, meaning, variant_reading, variant_meaning,
-                                   stroke_count, last_modified_at, last_modified_by)
-      SELECT unicode, char, grade, reading, meaning, variant_reading, variant_meaning,
-             stroke_count, updated_at, '${ACTOR_MIGRATION}'
-      FROM characters
-    `)
-    db.exec('DROP TABLE characters')
-    db.exec('ALTER TABLE characters_next RENAME TO characters')
-    const broken = db.prepare('PRAGMA foreign_key_check').all()
-    if (broken.length > 0) throw new Error('characters 테이블 변환 후 외래키가 깨졌습니다.')
-    db.exec('COMMIT')
-  } catch (error) {
-    db.exec('ROLLBACK')
-    throw error
+      db.exec('DROP TABLE characters')
+      db.exec('ALTER TABLE characters_next RENAME TO characters')
+      const broken = db.prepare('PRAGMA foreign_key_check').all()
+      if (broken.length > 0) throw new Error('characters 테이블 변환 후 외래키가 깨졌습니다.')
+    })
   } finally {
     db.exec('PRAGMA foreign_keys = ON')
   }
@@ -157,8 +190,7 @@ function upgradeCharactersTable(db: DatabaseSync) {
 function upgradeStrokesTable(db: DatabaseSync) {
   const columns = db.prepare('PRAGMA table_info(strokes)').all() as { name: string }[]
   if (columns.length === 0 || columns.some((column) => column.name === 'radical')) return
-  db.exec('BEGIN')
-  try {
+  transaction(db, () => {
     db.exec('ALTER TABLE strokes RENAME TO strokes_previous')
     db.exec(STROKES_DDL)
     db.exec(`
@@ -173,28 +205,19 @@ function upgradeStrokesTable(db: DatabaseSync) {
       FROM strokes_previous p
     `)
     db.exec('DROP TABLE strokes_previous')
-    db.exec('COMMIT')
-  } catch (error) {
-    db.exec('ROLLBACK')
-    throw error
-  }
+  })
 }
 
 // origin CHECK에 'NAVER'가 없는 옛 테이블이면 새 테이블로 갈아끼운다.
 function upgradeStrokeOrigins(db: DatabaseSync) {
   const row = db.prepare(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'strokes'`).get() as { sql: string } | undefined
   if (!row || row.sql.includes(`'NAVER'`)) return
-  db.exec('BEGIN')
-  try {
+  transaction(db, () => {
     db.exec('ALTER TABLE strokes RENAME TO strokes_previous')
     db.exec(STROKES_DDL)
     db.exec('INSERT INTO strokes SELECT * FROM strokes_previous')
     db.exec('DROP TABLE strokes_previous')
-    db.exec('COMMIT')
-  } catch (error) {
-    db.exec('ROLLBACK')
-    throw error
-  }
+  })
 }
 
 function dropStatusColumn(db: DatabaseSync) {
@@ -234,6 +257,7 @@ export function migrate(db: DatabaseSync) {
     ${ISSUES_DDL};
     ${STROKES_DDL};
     ${STROKES_HISTORY_DDL};
+    ${CHARACTER_LAYERS_DDL};
     CREATE TABLE IF NOT EXISTS reference_data (
       unicode TEXT NOT NULL,
       source TEXT NOT NULL,
@@ -268,8 +292,7 @@ function introduceWorkingData(db: DatabaseSync) {
   addColumn(db, 'issues', 'status', ISSUE_STATUS_COLUMN)
   addColumn(db, 'issues', 'in_font', ISSUE_IN_FONT_COLUMN)
   const drafts = `FROM strokes WHERE origin IN ('IDS', 'OLLAMA_IDS', 'MANUAL')`
-  db.exec('BEGIN')
-  try {
+  transaction(db, () => {
     db.exec(WORKING_DATA_DDL)
     db.exec(`
       INSERT INTO strokes_history (char, radical, font_outline, stroke_outlines, median_line, origin, origin_url,
@@ -288,11 +311,7 @@ function introduceWorkingData(db: DatabaseSync) {
     `)
     db.exec(`UPDATE characters SET stroke_count = 0, last_modified_by = '${ACTOR_MIGRATION}' WHERE char IN (SELECT char ${drafts})`)
     db.exec(`DELETE ${drafts}`)
-    db.exec('COMMIT')
-  } catch (error) {
-    db.exec('ROLLBACK')
-    throw error
-  }
+  })
 }
 
 // 옛 edit_history(글자별 획 배열 스냅샷)를 strokes_history로 옮기고 지운다. 스냅샷에 없는 값은 지금 행에서 가져온다:
@@ -310,8 +329,7 @@ function migrateEditHistory(db: DatabaseSync) {
                                  state_modified_at, state_modified_by, action_desc, changed_by, changed_at, undoable)
     VALUES (?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
   `)
-  db.exec('BEGIN')
-  try {
+  transaction(db, () => {
     for (const row of rows) {
       const items = (JSON.parse(row.snapshot_json) as { strokes: OldItem[] }).strokes
       const outlines = items.map((item, index) => ({ order: index + 1, path: item.outline_path, radical: item.is_radical ? 1 : 0 }))
@@ -327,19 +345,14 @@ function migrateEditHistory(db: DatabaseSync) {
         row.origin, row.origin_url, row.created_at, ACTOR_MIGRATION, action, action === ACTION_FONT ? ACTOR_FONT : ACTOR_USER, row.created_at)
     }
     db.exec('DROP TABLE edit_history')
-    db.exec('COMMIT')
-  } catch (error) {
-    db.exec('ROLLBACK')
-    throw error
-  }
+  })
 }
 
 // 옛 name_kr('훈 음', 공백 하나)을 reading(음)과 meaning(훈)으로 나눠 새 테이블로 갈아끼운다.
 function splitRadicalNames(db: DatabaseSync) {
   const columns = db.prepare('PRAGMA table_info(radicals)').all() as { name: string }[]
   if (!columns.some((column) => column.name === 'name_kr')) return
-  db.exec('BEGIN')
-  try {
+  transaction(db, () => {
     db.exec('ALTER TABLE radicals RENAME TO radicals_previous')
     db.exec(`
       CREATE TABLE radicals (
@@ -358,11 +371,7 @@ function splitRadicalNames(db: DatabaseSync) {
       FROM radicals_previous
     `)
     db.exec('DROP TABLE radicals_previous')
-    db.exec('COMMIT')
-  } catch (error) {
-    db.exec('ROLLBACK')
-    throw error
-  }
+  })
 }
 
 function addColumn(db: DatabaseSync, table: string, name: string, type: string) {

@@ -16,10 +16,20 @@ import {
   STROKE_WIDTH_CAP_RATIO,
   UNICODE_HEX_PAD,
 } from '../src/lib/constants.ts'
-import type { Pt } from '../src/types.ts'
+import type { CapType, LayerMetaPatch, Pt, StrokeRecord } from '../src/types.ts'
 import { animatedSvg, parseAnimSvg } from './animSvg.ts'
+import { transaction } from './db.ts'
 import { loadFont, type FontFile } from './font.ts'
 import { fitMedians, ribbonPath, roundPoints, splitByContours, type Box, type ImportedStrokes } from './geometry.ts'
+import {
+  buildCharacterLayers,
+  createCustomLayer,
+  deleteCustomLayer,
+  patchLayersMeta,
+  resetNonStrokeLayer,
+  sanitizeLayerStrokes,
+  saveNonStrokeLayerContent,
+} from './layers.ts'
 import {
   askOllama,
   IDS_BOOK,
@@ -128,10 +138,30 @@ function createWorkspace(rootDir: string) {
     const meta = readStrokeRow(unicode)
     const working = meta ? undefined : readWorkingRow(unicode)
     const shown = meta ?? working
-    const strokes = (shown ? itemsOf(shown) : []).map((stroke, index) => ({ stroke_order: index + 1, ...stroke }))
+    const strokes: StrokeRecord[] = (shown ? itemsOf(shown) : []).map((stroke, index) => ({
+      stroke_order: index + 1,
+      outline_path: stroke.outline_path,
+      median_points: stroke.median_points,
+      stroke_width: stroke.stroke_width,
+      is_radical: stroke.is_radical ? 1 : 0,
+      start_cap_type: cap(stroke.start_cap_type) as CapType,
+      end_cap_type: cap(stroke.end_cap_type) as CapType,
+    }))
     const history = db.prepare('SELECT COUNT(*) AS n FROM strokes_history WHERE char = ? AND undoable = 1').get(String(row.char)) as { n: number }
     const issue = db.prepare('SELECT reason, status, in_font FROM issues WHERE char = ?').get(String(row.char)) as
       { reason: string; status: string; in_font: number } | undefined
+    const fontOutline = shown ? JSON.parse(shown.font_outline) as string[] : []
+    const originUrl = meta?.origin_url ?? working?.source_url ?? null
+    const fontContours = getFont()?.contours(String(row.char)) ?? fontOutline
+    const layers = buildCharacterLayers(db, {
+      unicode,
+      char: String(row.char),
+      working: Boolean(working),
+      historyCount: history.n,
+      originUrl,
+      strokes,
+      fontContours,
+    })
     return {
       ...row,
       issue_reason: issue?.reason ?? null,
@@ -141,12 +171,19 @@ function createWorkspace(rootDir: string) {
       variant_reading: JSON.parse(String(row.variant_reading)) as string[],
       variant_meaning: JSON.parse(String(row.variant_meaning)) as string[],
       radical: meta?.radical ?? 0,
-      font_outline: shown ? JSON.parse(shown.font_outline) as string[] : [],
+      font_outline: fontOutline,
       origin: meta?.origin ?? working?.source ?? null,
-      origin_url: meta?.origin_url ?? working?.source_url ?? null,
+      origin_url: originUrl,
       strokes,
+      layers,
       history_count: history.n,
     }
+  }
+
+  function requireCharacter(unicode: string): { char: string } {
+    const character = db.prepare('SELECT char FROM characters WHERE unicode = ?').get(unicode) as { char: string } | undefined
+    if (!character) throw new Error('등록되지 않은 글자입니다.')
+    return character
   }
 
   function readStrokeRow(unicode: string) {
@@ -193,8 +230,7 @@ function createWorkspace(rootDir: string) {
   }
 
   function writeStrokes(unicode: string, items: StrokeItem[], by: string, action: string, origin?: { source: string; url: string | null }, fontOutline?: string[]) {
-    const character = db.prepare('SELECT char FROM characters WHERE unicode = ?').get(unicode) as { char: string } | undefined
-    if (!character) throw new Error('등록되지 않은 글자입니다.')
+    const character = requireCharacter(unicode)
     if (items.length === 0) {
       db.prepare('DELETE FROM strokes WHERE char = ?').run(character.char)
       return
@@ -251,8 +287,7 @@ function createWorkspace(rootDir: string) {
   }
 
   function updateStrokes(unicode: string, strokes: StrokeItem[], action: string) {
-    const current = getCharacter(unicode)
-    if (!current) throw new Error('등록되지 않은 글자입니다.')
+    requireCharacter(unicode)
     const items = strokes.map((stroke, index) => {
       if (!Array.isArray(stroke.median_points) || stroke.median_points.length < 2) {
         throw new Error(`${index + 1}획의 중심선이 없습니다.`)
@@ -266,8 +301,7 @@ function createWorkspace(rootDir: string) {
         end_cap_type: cap(stroke.end_cap_type),
       }
     })
-    db.exec('BEGIN')
-    try {
+    transaction(db, () => {
       if (readStrokeRow(unicode)) {
         writeStrokes(unicode, items, ACTOR_USER, action)
         db.prepare('UPDATE characters SET stroke_count = ?, last_modified_by = ? WHERE unicode = ?').run(items.length, ACTOR_USER, unicode)
@@ -287,18 +321,13 @@ function createWorkspace(rootDir: string) {
         `).run(items.length > 0 ? 'DRAFT' : 'OPEN', unicode)
         db.prepare('UPDATE characters SET last_modified_by = ? WHERE unicode = ?').run(ACTOR_USER, unicode)
       }
-      db.exec('COMMIT')
-    } catch (error) {
-      db.exec('ROLLBACK')
-      throw error
-    }
+    })
     return getCharacter(unicode)
   }
 
   // AnimCJK 형식 SVG를 작업 데이터로 가져온다. 승인 전에는 strokes를 건드리지 않으므로 strokes에 이미 있는 글자는 받지 않는다.
   function importSvg(unicode: string, svg: string) {
-    const character = db.prepare('SELECT char FROM characters WHERE unicode = ?').get(unicode) as { char: string } | undefined
-    if (!character) throw new Error('등록되지 않은 글자입니다.')
+    const character = requireCharacter(unicode)
     if (readStrokeRow(unicode)) throw new Error('strokes에 이미 있는 글자는 SVG로 가져올 수 없습니다.')
     const items = toItems(parseAnimSvg(svg, character.char), new Set())
     const problems = validate(character.char, items)
@@ -308,39 +337,31 @@ function createWorkspace(rootDir: string) {
 
   // 작업 데이터를 확인하고 승인하면 strokes로 옮기고, 옮긴 작업 데이터는 지운다. issues 행은 '승인됨'으로 남긴다.
   function approve(unicode: string) {
-    const character = db.prepare('SELECT char FROM characters WHERE unicode = ?').get(unicode) as { char: string } | undefined
-    if (!character) throw new Error('등록되지 않은 글자입니다.')
+    const character = requireCharacter(unicode)
     const working = readWorkingRow(unicode)
     if (!working || readStrokeRow(unicode)) throw new Error('승인할 작업 데이터가 없습니다.')
     const items = itemsOf(working)
     const problems = validate(character.char, items)
     if (problems.length) throw new Error(problems.join(' '))
     const fontOutline = JSON.parse(working.font_outline) as string[]
-    db.exec('BEGIN')
-    try {
+    transaction(db, () => {
       writeStrokes(unicode, items, ACTOR_USER, ACTION_APPROVE, { source: working.source, url: working.source_url }, fontOutline.length > 0 ? fontOutline : undefined)
       db.prepare('UPDATE characters SET stroke_count = ?, last_modified_by = ? WHERE unicode = ?').run(items.length, ACTOR_USER, unicode)
       db.prepare(`UPDATE issues SET status = 'APPROVED' WHERE char = ?`).run(character.char)
       db.prepare('DELETE FROM working_data WHERE char = ?').run(character.char)
-      db.exec('COMMIT')
-    } catch (error) {
-      db.exec('ROLLBACK')
-      throw error
-    }
+    })
     return getCharacter(unicode)
   }
 
   // 가장 최근의 되돌릴 수 있는 이전 상태로 되돌린다. 이력은 지우지 않는다: 되돌리기 전 상태는 되돌릴 수 없는 이력으로 남기고,
   // 되돌아간 이력은 더 이상 되돌릴 대상이 아니게 표시한다(연속으로 누르면 그 전 상태로 한 단계씩 간다).
   function undo(unicode: string) {
-    const character = db.prepare('SELECT char FROM characters WHERE unicode = ?').get(unicode) as { char: string } | undefined
-    if (!character) throw new Error('등록되지 않은 글자입니다.')
+    const character = requireCharacter(unicode)
     const target = db.prepare('SELECT * FROM strokes_history WHERE char = ? AND undoable = 1 ORDER BY id DESC LIMIT 1')
       .get(character.char) as (StrokeRow & { id: number }) | undefined
     const current = db.prepare('SELECT * FROM strokes WHERE char = ?').get(character.char) as StrokeRow | undefined
     if (!target || !current) throw new Error('되돌릴 편집이 없습니다.')
-    db.exec('BEGIN')
-    try {
+    transaction(db, () => {
       pushHistory(current, ACTION_UNDO, ACTOR_USER, 0)
       db.prepare('UPDATE strokes_history SET undoable = 0 WHERE id = ?').run(target.id)
       db.prepare(`
@@ -350,11 +371,7 @@ function createWorkspace(rootDir: string) {
       `).run(target.radical, target.font_outline, target.stroke_outlines, target.median_line, target.origin, target.origin_url, ACTOR_USER, character.char)
       db.prepare('UPDATE characters SET stroke_count = ?, last_modified_by = ? WHERE unicode = ?')
         .run((JSON.parse(target.stroke_outlines) as unknown[]).length, ACTOR_USER, unicode)
-      db.exec('COMMIT')
-    } catch (error) {
-      db.exec('ROLLBACK')
-      throw error
-    }
+    })
     return getCharacter(unicode)
   }
 
@@ -368,8 +385,7 @@ function createWorkspace(rootDir: string) {
   }
 
   async function ensureReference(unicode: string) {
-    const character = db.prepare('SELECT unicode, char FROM characters WHERE unicode = ?').get(unicode) as { unicode: string; char: string } | undefined
-    if (!character) throw new Error('등록되지 않은 글자입니다.')
+    const character = requireCharacter(unicode)
     const existing = readStrokes(unicode)
     if (existing.length > 0) {
       const hanja = await loadReference(unicode, character.char)
@@ -397,8 +413,7 @@ function createWorkspace(rootDir: string) {
     // Hanja에 없는 글자는 strokes가 아니라 작업 데이터(working_data)에 쓰고 issues에 올린다. 승인해야 strokes로 간다.
     const composed = await composeIds(character.char)
     const contours = getFont()?.contours(character.char) ?? null
-    db.exec('BEGIN')
-    try {
+    transaction(db, () => {
       if (composed) {
         // IDS 합성 중심선을 길잡이로 궁서체 윤곽을 획별로 나눈다. 못 나누면 전체 윤곽과 띠 모양 획을 둔다.
         const split = contours && splitByContours(contours, composed.medians)
@@ -412,11 +427,7 @@ function createWorkspace(rootDir: string) {
       } else {
         setIssue(unicode, 'Hanja, 궁서체, IDS 합성 모두 실패', ACTOR_IDS)
       }
-      db.exec('COMMIT')
-    } catch (error) {
-      db.exec('ROLLBACK')
-      throw error
-    }
+    })
     return { unicode, source: composed?.source ?? (contours ? 'FONT' : 'NONE'), fetched: Boolean(composed || contours) }
   }
 
@@ -476,8 +487,7 @@ function createWorkspace(rootDir: string) {
     if (!Array.isArray(entries)) throw new Error('글자 목록은 배열이어야 합니다.')
     const seen = new Set<string>()
     let imported = 0
-    db.exec('BEGIN')
-    try {
+    transaction(db, () => {
       const insertChar = db.prepare(`
         INSERT INTO characters (unicode, char, grade, reading, meaning, stroke_count, last_modified_by)
         VALUES (?, ?, ?, ?, ?, 0, ?)
@@ -492,15 +502,147 @@ function createWorkspace(rootDir: string) {
         imported += 1
       }
       if (imported === 0) throw new Error('올릴 글자가 없습니다. 한자 한 글자와 음이 있는 목록이어야 합니다.')
-      db.exec('COMMIT')
-    } catch (error) {
-      db.exec('ROLLBACK')
-      throw error
-    }
+    })
     return { imported }
   }
 
-  return { listCharacters, getCharacter, updateStrokes, importSvg, approve, undo, applyNaver, ensureReference, syncMissing, applyFontBatch, applyAcjkBatch, compile, listRadicals, importInitial }
+  function updateLayersMeta(unicode: string, patches: LayerMetaPatch[]) {
+    const character = requireCharacter(unicode)
+    patchLayersMeta(db, character.char, Array.isArray(patches) ? patches : [])
+    return getCharacter(unicode)
+  }
+
+  function saveLayer(unicode: string, layerId: string, payload: { strokes?: unknown; paths?: unknown; action?: string }) {
+    const character = requireCharacter(unicode)
+    if (layerId === 'strokes') {
+      return updateStrokes(unicode, sanitizeLayerStrokes(payload.strokes), payload.action ?? '획 편집')
+    }
+    saveNonStrokeLayerContent(db, character.char, layerId, payload)
+    return getCharacter(unicode)
+  }
+
+  function resetLayer(unicode: string, layerId: string) {
+    const character = requireCharacter(unicode)
+    resetNonStrokeLayer(db, character.char, layerId)
+    return getCharacter(unicode)
+  }
+
+  async function fetchLayer(unicode: string, layerId: string) {
+    const character = requireCharacter(unicode)
+    if (layerId === 'naver') {
+      db.prepare(`DELETE FROM reference_data WHERE unicode = ? AND source = 'NAVER' AND found = 0`).run(unicode)
+      const naver = await loadSource(unicode, 'NAVER', naverUrl(character.char), () => fetchNaver(character.char))
+      if (!naver) throw new Error('네이버 한자사전에서 이 글자의 획순을 찾지 못했습니다.')
+    } else if (layerId === 'acjk') {
+      const acjk = await loadSource(unicode, 'ACJK', ACJK_BLOB, () => fetchAcjk(character.char))
+      if (!acjk) throw new Error('AnimCJK에서 이 글자 데이터를 찾지 못했습니다.')
+    } else if (layerId === 'mmh') {
+      const mmh = await loadSource(unicode, 'MMH', hanjaUrl(character.char), () => fetchHanja(character.char))
+      if (!mmh) throw new Error('Hanzi(MMH)에서 이 글자 데이터를 찾지 못했습니다.')
+    } else {
+      throw new Error('외부 수신을 지원하지 않는 레이어입니다.')
+    }
+    patchLayersMeta(db, character.char, [{ id: layerId, visible: true }])
+    return getCharacter(unicode)
+  }
+
+  function applyLayerToStrokes(unicode: string, layerId: string, mode: 'direct' | 'fit_font' = 'direct') {
+    const detail = getCharacter(unicode)
+    if (!detail) throw new Error('등록되지 않은 글자입니다.')
+    const layer = detail.layers.find((item) => item.id === layerId)
+    if (!layer || layer.strokes.length === 0) throw new Error('적용할 획 데이터가 없는 레이어입니다.')
+    const source = layer.kind === 'NAVER' || layer.kind === 'ACJK' || layer.kind === 'MMH' ? layer.kind : ORIGIN_MANUAL
+    const radicals = layer.strokes.flatMap((stroke, index) => (stroke.is_radical ? [index] : []))
+
+    if (mode === 'fit_font') {
+      const fontLayer = detail.layers.find((item) => item.id === 'font')
+      const contours = fontLayer && fontLayer.paths.length > 0 ? fontLayer.paths : (getFont()?.contours(detail.char) ?? null)
+      if (!contours || contours.length === 0) throw new Error('궁서체 윤곽이 없어 자동 분할을 적용할 수 없습니다.')
+      const split = splitByContours(contours, layer.strokes.map((stroke) => stroke.median_points))
+      if (!split) {
+        throw new Error('궁서체 윤곽 자동 분할 품질 검사를 통과하지 못했습니다. 중심선·위치를 조정하거나 [그대로 적용]을 사용하세요.')
+      }
+      saveImported(unicode, source, layer.source_url, radicals, split, `${layer.name} 중심선으로 궁서체 분할 적용`)
+      return getCharacter(unicode)
+    }
+
+    if (source !== ORIGIN_MANUAL) {
+      saveImported(
+        unicode,
+        source,
+        layer.source_url,
+        radicals,
+        {
+          medians: layer.strokes.map((s) => s.median_points),
+          outlines: layer.strokes.map((s) => s.outline_path),
+          widths: layer.strokes.map((s) => s.stroke_width),
+        },
+        `${layer.name} 레이어 적용`,
+      )
+      return getCharacter(unicode)
+    }
+    return updateStrokes(unicode, layer.strokes, `${layer.name} 레이어 적용`)
+  }
+
+  function resegmentLayer(unicode: string, mediansRaw: unknown) {
+    const detail = getCharacter(unicode)
+    if (!detail) throw new Error('등록되지 않은 글자입니다.')
+    const fontLayer = detail.layers.find((item) => item.id === 'font')
+    const contours = fontLayer && fontLayer.paths.length > 0 ? fontLayer.paths : (getFont()?.contours(detail.char) ?? null)
+    if (!contours || contours.length === 0) throw new Error('궁서체 윤곽이 없어 재분할할 수 없습니다.')
+    if (!Array.isArray(mediansRaw) || mediansRaw.length === 0) throw new Error('중심선 배열이 비어 있습니다.')
+    const medians = mediansRaw.map((line, index) => {
+      if (!Array.isArray(line) || line.length < 2) throw new Error(`${index + 1}획 중심선은 2점 이상이어야 합니다.`)
+      return roundPoints(line as Pt[])
+    })
+    const split = splitByContours(contours, medians)
+    if (!split) {
+      throw new Error('중심선 기준 윤곽 자동 분할이 품질 검사를 통과하지 못했습니다. 중심선이 윤곽을 고르게 지나도록 조정해 보세요.')
+    }
+    return {
+      outlines: split.outlines,
+      medians: split.medians,
+      widths: split.widths ?? split.medians.map(() => DEFAULT_STROKE_WIDTH),
+    }
+  }
+
+  function duplicateLayer(unicode: string, sourceLayerId?: string, name?: string) {
+    const detail = getCharacter(unicode)
+    if (!detail) throw new Error('등록되지 않은 글자입니다.')
+    const createdId = createCustomLayer(db, detail.char, detail.layers, sourceLayerId, name)
+    return { createdId, detail: getCharacter(unicode) }
+  }
+
+  function deleteLayer(unicode: string, layerId: string) {
+    const character = requireCharacter(unicode)
+    deleteCustomLayer(db, character.char, layerId)
+    return getCharacter(unicode)
+  }
+
+  return {
+    listCharacters,
+    getCharacter,
+    updateStrokes,
+    updateLayersMeta,
+    saveLayer,
+    resetLayer,
+    fetchLayer,
+    applyLayerToStrokes,
+    resegmentLayer,
+    duplicateLayer,
+    deleteLayer,
+    importSvg,
+    approve,
+    undo,
+    applyNaver,
+    ensureReference,
+    syncMissing,
+    applyFontBatch,
+    applyAcjkBatch,
+    compile,
+    listRadicals,
+    importInitial,
+  }
 
   async function loadSource<T>(unicode: string, source: 'MMH' | 'ACJK' | 'NAVER', url: string, fetchFresh: () => Promise<Remote<T>>): Promise<Found<T> | null> {
     const cached = db.prepare('SELECT found, raw_data, source_url FROM reference_data WHERE unicode = ? AND source = ?')
@@ -577,8 +719,7 @@ function createWorkspace(rootDir: string) {
   // 획순이 틀린 글자를 사람이 지정해 네이버 한자사전 획순으로 바꾼다. 사람이 고친 글자도 바꾸며(실행 취소로 되돌린다),
   // 바뀌기 전 strokes 행은 strokes_history에 남고 같은 글자의 작업 데이터는 지워진다. 네이버에 없으면 아무것도 바꾸지 않는다.
   async function applyNaver(unicode: string) {
-    const character = db.prepare('SELECT char FROM characters WHERE unicode = ?').get(unicode) as { char: string } | undefined
-    if (!character) throw new Error('등록되지 않은 글자입니다.')
+    const character = requireCharacter(unicode)
     const naver = await loadSource(unicode, 'NAVER', naverUrl(character.char), () => fetchNaver(character.char))
     const imported = naver ? hanjaStrokes(naver.value) : null
     if (!naver || !imported) throw new Error('네이버 한자사전에서 이 글자의 획순을 찾지 못했습니다.')
@@ -591,8 +732,7 @@ function createWorkspace(rootDir: string) {
   // 이미 있는 글자(strokes 또는 승인 전 작업 데이터)를 AnimCJK 데이터로 바꾼다. 사람이 고친 글자는 건너뛴다.
   // 바뀌기 전 strokes 행은 strokes_history에 남고, 같은 글자의 작업 데이터는 지워진다.
   async function applyAcjk(unicode: string): Promise<AcjkResult> {
-    const character = db.prepare('SELECT char FROM characters WHERE unicode = ?').get(unicode) as { char: string } | undefined
-    if (!character) throw new Error('등록되지 않은 글자입니다.')
+    const character = requireCharacter(unicode)
     const acjk = await loadSource(unicode, 'ACJK', ACJK_BLOB, () => fetchAcjk(character.char))
     const imported = acjk ? hanjaStrokes(acjk.value) : null
     if (!acjk || !imported) return 'NOT_IN_ACJK'
@@ -658,8 +798,7 @@ function createWorkspace(rootDir: string) {
     const split = splitByContours(contours, current.strokes.map((stroke) => stroke.median_points))
     if (!split?.widths) return 'REJECTED'
     const widths = split.widths
-    db.exec('BEGIN')
-    try {
+    transaction(db, () => {
       writeStrokes(unicode, current.strokes.map((stroke, index) => ({
         outline_path: split.outlines[index],
         median_points: roundPoints(split.medians[index]),
@@ -669,11 +808,7 @@ function createWorkspace(rootDir: string) {
         end_cap_type: stroke.end_cap_type,
       })), ACTOR_FONT, ACTION_FONT, undefined, split.fontOutline)
       db.prepare('UPDATE characters SET last_modified_by = ? WHERE unicode = ?').run(ACTOR_FONT, unicode)
-      db.exec('COMMIT')
-    } catch (error) {
-      db.exec('ROLLBACK')
-      throw error
-    }
+    })
     return 'APPLIED'
   }
 
@@ -711,18 +846,13 @@ function createWorkspace(rootDir: string) {
     const { medians, fontOutline } = strokes
     // 궁서체 윤곽으로 나눠졌으면 궁서체 교체와 같은 상태다(이후 레퍼런스가 중심선을 되덮지 않는다).
     const by = fontOutline ? ACTOR_FONT : source === 'MMH' ? ACTOR_HANJA : source === 'NAVER' ? ACTOR_NAVER : ACTOR_ACJK
-    db.exec('BEGIN')
-    try {
+    transaction(db, () => {
       writeStrokes(unicode, toItems(strokes, new Set(radical)), by, action, { source, url }, fontOutline)
       db.prepare('DELETE FROM working_data WHERE char = (SELECT char FROM characters WHERE unicode = ?)').run(unicode)
       db.prepare('UPDATE characters SET stroke_count = ?, last_modified_by = ? WHERE unicode = ?')
         .run(medians.length, by, unicode)
       clearIssue(unicode)
-      db.exec('COMMIT')
-    } catch (error) {
-      db.exec('ROLLBACK')
-      throw error
-    }
+    })
   }
 
   async function loadIds(): Promise<Map<string, string[]>> {

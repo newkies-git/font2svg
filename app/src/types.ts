@@ -3,7 +3,12 @@ export type Pt = [number, number]
 export type RefSource = 'MMH' | 'ACJK' | 'NAVER' | 'IDS' | 'OLLAMA_IDS' | 'MANUAL' | 'FONT' | 'NONE'
 export type IssueStatus = 'OPEN' | 'DRAFT' | 'APPROVED'
 export type CapType = 'NONE' | 'AUTO_ROUND' | 'REF_STAMP'
-export type BackgroundMode = 'outline' | 'silhouette' | 'none'
+export type ThemeMode = 'system' | 'light' | 'dark'
+export type StatusFilter = 'ALL' | IssueStatus
+
+export type LayerKind = 'FONT' | 'MMH' | 'ACJK' | 'NAVER' | 'STROKES' | 'MEDIANS' | 'NUMBERS' | 'CUSTOM'
+export type LayerColor = 'none' | 'ink' | 'slate' | 'blue' | 'violet' | 'green' | 'amber' | 'rose'
+export type EditorTool = 'select' | 'bezier' | 'median' | 'knife'
 
 export type RadicalInfo = {
   id: number
@@ -37,6 +42,32 @@ export type StrokeRecord = {
   is_radical: 0 | 1
   start_cap_type: CapType
   end_cap_type: CapType
+}
+
+export type LayerRecord = {
+  id: string
+  kind: LayerKind
+  name: string
+  z_index: number
+  visible: boolean
+  opacity: number
+  locked: boolean
+  label_color: LayerColor
+  available: boolean
+  modified: boolean
+  source_url: string | null
+  strokes: StrokeRecord[]
+  paths: string[]
+}
+
+export type LayerMetaPatch = {
+  id: string
+  name?: string
+  z_index?: number
+  visible?: boolean
+  opacity?: number
+  locked?: boolean
+  label_color?: LayerColor
 }
 
 export type CompiledRadical = {
@@ -82,6 +113,7 @@ export type CharacterDetail = {
   last_modified_at: string
   last_modified_by: string
   strokes: StrokeRecord[]
+  layers: LayerRecord[]
   history_count: number
 }
 
