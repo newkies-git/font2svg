@@ -47,6 +47,7 @@ const {
   transformScope,
   selectedStrokeIndex,
   knifeFrom,
+  connectPoints,
   dirtyIds,
   syncFromDetail,
   selectLayer,
@@ -76,6 +77,10 @@ const {
   deleteMedianVertex,
   cancelKnife,
   applyKnifePoint,
+  cancelConnect,
+  undoConnectPoint,
+  applyConnectPoint,
+  commitConnectOutline,
   saveAllDirtyLayers,
   resetLayerToOriginal,
   fetchReferenceForLayer,
@@ -135,6 +140,24 @@ function onGlobalKeyDown(event: KeyboardEvent) {
     selectTool('knife')
     return
   }
+  if (keyLower === 'p') {
+    event.preventDefault()
+    selectTool('connect')
+    return
+  }
+
+  if (activeTool.value === 'connect') {
+    if (event.key === 'Enter') {
+      event.preventDefault()
+      commitConnectOutline()
+      return
+    }
+    if (event.key === 'Backspace') {
+      event.preventDefault()
+      undoConnectPoint()
+      return
+    }
+  }
 
   if (event.shiftKey && activeTool.value === 'select' && !isEditableLocked.value) {
     const step = 2
@@ -180,6 +203,7 @@ function onGlobalKeyDown(event: KeyboardEvent) {
     else play()
   } else if (event.key === 'Escape') {
     if (knifeFrom.value) cancelKnife()
+    else if (connectPoints.value.length) cancelConnect()
   }
 }
 
@@ -440,6 +464,7 @@ onBeforeUnmount(() => {
         :locked="isEditableLocked"
         :has-font="Boolean(fontLayer?.paths.length)"
         :knife-from="knifeFrom"
+        :connect-points="connectPoints"
         :dirty-count="dirtyIds.size"
         :work-stroke-count="workStrokeCount"
         :busy="busy"
@@ -448,6 +473,9 @@ onBeforeUnmount(() => {
         @reverse-median="reverseActiveStrokeMedian()"
         @resegment="resegmentActiveByFont"
         @cancel-knife="cancelKnife"
+        @cancel-connect="cancelConnect"
+        @undo-connect="undoConnectPoint"
+        @commit-connect="commitConnectOutline"
         @unlock="unlockActiveLayers"
         @save="saveAllDirtyLayers"
         @approve="approve"
@@ -476,8 +504,11 @@ onBeforeUnmount(() => {
               :shown="shown"
               :reveal="reveal"
               :knife-from="knifeFrom"
+              :connect-points="connectPoints"
               @select-item="selectStrokeItem"
               @knife-point="applyKnifePoint"
+              @connect-point="applyConnectPoint"
+              @commit-connect="commitConnectOutline"
               @restore-snapshot="restoreActiveSnapshot"
               @transform-by="applyAffineToActive"
               @update-path="updateSinglePathInActive"

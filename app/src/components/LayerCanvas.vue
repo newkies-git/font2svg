@@ -26,11 +26,14 @@ const props = defineProps<{
   shown: number
   reveal: number
   knifeFrom: Pt | null
+  connectPoints: Pt[]
 }>()
 
 const emit = defineEmits<{
   selectItem: [index: number]
   knifePoint: [point: Pt]
+  connectPoint: [point: Pt]
+  commitConnect: []
   transformBy: [fn: (x: number, y: number) => Pt, scaleFactor: number]
   restoreSnapshot: [strokes: StrokeRecord[], paths: string[]]
   updatePath: [index: number, path: string]
@@ -40,6 +43,90 @@ const emit = defineEmits<{
 }>()
 
 const worldGroup = ref<SVGGElement | null>(null)
+const loupeVisible = ref(false)
+const loupeFont = ref<Pt | null>(null)
+const LOUPE_ZOOM = 2.8
+const LOUPE_RADIUS = 58
+const LOUPE_OFFSET = 78
+
+const loupeEnabled = computed(
+  () => props.tool === 'bezier' || props.tool === 'median' || props.tool === 'knife' || props.tool === 'connect',
+)
+
+/** 글자 윤곽이 0~CANVAS를 벗어날 때 균등 축소·중앙 정렬해 캔버스 안에 넣는다. */
+const FIT_PAD = CANVAS * 0.05
+
+const contentBBox = computed<BBox | null>(() => {
+  let minX = Infinity
+  let minY = Infinity
+  let maxX = -Infinity
+  let maxY = -Infinity
+  const absorb = (b: BBox | null) => {
+    if (!b) return
+    if (b.minX < minX) minX = b.minX
+    if (b.minY < minY) minY = b.minY
+    if (b.maxX > maxX) maxX = b.maxX
+    if (b.maxY > maxY) maxY = b.maxY
+  }
+  for (const layer of props.orderedLayers) {
+    if (!layer.visible) continue
+    if (layer.kind === 'MEDIANS' || layer.kind === 'NUMBERS') continue
+    if (layer.strokes.length > 0) {
+      const list = layer.kind === 'STROKES' ? visibleStrokesOfWork(layer.strokes) : layer.strokes
+      absorb(strokesBBox(list))
+    } else if (layer.paths.length > 0) {
+      absorb(pathsBBox(layer.paths))
+    }
+  }
+  return Number.isFinite(minX) ? { minX, minY, maxX, maxY } : null
+})
+
+const contentFit = computed(() => {
+  const b = contentBBox.value
+  if (!b) return { scale: 1, ox: 0, oy: 0 }
+  const overflows = b.minX < 0 || b.minY < 0 || b.maxX > CANVAS || b.maxY > CANVAS
+  if (!overflows) return { scale: 1, ox: 0, oy: 0 }
+  const bw = Math.max(1, b.maxX - b.minX)
+  const bh = Math.max(1, b.maxY - b.minY)
+  const inner = CANVAS - 2 * FIT_PAD
+  // 넘칠 때만 축소·중앙 정렬한다. 이미 들어가는 글자는 키우지 않는다.
+  const scale = Math.min(inner / bw, inner / bh, 1)
+  const cx = (b.minX + b.maxX) / 2
+  const cy = (b.minY + b.maxY) / 2
+  return {
+    scale,
+    ox: CANVAS / 2 - cx * scale,
+    oy: CANVAS / 2 - cy * scale,
+  }
+})
+
+const worldTransform = computed(() => {
+  const { scale, ox, oy } = contentFit.value
+  if (scale === 1 && ox === 0 && oy === 0) return `translate(0 ${CANVAS}) scale(1 -1)`
+  return `translate(0 ${CANVAS}) scale(1 -1) translate(${ox} ${oy}) scale(${scale})`
+})
+
+function fontToScreen(pt: Pt): { x: number; y: number } {
+  const { scale, ox, oy } = contentFit.value
+  const fx = ox + pt[0] * scale
+  const fy = oy + pt[1] * scale
+  return { x: fx, y: CANVAS - fy }
+}
+
+const loupeScreen = computed(() => {
+  const pt = loupeFont.value
+  if (!pt) return null
+  return fontToScreen(pt)
+})
+
+const loupeLens = computed(() => {
+  const s = loupeScreen.value
+  if (!s) return null
+  // 커서를 가리지 않도록 우상단으로 오프셋
+  const cx = Math.min(CANVAS - LOUPE_RADIUS - 4, Math.max(LOUPE_RADIUS + 4, s.x + LOUPE_OFFSET * 0.55))
+  const cy = Math.min(CANVAS - LOUPE_RADIUS - 4, Math.max(LOUPE_RADIUS + 4, s.y - LOUPE_OFFSET * 0.75))
+  return { cx, cy, sx: s.x, sy: s.y }
+})
 
 function eventToFont(event: PointerEvent | MouseEvent): Pt | null {
   const ctm = worldGroup.value?.getScreenCTM()
@@ -199,24 +286,58 @@ function cloneStrokes(list: StrokeRecord[]): StrokeRecord[] {
   return list.map((s) => ({ ...s, median_points: s.median_points.map((p): Pt => [p[0], p[1]]) }))
 }
 
+function onCanvasPointerMove(event: PointerEvent) {
+  if (!loupeEnabled.value) {
+    loupeVisible.value = false
+    return
+  }
+  const pt = eventToFont(event)
+  if (!pt) {
+    loupeVisible.value = false
+    return
+  }
+  loupeFont.value = pt
+  loupeVisible.value = true
+}
+
+function onCanvasPointerLeave() {
+  loupeVisible.value = false
+}
+
 function onCanvasPointerDown(event: PointerEvent) {
   if (event.button !== 0) return
   const pt = eventToFont(event)
   if (!pt) return
   if (props.tool === 'knife') {
     emit('knifePoint', pt)
+    return
   }
+  if (props.tool === 'connect' && !props.locked) {
+    emit('connectPoint', pt)
+  }
+}
+
+function onCanvasDblClick(event: MouseEvent) {
+  if (props.tool !== 'connect' || props.locked) return
+  event.preventDefault()
+  if (props.connectPoints.length >= 3) emit('commitConnect')
 }
 
 function onShapePointerDown(layerId: string, index: number, event: PointerEvent) {
   if (event.button !== 0) return
-  if (props.tool === 'knife') return // 칼 도구는 상위 SVG 클릭으로 전달
+  if (props.tool === 'knife' || props.tool === 'connect') return // 칼·연결 도구는 상위 SVG 클릭으로 전달
   if (props.editableLayer?.id !== layerId) return
   event.stopPropagation()
   emit('selectItem', index)
   if (props.tool === 'select' && !props.locked) {
     startMoveDrag(event)
   }
+}
+
+function connectLabel(idx: number, total: number): string {
+  if (idx === 0) return '시'
+  if (idx === total - 1 && total > 1) return '끝'
+  return String(idx)
 }
 
 function startMoveDrag(event: PointerEvent) {
@@ -358,8 +479,22 @@ function onMedianLinePointerDown(event: PointerEvent) {
     :viewBox="`0 0 ${CANVAS} ${CANVAS}`"
     tabindex="0"
     @pointerdown="onCanvasPointerDown"
+    @pointermove="onCanvasPointerMove"
+    @pointerleave="onCanvasPointerLeave"
+    @dblclick="onCanvasDblClick"
   >
     <title>{{ selected.char }} {{ selected.reading ? `(${selected.reading})` : '' }} 다중 레이어 뷰어</title>
+
+    <defs>
+      <clipPath id="loupe-clip">
+        <circle
+          v-if="loupeLens"
+          :cx="loupeLens.cx"
+          :cy="loupeLens.cy"
+          :r="LOUPE_RADIUS - 2"
+        />
+      </clipPath>
+    </defs>
 
     <!-- 배경 격자 가이드 (캔버스 중심선 십자선) -->
     <g class="canvas-grid" aria-hidden="true">
@@ -367,7 +502,7 @@ function onMedianLinePointerDown(event: PointerEvent) {
       <line x1="0" :y1="CANVAS / 2" :x2="CANVAS" :y2="CANVAS / 2" />
     </g>
 
-    <g ref="worldGroup" :transform="`translate(0 ${CANVAS}) scale(1 -1)`">
+    <g id="canvas-world" ref="worldGroup" :transform="worldTransform">
       <template v-for="layer in orderedLayers" :key="layer.id">
         <!-- 1. 궁서체(TTF) 윤곽 레이어 -->
         <g
@@ -610,6 +745,80 @@ function onMedianLinePointerDown(event: PointerEvent) {
         <circle r="14" class="knife-point-pulse" />
         <circle r="5" class="knife-point" />
       </g>
+
+      <!-- E. 윤곽 연결(connect) 점·미리보기 -->
+      <g v-if="tool === 'connect' && connectPoints.length > 0" class="overlay-connect">
+        <polyline
+          v-if="connectPoints.length > 1"
+          :points="pointsOf(connectPoints)"
+          class="connect-guide"
+        />
+        <line
+          v-if="connectPoints.length >= 3"
+          class="connect-close-hint"
+          :x1="connectPoints[connectPoints.length - 1][0]"
+          :y1="connectPoints[connectPoints.length - 1][1]"
+          :x2="connectPoints[0][0]"
+          :y2="connectPoints[0][1]"
+        />
+        <g
+          v-for="(pt, ptIdx) in connectPoints"
+          :key="`cp-${ptIdx}`"
+          :transform="`translate(${pt[0]} ${pt[1]})`"
+        >
+          <circle
+            :r="ptIdx === 0 || ptIdx === connectPoints.length - 1 ? 13 : 10"
+            class="connect-vertex"
+            :class="{
+              'is-start': ptIdx === 0,
+              'is-end': ptIdx === connectPoints.length - 1 && ptIdx > 0,
+            }"
+          />
+          <text transform="scale(1 -1)" class="connect-vertex-label" text-anchor="middle" dominant-baseline="central">
+            {{ connectLabel(ptIdx, connectPoints.length) }}
+          </text>
+        </g>
+      </g>
+    </g>
+
+    <!-- 돋보기: 정밀 도구(베지어·중심선·칼·윤곽연결)에서 커서 주변을 확대 -->
+    <g
+      v-if="loupeVisible && loupeLens && loupeEnabled"
+      class="overlay-loupe"
+      aria-hidden="true"
+      style="pointer-events: none"
+    >
+      <circle :cx="loupeLens.cx" :cy="loupeLens.cy" :r="LOUPE_RADIUS" class="loupe-backdrop" />
+      <g clip-path="url(#loupe-clip)">
+        <g
+          :transform="`translate(${loupeLens.cx} ${loupeLens.cy}) scale(${LOUPE_ZOOM}) translate(${-loupeLens.sx} ${-loupeLens.sy})`"
+        >
+          <use href="#canvas-world" />
+        </g>
+      </g>
+      <circle :cx="loupeLens.cx" :cy="loupeLens.cy" :r="LOUPE_RADIUS" class="loupe-ring" />
+      <line
+        :x1="loupeLens.cx - 10"
+        :y1="loupeLens.cy"
+        :x2="loupeLens.cx + 10"
+        :y2="loupeLens.cy"
+        class="loupe-cross"
+      />
+      <line
+        :x1="loupeLens.cx"
+        :y1="loupeLens.cy - 10"
+        :x2="loupeLens.cx"
+        :y2="loupeLens.cy + 10"
+        class="loupe-cross"
+      />
+      <line
+        class="loupe-leader"
+        :x1="loupeLens.sx"
+        :y1="loupeLens.sy"
+        :x2="loupeLens.cx"
+        :y2="loupeLens.cy"
+      />
+      <circle :cx="loupeLens.sx" :cy="loupeLens.sy" r="3" class="loupe-focus" />
     </g>
   </svg>
   <div v-else class="empty-state">

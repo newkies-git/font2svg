@@ -821,11 +821,13 @@
     align-items: center;
     justify-content: center;
     overflow: hidden;
+    container-type: size;
   }
 
   .layer-canvas-svg {
-    block-size: 100%;
-    inline-size: auto;
+    /* 뷰포트가 좁아도 정사각 유지: 짧은 변에 맞춤 */
+    inline-size: min(100cqw, 100cqh);
+    block-size: min(100cqw, 100cqh);
     max-inline-size: 100%;
     max-block-size: 100%;
     aspect-ratio: 1 / 1;
@@ -835,9 +837,16 @@
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
     touch-action: none;
     cursor: default;
+    overflow: hidden;
   }
 
-  .layer-canvas-svg[data-tool="knife"] {
+  .layer-canvas-svg[data-tool="knife"],
+  .layer-canvas-svg[data-tool="connect"] {
+    cursor: crosshair;
+  }
+
+  .layer-canvas-svg[data-tool="bezier"],
+  .layer-canvas-svg[data-tool="median"] {
     cursor: crosshair;
   }
 
@@ -1849,6 +1858,74 @@
       r: 18px;
       opacity: 0;
     }
+  }
+
+  .connect-guide {
+    fill: none;
+    stroke: #2563eb;
+    stroke-width: 5px;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    pointer-events: none;
+  }
+
+  .connect-close-hint {
+    stroke: #2563eb;
+    stroke-width: 3px;
+    stroke-dasharray: 8 6;
+    opacity: 0.55;
+    pointer-events: none;
+  }
+
+  .connect-vertex {
+    fill: #3b82f6;
+    stroke: #ffffff;
+    stroke-width: 3px;
+    pointer-events: none;
+  }
+
+  .connect-vertex.is-start {
+    fill: #10b981;
+  }
+
+  .connect-vertex.is-end {
+    fill: #f43f5e;
+  }
+
+  .layer-canvas-svg text.connect-vertex-label {
+    font-size: 14px;
+    font-weight: 800;
+    fill: #ffffff;
+    pointer-events: none;
+  }
+
+  .loupe-backdrop {
+    fill: var(--color-bg-surface);
+    stroke: none;
+  }
+
+  .loupe-ring {
+    fill: none;
+    stroke: #0f172a;
+    stroke-width: 3.5px;
+  }
+
+  .loupe-cross {
+    stroke: #ef4444;
+    stroke-width: 1.6px;
+    opacity: 0.85;
+  }
+
+  .loupe-leader {
+    stroke: #64748b;
+    stroke-width: 1.2px;
+    stroke-dasharray: 4 3;
+    opacity: 0.55;
+  }
+
+  .loupe-focus {
+    fill: #ef4444;
+    opacity: 0.9;
   }
 
   /* ==== 5. Modal Dialog ==== */

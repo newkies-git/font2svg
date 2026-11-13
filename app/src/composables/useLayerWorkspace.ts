@@ -54,6 +54,7 @@ export function useLayerWorkspace(
   const selectedStrokeIndex = ref<number>(0)
   const selectedMedianPointIndex = ref<number | null>(null)
   const knifeFrom = ref<Pt | null>(null)
+  const connectPoints = ref<Pt[]>([])
   const dirtyIds = ref<Set<string>>(new Set())
   const soloSnapshot = ref<Record<string, boolean> | null>(null)
 
@@ -95,6 +96,7 @@ export function useLayerWorkspace(
     dirtyIds.value = new Set()
     soloSnapshot.value = null
     knifeFrom.value = null
+    connectPoints.value = []
     selectedMedianPointIndex.value = null
     if (!layers.value.some((l) => l.id === activeLayerId.value)) {
       activeLayerId.value = 'strokes'
@@ -145,6 +147,7 @@ export function useLayerWorkspace(
   function selectLayer(layerId: string) {
     activeLayerId.value = layerId
     knifeFrom.value = null
+    connectPoints.value = []
     selectedMedianPointIndex.value = null
     const picked = layers.value.find((l) => l.id === layerId)
     if (picked?.kind === 'MEDIANS') {
@@ -163,7 +166,84 @@ export function useLayerWorkspace(
   function selectTool(tool: EditorTool) {
     activeTool.value = tool
     knifeFrom.value = null
+    connectPoints.value = []
     selectedMedianPointIndex.value = null
+    if (tool === 'connect') {
+      message.value = '윤곽 연결: 시작점 → 중간점(여러 개) → 끝점을 클릭한 뒤 Enter로 연결하세요.'
+    }
+  }
+
+  function roundPt(p: Pt): Pt {
+    return [Math.round(p[0] * 10) / 10, Math.round(p[1] * 10) / 10]
+  }
+
+  function pointsToClosedPath(points: Pt[]): string {
+    const pts = points.map(roundPt)
+    const [x0, y0] = pts[0]
+    let d = `M ${x0} ${y0}`
+    for (let i = 1; i < pts.length; i++) d += ` L ${pts[i][0]} ${pts[i][1]}`
+    return `${d} Z`
+  }
+
+  function cancelConnect() {
+    if (connectPoints.value.length === 0) return
+    connectPoints.value = []
+    message.value = '윤곽 연결이 취소되었습니다.'
+  }
+
+  function undoConnectPoint() {
+    if (connectPoints.value.length === 0) return
+    connectPoints.value = connectPoints.value.slice(0, -1)
+    message.value =
+      connectPoints.value.length === 0
+        ? '윤곽 연결: 시작점을 클릭하세요.'
+        : `윤곽 연결: ${connectPoints.value.length}점 지정됨 (Enter 연결 · ⌫ 되돌리기 · Esc 취소)`
+  }
+
+  function applyConnectPoint(point: Pt) {
+    const target = guardUnlocked()
+    if (!target) return
+    const next = roundPt(point)
+    const prev = connectPoints.value[connectPoints.value.length - 1]
+    if (prev && Math.hypot(prev[0] - next[0], prev[1] - next[1]) < 1.5) return
+    connectPoints.value = [...connectPoints.value, next]
+    const n = connectPoints.value.length
+    if (n === 1) message.value = '윤곽 연결: 중간점 또는 끝점을 클릭하세요.'
+    else if (n === 2) message.value = '윤곽 연결: 끝점(또는 추가 중간점)을 클릭하세요. 3점 이상이면 Enter로 연결.'
+    else message.value = `윤곽 연결: ${n}점 지정됨 — Enter/더블클릭으로 닫힌 윤곽 연결 (⌫ 되돌리기 · Esc 취소)`
+  }
+
+  function commitConnectOutline() {
+    const target = guardUnlocked()
+    if (!target) return
+    if (connectPoints.value.length < 3) {
+      error.value = '윤곽 연결에는 시작·중간·끝 포함 최소 3점이 필요합니다.'
+      return
+    }
+    const path = pointsToClosedPath(connectPoints.value)
+    connectPoints.value = []
+    const idx = selectedStrokeIndex.value
+
+    if (target.kind === 'FONT' && target.strokes.length === 0) {
+      if (!target.paths[idx]) return
+      const copy = target.paths.slice()
+      copy[idx] = path
+      updateTargetPaths(copy, '윤곽을 지정한 점으로 다시 연결했습니다. [레이어 저장]을 누르면 반영됩니다.')
+      return
+    }
+
+    const stroke = target.strokes[idx]
+    if (!stroke) return
+    const median = recoverMedian(path, stroke.stroke_width)
+    const pts = median.median.map((p): Pt => [Math.round(p.x * 10) / 10, Math.round(p.y * 10) / 10])
+    const copy = target.strokes.map(cloneStroke)
+    copy[idx] = {
+      ...copy[idx],
+      outline_path: path,
+      median_points: pts.length >= 2 ? pts : copy[idx].median_points,
+      stroke_width: median.width,
+    }
+    updateTargetStrokes(copy, `${idx + 1}획 윤곽을 지정한 점으로 다시 연결했습니다. [레이어 저장]을 누르면 반영됩니다.`)
   }
 
   function selectStrokeItem(index: number) {
@@ -904,6 +984,7 @@ export function useLayerWorkspace(
     selectedStrokeIndex,
     selectedMedianPointIndex,
     knifeFrom,
+    connectPoints,
     dirtyIds,
     syncFromDetail,
     selectLayer,
@@ -935,6 +1016,10 @@ export function useLayerWorkspace(
     deleteMedianVertex,
     cancelKnife,
     applyKnifePoint,
+    cancelConnect,
+    undoConnectPoint,
+    applyConnectPoint,
+    commitConnectOutline,
     saveActiveLayer,
     saveAllDirtyLayers,
     resetLayerToOriginal,

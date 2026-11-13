@@ -8,7 +8,7 @@ export type StatusFilter = 'ALL' | IssueStatus
 
 export type LayerKind = 'FONT' | 'MMH' | 'ACJK' | 'NAVER' | 'STROKES' | 'MEDIANS' | 'NUMBERS' | 'CUSTOM'
 export type LayerColor = 'none' | 'ink' | 'slate' | 'blue' | 'violet' | 'green' | 'amber' | 'rose'
-export type EditorTool = 'select' | 'bezier' | 'median' | 'knife'
+export type EditorTool = 'select' | 'bezier' | 'median' | 'knife' | 'connect'
 
 export type RadicalInfo = {
   id: number

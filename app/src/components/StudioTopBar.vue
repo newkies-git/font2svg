@@ -11,6 +11,7 @@ defineProps<{
   locked: boolean
   hasFont: boolean
   knifeFrom: Pt | null
+  connectPoints: Pt[]
   dirtyCount: number
   workStrokeCount: number
   busy: boolean
@@ -22,6 +23,9 @@ const emit = defineEmits<{
   reverseMedian: []
   resegment: []
   cancelKnife: []
+  cancelConnect: []
+  undoConnect: []
+  commitConnect: []
   unlock: []
   save: []
   approve: []
@@ -131,16 +135,54 @@ function runMenuAction(fn: () => void) {
           type="button"
           class="bar-btn"
           :disabled="locked || busy || !editableLayer?.strokes.length"
-          title="현재 중심선을 기준으로 궁서체 윤곽을 다시 획별로 분할합니다"
+          title="현재 중심선을 기준으로 궁서체 윤곽을 다시 획별로 분할합니다. 정밀 지정 시 캔버스 돋보기를 활용하세요."
           @click="emit('resegment')"
         >
           윤곽 재분할
+        </button>
+        <span class="knife-inline-pill" role="status" title="중심선·베지어·칼·윤곽연결 도구에서 커서 주변을 확대합니다">돋보기 ON</span>
+      </template>
+
+      <template v-else-if="tool === 'connect'">
+        <span class="knife-inline-pill" role="status">
+          <template v-if="connectPoints.length === 0">시작점 클릭</template>
+          <template v-else>{{ connectPoints.length }}점 — Enter 연결</template>
+        </span>
+        <button
+          type="button"
+          class="bar-btn"
+          :disabled="locked || busy || connectPoints.length < 3"
+          title="지정한 시작·중간·끝점으로 닫힌 윤곽을 만듭니다 (Enter)"
+          @click="emit('commitConnect')"
+        >
+          윤곽 연결
+        </button>
+        <button
+          type="button"
+          class="bar-btn"
+          :disabled="connectPoints.length === 0"
+          title="마지막 점 되돌리기 (⌫)"
+          @click="emit('undoConnect')"
+        >
+          점 되돌리기
+        </button>
+        <button
+          v-if="connectPoints.length"
+          type="button"
+          class="bar-btn"
+          @click="emit('cancelConnect')"
+        >
+          취소 (Esc)
         </button>
       </template>
 
       <template v-else-if="tool === 'knife' && knifeFrom">
         <span class="knife-inline-pill" role="status">분할 시작점 지정됨 — 끝점 클릭</span>
         <button type="button" class="bar-btn" @click="emit('cancelKnife')">취소 (Esc)</button>
+      </template>
+
+      <template v-else-if="tool === 'bezier' || tool === 'knife'">
+        <span class="knife-inline-pill" role="status" title="정밀 편집 시 커서 주변을 확대합니다">돋보기 ON</span>
       </template>
     </div>
 
