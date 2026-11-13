@@ -1,19 +1,11 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, ref } from 'vue'
+import { useCanvasDrag, type ResizeDir } from '../composables/useCanvasDrag.ts'
+import { useCanvasFit, visibleWorkStrokes } from '../composables/useCanvasFit.ts'
+import { useCanvasLoupe } from '../composables/useCanvasLoupe.ts'
 import { BADGE_RADIUS, CANVAS } from '../lib/constants.ts'
-import {
-  moveEditableHandle,
-  parseEditablePath,
-  pathsBBox,
-  serializeEditablePath,
-  strokesBBox,
-  type BBox,
-  type EditableSeg,
-  type HandleRef,
-} from '../lib/vectorEdit.ts'
+import { parseEditablePath, pathsBBox, strokesBBox, type BBox } from '../lib/vectorEdit.ts'
 import type { CharacterDetail, EditorTool, LayerRecord, Pt, StrokeRecord } from '../types.ts'
-
-type ResizeDir = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
 
 const props = defineProps<{
   selected: CharacterDetail | null
@@ -43,97 +35,20 @@ const emit = defineEmits<{
 }>()
 
 const worldGroup = ref<SVGGElement | null>(null)
-const loupeVisible = ref(false)
-const loupeFont = ref<Pt | null>(null)
-const LOUPE_ZOOM = 2.8
-const LOUPE_RADIUS = 58
-const LOUPE_OFFSET = 78
-
-const loupeEnabled = computed(
-  () => props.tool === 'bezier' || props.tool === 'median' || props.tool === 'knife' || props.tool === 'connect',
+const { worldTransform, fontToScreen, eventToFont } = useCanvasFit(
+  () => props.orderedLayers,
+  () => props.shown,
+  worldGroup,
 )
-
-/** 글자 윤곽이 0~CANVAS를 벗어날 때 균등 축소·중앙 정렬해 캔버스 안에 넣는다. */
-const FIT_PAD = CANVAS * 0.05
-
-const contentBBox = computed<BBox | null>(() => {
-  let minX = Infinity
-  let minY = Infinity
-  let maxX = -Infinity
-  let maxY = -Infinity
-  const absorb = (b: BBox | null) => {
-    if (!b) return
-    if (b.minX < minX) minX = b.minX
-    if (b.minY < minY) minY = b.minY
-    if (b.maxX > maxX) maxX = b.maxX
-    if (b.maxY > maxY) maxY = b.maxY
-  }
-  for (const layer of props.orderedLayers) {
-    if (!layer.visible) continue
-    if (layer.kind === 'MEDIANS' || layer.kind === 'NUMBERS') continue
-    if (layer.strokes.length > 0) {
-      const list = layer.kind === 'STROKES' ? visibleStrokesOfWork(layer.strokes) : layer.strokes
-      absorb(strokesBBox(list))
-    } else if (layer.paths.length > 0) {
-      absorb(pathsBBox(layer.paths))
-    }
-  }
-  return Number.isFinite(minX) ? { minX, minY, maxX, maxY } : null
-})
-
-const contentFit = computed(() => {
-  const b = contentBBox.value
-  if (!b) return { scale: 1, ox: 0, oy: 0 }
-  const overflows = b.minX < 0 || b.minY < 0 || b.maxX > CANVAS || b.maxY > CANVAS
-  if (!overflows) return { scale: 1, ox: 0, oy: 0 }
-  const bw = Math.max(1, b.maxX - b.minX)
-  const bh = Math.max(1, b.maxY - b.minY)
-  const inner = CANVAS - 2 * FIT_PAD
-  // 넘칠 때만 축소·중앙 정렬한다. 이미 들어가는 글자는 키우지 않는다.
-  const scale = Math.min(inner / bw, inner / bh, 1)
-  const cx = (b.minX + b.maxX) / 2
-  const cy = (b.minY + b.maxY) / 2
-  return {
-    scale,
-    ox: CANVAS / 2 - cx * scale,
-    oy: CANVAS / 2 - cy * scale,
-  }
-})
-
-const worldTransform = computed(() => {
-  const { scale, ox, oy } = contentFit.value
-  if (scale === 1 && ox === 0 && oy === 0) return `translate(0 ${CANVAS}) scale(1 -1)`
-  return `translate(0 ${CANVAS}) scale(1 -1) translate(${ox} ${oy}) scale(${scale})`
-})
-
-function fontToScreen(pt: Pt): { x: number; y: number } {
-  const { scale, ox, oy } = contentFit.value
-  const fx = ox + pt[0] * scale
-  const fy = oy + pt[1] * scale
-  return { x: fx, y: CANVAS - fy }
-}
-
-const loupeScreen = computed(() => {
-  const pt = loupeFont.value
-  if (!pt) return null
-  return fontToScreen(pt)
-})
-
-const loupeLens = computed(() => {
-  const s = loupeScreen.value
-  if (!s) return null
-  // 커서를 가리지 않도록 우상단으로 오프셋
-  const cx = Math.min(CANVAS - LOUPE_RADIUS - 4, Math.max(LOUPE_RADIUS + 4, s.x + LOUPE_OFFSET * 0.55))
-  const cy = Math.min(CANVAS - LOUPE_RADIUS - 4, Math.max(LOUPE_RADIUS + 4, s.y - LOUPE_OFFSET * 0.75))
-  return { cx, cy, sx: s.x, sy: s.y }
-})
-
-function eventToFont(event: PointerEvent | MouseEvent): Pt | null {
-  const ctm = worldGroup.value?.getScreenCTM()
-  if (!ctm) return null
-  const pt = new DOMPoint(event.clientX, event.clientY).matrixTransform(ctm.inverse())
-  return [pt.x, pt.y]
-}
+const {
+  loupeVisible,
+  loupeEnabled,
+  loupeLens,
+  LOUPE_ZOOM,
+  LOUPE_RADIUS,
+  onCanvasPointerMove,
+  onCanvasPointerLeave,
+} = useCanvasLoupe(() => props.tool, fontToScreen, eventToFont)
 
 function lengthOf(points: Pt[]): number {
   let length = 0
@@ -155,7 +70,7 @@ function pointsOf(points: Pt[]): string {
 }
 
 function visibleStrokesOfWork(strokes: StrokeRecord[]): StrokeRecord[] {
-  return strokes.slice(0, Math.max(0, Math.min(strokes.length, props.shown)))
+  return visibleWorkStrokes(strokes, props.shown)
 }
 
 // 작업 획(STROKES) 레이어의 표시 대상 획 목록
@@ -273,37 +188,28 @@ const targetMedianPoints = computed<Pt[]>(() => {
   return ed.strokes[props.selectedIndex]?.median_points ?? []
 })
 
-// ---- 포인터 드래그 세션 관리 (누적 반올림 오차 방지용 스냅샷 기반) ----
-let cleanupDrag: (() => void) | null = null
-
-function stopActiveDrag() {
-  cleanupDrag?.()
-  cleanupDrag = null
-}
-
-onBeforeUnmount(stopActiveDrag)
-
-function cloneStrokes(list: StrokeRecord[]): StrokeRecord[] {
-  return list.map((s) => ({ ...s, median_points: s.median_points.map((p): Pt => [p[0], p[1]]) }))
-}
-
-function onCanvasPointerMove(event: PointerEvent) {
-  if (!loupeEnabled.value) {
-    loupeVisible.value = false
-    return
-  }
-  const pt = eventToFont(event)
-  if (!pt) {
-    loupeVisible.value = false
-    return
-  }
-  loupeFont.value = pt
-  loupeVisible.value = true
-}
-
-function onCanvasPointerLeave() {
-  loupeVisible.value = false
-}
+const {
+  startMoveDrag,
+  startResizeDrag,
+  startBezierHandleDrag,
+  onMedianVertexPointerDown,
+  onMedianLinePointerDown,
+} = useCanvasDrag({
+  editableLayer: () => props.editableLayer,
+  locked: () => props.locked,
+  selectedIndex: () => props.selectedIndex,
+  activeBBox: () => activeBBox.value,
+  targetBezierPath: () => targetBezierPath.value,
+  eventToFont,
+  emit: {
+    restoreSnapshot: (strokes, paths) => emit('restoreSnapshot', strokes, paths),
+    transformBy: (fn, scaleFactor) => emit('transformBy', fn, scaleFactor),
+    updatePath: (index, path) => emit('updatePath', index, path),
+    moveMedianVertex: (strokeIdx, ptIdx, to) => emit('moveMedianVertex', strokeIdx, ptIdx, to),
+    addMedianVertex: (strokeIdx, at) => emit('addMedianVertex', strokeIdx, at),
+    deleteMedianVertex: (strokeIdx, ptIdx) => emit('deleteMedianVertex', strokeIdx, ptIdx),
+  },
+})
 
 function onCanvasPointerDown(event: PointerEvent) {
   if (event.button !== 0) return
@@ -339,134 +245,6 @@ function connectLabel(idx: number, total: number): string {
   if (idx === 0) return '시'
   if (idx === total - 1 && total > 1) return '끝'
   return String(idx)
-}
-
-function startMoveDrag(event: PointerEvent) {
-  const ed = props.editableLayer
-  const startPt = eventToFont(event)
-  if (!ed || !startPt || props.locked) return
-  stopActiveDrag()
-  const snapStrokes = cloneStrokes(ed.strokes)
-  const snapPaths = ed.paths.slice()
-
-  const onMove = (moveEvent: PointerEvent) => {
-    const cur = eventToFont(moveEvent)
-    if (!cur) return
-    const dx = cur[0] - startPt[0]
-    const dy = cur[1] - startPt[1]
-    emit('restoreSnapshot', cloneStrokes(snapStrokes), snapPaths.slice())
-    emit('transformBy', (x, y) => [x + dx, y + dy], 1)
-  }
-  const onUp = () => stopActiveDrag()
-  window.addEventListener('pointermove', onMove)
-  window.addEventListener('pointerup', onUp, { once: true })
-  cleanupDrag = () => {
-    window.removeEventListener('pointermove', onMove)
-    window.removeEventListener('pointerup', onUp)
-  }
-}
-
-function startResizeDrag(dir: ResizeDir, event: PointerEvent) {
-  event.stopPropagation()
-  const ed = props.editableLayer
-  const box = activeBBox.value
-  const startPt = eventToFont(event)
-  if (!ed || !box || !startPt || props.locked) return
-  stopActiveDrag()
-
-  const snapStrokes = cloneStrokes(ed.strokes)
-  const snapPaths = ed.paths.slice()
-  const initBox = { ...box }
-  const w0 = Math.max(4, initBox.maxX - initBox.minX)
-  const h0 = Math.max(4, initBox.maxY - initBox.minY)
-
-  const anchorX = dir.includes('w') ? initBox.maxX : dir.includes('e') ? initBox.minX : (initBox.minX + initBox.maxX) / 2
-  const anchorY = dir.includes('s') ? initBox.maxY : dir.includes('n') ? initBox.minY : (initBox.minY + initBox.maxY) / 2
-
-  const onMove = (moveEvent: PointerEvent) => {
-    const cur = eventToFont(moveEvent)
-    if (!cur) return
-    let sx = 1
-    let sy = 1
-    if (dir.includes('e')) sx = Math.max(0.1, (cur[0] - anchorX) / w0)
-    else if (dir.includes('w')) sx = Math.max(0.1, (anchorX - cur[0]) / w0)
-
-    if (dir.includes('n')) sy = Math.max(0.1, (cur[1] - anchorY) / h0)
-    else if (dir.includes('s')) sy = Math.max(0.1, (anchorY - cur[1]) / h0)
-
-    if (moveEvent.shiftKey) {
-      const uni = dir === 'n' || dir === 's' ? sy : dir === 'e' || dir === 'w' ? sx : (sx + sy) / 2
-      sx = uni
-      sy = uni
-    }
-
-    emit('restoreSnapshot', cloneStrokes(snapStrokes), snapPaths.slice())
-    emit(
-      'transformBy',
-      (x, y) => [anchorX + (x - anchorX) * sx, anchorY + (y - anchorY) * sy],
-      (sx + sy) / 2,
-    )
-  }
-  const onUp = () => stopActiveDrag()
-  window.addEventListener('pointermove', onMove)
-  window.addEventListener('pointerup', onUp, { once: true })
-  cleanupDrag = () => {
-    window.removeEventListener('pointermove', onMove)
-    window.removeEventListener('pointerup', onUp)
-  }
-}
-
-function startBezierHandleDrag(handle: HandleRef, event: PointerEvent) {
-  event.stopPropagation()
-  const d = targetBezierPath.value
-  if (!d || props.locked) return
-  stopActiveDrag()
-  const initialSegs: EditableSeg[] = parseEditablePath(d)
-  const targetIdx = props.selectedIndex
-
-  const onMove = (moveEvent: PointerEvent) => {
-    const cur = eventToFont(moveEvent)
-    if (!cur) return
-    const updated = moveEditableHandle(initialSegs, handle, cur)
-    emit('updatePath', targetIdx, serializeEditablePath(updated))
-  }
-  const onUp = () => stopActiveDrag()
-  window.addEventListener('pointermove', onMove)
-  window.addEventListener('pointerup', onUp, { once: true })
-  cleanupDrag = () => {
-    window.removeEventListener('pointermove', onMove)
-    window.removeEventListener('pointerup', onUp)
-  }
-}
-
-function onMedianVertexPointerDown(ptIdx: number, event: PointerEvent) {
-  event.stopPropagation()
-  if (props.locked) return
-  if (event.altKey) {
-    emit('deleteMedianVertex', props.selectedIndex, ptIdx)
-    return
-  }
-  stopActiveDrag()
-  const strokeIdx = props.selectedIndex
-  const onMove = (moveEvent: PointerEvent) => {
-    const cur = eventToFont(moveEvent)
-    if (!cur) return
-    emit('moveMedianVertex', strokeIdx, ptIdx, cur)
-  }
-  const onUp = () => stopActiveDrag()
-  window.addEventListener('pointermove', onMove)
-  window.addEventListener('pointerup', onUp, { once: true })
-  cleanupDrag = () => {
-    window.removeEventListener('pointermove', onMove)
-    window.removeEventListener('pointerup', onUp)
-  }
-}
-
-function onMedianLinePointerDown(event: PointerEvent) {
-  event.stopPropagation()
-  if (props.locked) return
-  const pt = eventToFont(event)
-  if (pt) emit('addMedianVertex', props.selectedIndex, pt)
 }
 </script>
 

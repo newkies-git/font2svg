@@ -1,0 +1,342 @@
+import { createHash } from 'node:crypto'
+import fs from 'node:fs'
+import path from 'node:path'
+import type { DatabaseSync } from 'node:sqlite'
+import {
+  ACJK_BATCH_LIMIT,
+  ACJK_FILE_LIMIT,
+  IDS_FILE_LIMIT,
+  IDS_MAX_DEPTH,
+  MISSING_FETCH_LIMIT,
+} from '../src/lib/constants.ts'
+import type { Pt } from '../src/types.ts'
+import { transaction } from './db.ts'
+import type { FontFile } from './font.ts'
+import { fitMedians, roundPoints, splitByContours, type Box, type ImportedStrokes } from './geometry.ts'
+import {
+  askOllama,
+  IDS_BOOK,
+  IDS_FILE,
+  IDS_HEADER,
+  IDS_LAYOUTS,
+  IDS_ORIGINS,
+  IDS_URL,
+  LEAF_FORMS,
+  parseIds,
+  parseIdsFile,
+  WHOLE_BOX,
+  type IdsNode,
+  type IdsSource,
+} from './ids.ts'
+import {
+  ACTION_ACJK,
+  ACTION_NAVER,
+  ACTOR_ACJK,
+  ACTOR_FONT,
+  ACTOR_HANJA,
+  ACTOR_IDS,
+  ACTOR_NAVER,
+  ACTOR_USER,
+} from './model.ts'
+import {
+  ACJK_BLOB,
+  ACJK_RAW,
+  ACJK_VARIANTS,
+  ACJK_VERSION,
+  fetchHanja,
+  fetchLimited,
+  fetchNaver,
+  HANJA_VERSION,
+  hanjaStrokes,
+  hanjaUrl,
+  medianOrRecovered,
+  NAVER_VERSION,
+  naverUrl,
+  parseHanja,
+  type Found,
+  type HanjaGlyph,
+  type Remote,
+} from './references.ts'
+import { toItems, type StrokeStore } from './strokeStore.ts'
+
+type IssueWriter = {
+  setIssue: (unicode: string, reason: string, by: string, status?: 'OPEN' | 'DRAFT', inFont?: boolean) => void
+  clearIssue: (unicode: string) => void
+}
+
+export function createReferencePipeline(
+  db: DatabaseSync,
+  rootDir: string,
+  deps: {
+    strokes: StrokeStore
+    issues: IssueWriter
+    getFont: () => FontFile | null
+    fontOrGiven: (char: string, medians: Pt[][], outlines: string[]) => ImportedStrokes
+  },
+) {
+  const { strokes, issues, getFont, fontOrGiven } = deps
+  let idsIndex: Map<string, string[]> | undefined
+  let acjkIndex: Map<string, { raw: string; url: string }> | undefined
+
+  async function loadSource<T>(unicode: string, source: 'MMH' | 'ACJK' | 'NAVER', url: string, fetchFresh: () => Promise<Remote<T>>): Promise<Found<T> | null> {
+    const cached = db.prepare('SELECT found, raw_data, source_url FROM reference_data WHERE unicode = ? AND source = ?')
+      .get(unicode, source) as { found: number; raw_data: string | null; source_url: string | null } | undefined
+    if (cached) {
+      if (!cached.source_url) db.prepare('UPDATE reference_data SET source_url = ? WHERE unicode = ? AND source = ?').run(url, unicode, source)
+      if (!cached.found || !cached.raw_data) return null
+      const value = parseHanja(cached.raw_data) as T | null
+      return value ? { url: cached.source_url || url, raw: cached.raw_data, value } : null
+    }
+    try {
+      const fresh = await fetchFresh()
+      db.prepare(`
+        INSERT INTO reference_data (unicode, source, source_version, source_url, raw_data, raw_sha256, found)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        unicode,
+        source,
+        source === 'MMH' ? HANJA_VERSION : source === 'ACJK' ? ACJK_VERSION : NAVER_VERSION,
+        fresh.url,
+        fresh.value ? fresh.raw : null,
+        fresh.value ? createHash('sha256').update(fresh.raw).digest('hex') : null,
+        fresh.value ? 1 : 0,
+      )
+      return fresh.value ? { ...fresh, value: fresh.value } : null
+    } catch {
+      return null
+    }
+  }
+
+  // 네이버 한자사전(한국 획순)을 먼저 보고, 없으면 AnimCJK, 그다음 Hanja(중국 기준)를 본다.
+  async function loadReference(unicode: string, char: string) {
+    const naver = await loadSource(unicode, 'NAVER', naverUrl(char), () => fetchNaver(char))
+    if (naver) return { source: 'NAVER' as const, ...naver }
+    const acjk = await loadSource(unicode, 'ACJK', ACJK_BLOB, () => fetchAcjk(char))
+    if (acjk) return { source: 'ACJK' as const, ...acjk }
+    const hanja = await loadSource(unicode, 'MMH', hanjaUrl(char), () => fetchHanja(char))
+    return hanja ? { source: 'MMH' as const, ...hanja } : null
+  }
+
+  // 글자별 원본은 graphics 한 줄에 dictionary의 분해식(acjk)을 붙인 JSON이다. 내려받지 못하면 던진다(없는 글자로 기록하지 않기 위해).
+  async function loadAcjk(): Promise<Map<string, { raw: string; url: string }>> {
+    if (acjkIndex) return acjkIndex
+    const read = async (name: string) => {
+      const file = path.join(rootDir, 'database', name)
+      if (!fs.existsSync(file)) {
+        const response = await fetchLimited(`${ACJK_RAW}/${name}`, ACJK_FILE_LIMIT)
+        if (!response.ok) throw new Error(`AnimCJK ${name} 응답 ${response.status}`)
+        fs.writeFileSync(file, response.text)
+      }
+      return fs.readFileSync(file, 'utf-8')
+    }
+    const lines = (text: string) => text.split('\n').filter(Boolean).map((line) => JSON.parse(line) as { character: string; strokes?: unknown; medians?: unknown; acjk?: string })
+    const index = new Map<string, { raw: string; url: string }>()
+    for (const variant of ACJK_VARIANTS) {
+      const graphics = `graphics${variant}.txt`
+      const dictionary = new Map(lines(await read(`dictionary${variant}.txt`)).map((entry) => [entry.character, entry.acjk]))
+      for (const entry of lines(await read(graphics))) {
+        index.set(entry.character, {
+          raw: JSON.stringify({ strokes: entry.strokes, medians: entry.medians, acjk: dictionary.get(entry.character) }),
+          url: `${ACJK_BLOB}/${graphics}`,
+        })
+      }
+    }
+    acjkIndex = index
+    return index
+  }
+
+  async function fetchAcjk(char: string): Promise<Remote<HanjaGlyph>> {
+    const found = (await loadAcjk()).get(char)
+    return { url: found?.url ?? ACJK_BLOB, raw: found?.raw ?? '', value: found ? parseHanja(found.raw) : null }
+  }
+
+  function saveImported(unicode: string, source: string, url: string | null, radical: number[], glyph: ImportedStrokes, action = `${source} 가져오기`) {
+    const { medians, fontOutline } = glyph
+    // 궁서체 윤곽으로 나눠졌으면 궁서체 교체와 같은 상태다(이후 레퍼런스가 중심선을 되덮지 않는다).
+    const by = fontOutline ? ACTOR_FONT : source === 'MMH' ? ACTOR_HANJA : source === 'NAVER' ? ACTOR_NAVER : ACTOR_ACJK
+    transaction(db, () => {
+      strokes.writeStrokes(unicode, toItems(glyph, new Set(radical)), by, action, { source, url }, fontOutline)
+      db.prepare('DELETE FROM working_data WHERE char = (SELECT char FROM characters WHERE unicode = ?)').run(unicode)
+      db.prepare('UPDATE characters SET stroke_count = ?, last_modified_by = ? WHERE unicode = ?')
+        .run(medians.length, by, unicode)
+      issues.clearIssue(unicode)
+    })
+  }
+
+  async function loadIds(): Promise<Map<string, string[]>> {
+    if (idsIndex) return idsIndex
+    const file = path.join(rootDir, IDS_FILE)
+    if (!fs.existsSync(file)) {
+      try {
+        const response = await fetchLimited(IDS_URL, IDS_FILE_LIMIT)
+        if (!response.ok || !response.text.includes(IDS_HEADER)) return new Map()
+        fs.writeFileSync(file, response.text)
+      } catch {
+        return new Map()
+      }
+    }
+    idsIndex = parseIdsFile(fs.readFileSync(file, 'utf-8'))
+    return idsIndex
+  }
+
+  // 글자의 획이 DB에 있으면 box에 맞춰 쓰고, 없으면 공개 IDS로 한 단계 더 쪼갠다.
+  function mediansOfChar(char: string, box: Box, depth: number): Pt[][] | null {
+    const row = db.prepare('SELECT unicode FROM characters WHERE char = ?').get(char) as { unicode: string } | undefined
+    const known = row ? strokes.readStrokes(row.unicode) : []
+    if (known.length > 0) return fitMedians(known.map((stroke) => stroke.median_points), box)
+    if (depth >= IDS_MAX_DEPTH) return null
+    for (const ids of idsIndex?.get(char) ?? []) {
+      const node = parseIds(ids)
+      const medians = node && composeNode(node, box, depth + 1)
+      if (medians?.length) return medians
+    }
+    return null
+  }
+
+  function composeNode(node: IdsNode, box: Box, depth: number): Pt[][] | null {
+    if ('leaf' in node) return mediansOfChar(LEAF_FORMS[node.leaf] ?? node.leaf, box, depth)
+    const layout = IDS_LAYOUTS[node.op]
+    const [left, bottom, right, top] = box
+    const medians: Pt[][] = []
+    for (let index = 0; index < layout.length; index++) {
+      const [x0, y0, x1, y1] = layout[index]
+      const sub: Box = [left + x0 * (right - left), bottom + y0 * (top - bottom), left + x1 * (right - left), bottom + y1 * (top - bottom)]
+      const part = composeNode(node.children[index], sub, depth)
+      if (!part) return null
+      medians.push(...part)
+    }
+    return medians
+  }
+
+  function composeFrom(ids: string): Pt[][] | null {
+    const node = parseIds(ids)
+    if (!node || 'leaf' in node) return null
+    const medians = composeNode(node, WHOLE_BOX, 0)
+    return medians?.length ? medians : null
+  }
+
+  // 사람이 적은 IDS → 공개 IDS(BabelStone) → Ollama 순서로 시도한다.
+  async function composeIds(char: string): Promise<{ ids: string; source: IdsSource; medians: Pt[][] } | null> {
+    const known = IDS_BOOK[char]
+    const knownMedians = known ? composeFrom(known) : null
+    if (known && knownMedians) return { ids: known, source: 'MANUAL', medians: knownMedians }
+    for (const ids of (await loadIds()).get(char) ?? []) {
+      const medians = composeFrom(ids)
+      if (medians) return { ids, source: 'IDS', medians }
+    }
+    const asked = await askOllama(char)
+    const askedMedians = asked ? composeFrom(asked) : null
+    return asked && askedMedians ? { ids: asked, source: 'OLLAMA', medians: askedMedians } : null
+  }
+
+  async function ensureReference(unicode: string) {
+    const character = strokes.requireCharacter(unicode)
+    const existing = strokes.readStrokes(unicode)
+    if (existing.length > 0) {
+      const hanja = await loadReference(unicode, character.char)
+      const row = db.prepare('SELECT last_modified_by AS by, origin FROM strokes WHERE char = ?').get(character.char) as { by: string; origin: string }
+      // 사용자가 고쳤거나 궁서체 윤곽으로 바꾼 획은 레퍼런스 중심선으로 덮어쓰지 않는다. 가져온 출처가 같을 때만 갱신한다.
+      if (hanja && hanja.source === row.origin && hanja.value.medians.length === existing.length && row.by !== ACTOR_USER && row.by !== ACTOR_FONT) {
+        const radical = new Set(hanja.value.radical)
+        strokes.writeStrokes(unicode, existing.map((stroke, index) => ({
+          ...stroke,
+          median_points: roundPoints(medianOrRecovered(hanja.value.medians[index], stroke.outline_path) ?? stroke.median_points),
+          is_radical: radical.has(index) ? 1 : 0,
+        })), ACTOR_HANJA, '레퍼런스 중심선 갱신', { source: hanja.source, url: hanja.url })
+      }
+      return { unicode, source: hanja ? hanja.source : 'DB', fetched: false }
+    }
+
+    if (db.prepare('SELECT 1 FROM working_data WHERE char = ?').get(character.char)) return { unicode, source: 'WORKING', fetched: false }
+
+    const hanja = await loadReference(unicode, character.char)
+    const imported = hanja ? hanjaStrokes(hanja.value) : null
+    if (hanja && imported) {
+      saveImported(unicode, hanja.source, hanja.url, hanja.value.radical, fontOrGiven(character.char, imported.medians, imported.outlines))
+      return { unicode, source: hanja.source, fetched: true }
+    }
+    // Hanja에 없는 글자는 strokes가 아니라 작업 데이터(working_data)에 쓰고 issues에 올린다. 승인해야 strokes로 간다.
+    const composed = await composeIds(character.char)
+    const contours = getFont()?.contours(character.char) ?? null
+    transaction(db, () => {
+      if (composed) {
+        // IDS 합성 중심선을 길잡이로 궁서체 윤곽을 획별로 나눈다. 못 나누면 전체 윤곽과 띠 모양 획을 둔다.
+        const split = contours && splitByContours(contours, composed.medians)
+        const [origin, originUrl] = IDS_ORIGINS[composed.source]
+        const glyph = split || { medians: composed.medians, outlines: [] }
+        strokes.writeWorking(unicode, { source: origin, url: originUrl, fontOutline: glyph.fontOutline ?? contours ?? [], items: toItems(glyph, new Set()) }, ACTOR_IDS)
+        issues.setIssue(unicode, `Hanja에 없음: ${origin} 합성 초안`, ACTOR_IDS, 'DRAFT', Boolean(contours))
+      } else if (contours) {
+        strokes.writeWorking(unicode, { source: 'FONT', url: null, fontOutline: contours, items: [] }, ACTOR_FONT)
+        issues.setIssue(unicode, 'Hanja에 없고 IDS 합성 실패: 궁서체 윤곽만 추출', ACTOR_FONT, 'OPEN', true)
+      } else {
+        issues.setIssue(unicode, 'Hanja, 궁서체, IDS 합성 모두 실패', ACTOR_IDS)
+      }
+    })
+    return { unicode, source: composed?.source ?? (contours ? 'FONT' : 'NONE'), fetched: Boolean(composed || contours) }
+  }
+
+  async function syncMissing(limit = MISSING_FETCH_LIMIT) {
+    const rows = db.prepare(`
+      SELECT c.unicode FROM characters c
+      WHERE NOT EXISTS (SELECT 1 FROM strokes s WHERE s.char = c.char)
+        AND NOT EXISTS (SELECT 1 FROM working_data w WHERE w.char = c.char)
+      ORDER BY c.unicode LIMIT ?
+    `).all(limit) as { unicode: string }[]
+    const results = []
+    for (const row of rows) results.push(await ensureReference(row.unicode))
+    db.exec('PRAGMA wal_checkpoint(TRUNCATE)')
+    return { tried: results.length, results }
+  }
+
+  // 획순이 틀린 글자를 사람이 지정해 네이버 한자사전 획순으로 바꾼다. 사람이 고친 글자도 바꾸며(실행 취소로 되돌린다),
+  // 바뀌기 전 strokes 행은 strokes_history에 남고 같은 글자의 작업 데이터는 지워진다. 네이버에 없으면 아무것도 바꾸지 않는다.
+  async function applyNaver(unicode: string) {
+    const character = strokes.requireCharacter(unicode)
+    const naver = await loadSource(unicode, 'NAVER', naverUrl(character.char), () => fetchNaver(character.char))
+    const imported = naver ? hanjaStrokes(naver.value) : null
+    if (!naver || !imported) throw new Error('네이버 한자사전에서 이 글자의 획순을 찾지 못했습니다.')
+    saveImported(unicode, 'NAVER', naver.url, naver.value.radical, fontOrGiven(character.char, imported.medians, imported.outlines), ACTION_NAVER)
+  }
+
+  type AcjkResult = 'REPLACED' | 'EDITED' | 'ALREADY' | 'NOT_IN_ACJK'
+
+  // 이미 있는 글자(strokes 또는 승인 전 작업 데이터)를 AnimCJK 데이터로 바꾼다. 사람이 고친 글자는 건너뛴다.
+  // 바뀌기 전 strokes 행은 strokes_history에 남고, 같은 글자의 작업 데이터는 지워진다.
+  async function applyAcjk(unicode: string): Promise<AcjkResult> {
+    const character = strokes.requireCharacter(unicode)
+    const acjk = await loadSource(unicode, 'ACJK', ACJK_BLOB, () => fetchAcjk(character.char))
+    const imported = acjk ? hanjaStrokes(acjk.value) : null
+    if (!acjk || !imported) return 'NOT_IN_ACJK'
+    const current = (db.prepare('SELECT origin, last_modified_by AS by FROM strokes WHERE char = ?').get(character.char) ??
+      db.prepare('SELECT source AS origin, last_modified_by AS by FROM working_data WHERE char = ?').get(character.char)) as { origin: string; by: string } | undefined
+    if (current?.by === ACTOR_USER) return 'EDITED'
+    if (current?.origin === 'ACJK') return 'ALREADY'
+    saveImported(unicode, 'ACJK', acjk.url, acjk.value.radical, fontOrGiven(character.char, imported.medians, imported.outlines), ACTION_ACJK)
+    return 'REPLACED'
+  }
+
+  // after 다음 유니코드부터 limit자를 처리한다. next가 null이면 끝.
+  async function applyAcjkBatch(after: string, limit = ACJK_BATCH_LIMIT) {
+    const rows = db.prepare('SELECT unicode, char FROM characters WHERE unicode > ? ORDER BY unicode LIMIT ?').all(after, limit) as { unicode: string; char: string }[]
+    const counts: Record<AcjkResult, number> = { REPLACED: 0, EDITED: 0, ALREADY: 0, NOT_IN_ACJK: 0 }
+    const edited: string[] = []
+    for (const row of rows) {
+      const result = await applyAcjk(row.unicode)
+      counts[result] += 1
+      if (result === 'EDITED') edited.push(row.char)
+    }
+    db.exec('PRAGMA wal_checkpoint(TRUNCATE)')
+    return { processed: rows.length, counts, edited, next: rows.length === limit ? rows[rows.length - 1].unicode : null }
+  }
+
+  return {
+    loadSource,
+    fetchAcjk,
+    saveImported,
+    ensureReference,
+    syncMissing,
+    applyNaver,
+    applyAcjkBatch,
+  }
+}
