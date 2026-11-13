@@ -164,12 +164,13 @@ const workStrokes = computed<StrokeRecord[]>(() => {
   return work ? visibleStrokesOfWork(work.strokes) : []
 })
 
-const mediansVisible = computed(() => props.orderedLayers.find((l) => l.kind === 'MEDIANS')?.visible ?? true)
-const numbersVisible = computed(() => props.orderedLayers.find((l) => l.kind === 'NUMBERS')?.visible ?? true)
-
-function isOnlyVisible(layerId: string): boolean {
-  return props.orderedLayers.every((l) => (l.id === layerId ? l.visible : !l.visible))
-}
+/** 중심선·번호 오버레이는 현재 편집 대상 레이어의 획만 쓴다. 표시 여부는 MEDIANS/NUMBERS 레이어 visible로만 제어한다. */
+const overlayStrokes = computed<StrokeRecord[]>(() => {
+  const ed = props.editableLayer
+  if (!ed || ed.strokes.length === 0) return []
+  if (ed.kind === 'STROKES') return visibleStrokesOfWork(ed.strokes)
+  return ed.strokes
+})
 
 // 선택·변환 바운딩 박스
 const activeBBox = computed<BBox | null>(() => {
@@ -555,24 +556,6 @@ function onMedianLinePointerDown(event: PointerEvent) {
             :d="stroke.outline_path"
             @pointerdown="onShapePointerDown(layer.id, sIdx, $event)"
           />
-          <template v-if="mediansVisible || isOnlyVisible(layer.id)">
-            <polyline
-              v-for="(stroke, sIdx) in layer.strokes"
-              :key="`${layer.id}-m-${sIdx}`"
-              class="ref-median"
-              :points="pointsOf(stroke.median_points)"
-            />
-          </template>
-          <template v-if="numbersVisible || isOnlyVisible(layer.id)">
-            <g
-              v-for="(stroke, sIdx) in layer.strokes"
-              :key="`${layer.id}-n-${sIdx}`"
-              :transform="`translate(${stroke.median_points[0][0]} ${stroke.median_points[0][1]}) scale(1 -1)`"
-            >
-              <circle r="20" class="ref-num-badge" />
-              <text class="ref-num-text" text-anchor="middle" dominant-baseline="central">{{ sIdx + 1 }}</text>
-            </g>
-          </template>
         </g>
 
         <!-- 3. 최종 작업 획 레이어 (STROKES — 재생 애니메이션 지원) -->
@@ -613,29 +596,31 @@ function onMedianLinePointerDown(event: PointerEvent) {
           />
         </g>
 
-        <!-- 4. 중심선 오버레이 레이어 (MEDIANS) -->
+        <!-- 4. 중심선 오버레이 레이어 (MEDIANS) — 편집 대상 레이어의 중심선 -->
         <g
           v-else-if="layer.visible && layer.kind === 'MEDIANS'"
           class="svg-layer layer-medians"
           :opacity="layer.opacity"
+          :data-color="editableLayer?.label_color ?? 'amber'"
         >
           <polyline
-            v-for="(stroke, sIdx) in workStrokes"
+            v-for="(stroke, sIdx) in overlayStrokes"
             :key="`ov-median-${sIdx}`"
             class="median-stroke"
-            :class="{ 'is-current-median': editableLayer?.id === 'strokes' && sIdx === selectedIndex }"
+            :class="{ 'is-current-median': sIdx === selectedIndex }"
             :points="pointsOf(stroke.median_points)"
           />
         </g>
 
-        <!-- 5. 획순 번호 오버레이 레이어 (NUMBERS) -->
+        <!-- 5. 획순 번호 오버레이 레이어 (NUMBERS) — 편집 대상 레이어의 획순 -->
         <g
           v-else-if="layer.visible && layer.kind === 'NUMBERS'"
           class="svg-layer layer-numbers"
           :opacity="layer.opacity"
+          :data-color="editableLayer?.label_color ?? 'rose'"
         >
           <g
-            v-for="(stroke, index) in workStrokes"
+            v-for="(stroke, index) in overlayStrokes"
             :key="`ov-num-${index}`"
             :transform="`translate(${stroke.median_points[0][0]} ${stroke.median_points[0][1]}) scale(1 -1)`"
           >
