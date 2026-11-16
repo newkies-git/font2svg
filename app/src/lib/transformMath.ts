@@ -9,7 +9,7 @@ export type PointMap = (x: number, y: number) => Pt
 // 회전 각도를 이 값(도)의 배수로 맞춘다(Shift).
 const ROTATE_SNAP_DEG = 15
 // 기울임·왜곡에서 박스 변이 이 길이보다 짧으면 0으로 나누지 않도록 최소값으로 본다.
-export const MIN_BOX_SIDE = 4
+const MIN_BOX_SIDE = 4
 
 const RAD_PER_DEG = Math.PI / 180
 
@@ -97,4 +97,48 @@ export function distortMap(box: BBox, dir: HandleDir, start: Pt, current: Pt): {
     return sum + (x * ny - nx * y)
   }, 0)
   return { map, areaRatio: Math.abs(twice / 2) / (w * h) }
+}
+
+// 크기 조절 시 뒤집힘을 막는 최소 배율
+const MIN_SCALE = 0.1
+
+// 크기 조절: 끈 핸들의 반대편을 고정하고 박스를 늘이거나 줄인다. Shift는 가로·세로 같은 비율.
+function scaleMap(box: BBox, dir: HandleDir, current: Pt, uniform: boolean): { fn: PointMap; scaleFactor: number } {
+  const w0 = Math.max(MIN_BOX_SIDE, box.maxX - box.minX)
+  const h0 = Math.max(MIN_BOX_SIDE, box.maxY - box.minY)
+  const anchorX = dir.includes('w') ? box.maxX : dir.includes('e') ? box.minX : (box.minX + box.maxX) / 2
+  const anchorY = dir.includes('s') ? box.maxY : dir.includes('n') ? box.minY : (box.minY + box.maxY) / 2
+  let sx = 1
+  let sy = 1
+  if (dir.includes('e')) sx = Math.max(MIN_SCALE, (current[0] - anchorX) / w0)
+  else if (dir.includes('w')) sx = Math.max(MIN_SCALE, (anchorX - current[0]) / w0)
+
+  if (dir.includes('n')) sy = Math.max(MIN_SCALE, (current[1] - anchorY) / h0)
+  else if (dir.includes('s')) sy = Math.max(MIN_SCALE, (anchorY - current[1]) / h0)
+
+  if (uniform) {
+    const ratio = dir === 'n' || dir === 's' ? sy : dir === 'e' || dir === 'w' ? sx : (sx + sy) / 2
+    sx = ratio
+    sy = ratio
+  }
+  return { fn: (x, y): Pt => [anchorX + (x - anchorX) * sx, anchorY + (y - anchorY) * sy], scaleFactor: (sx + sy) / 2 }
+}
+
+// 핸들을 start에서 current까지 끌었을 때의 점 변환. 변형 방식에 따라 크기·회전·기울임·왜곡 중 하나를 만든다.
+// scaleFactor는 획 폭을 함께 키우는 데 쓴다(이동·회전·기울임은 1).
+export function dragTransform(
+  mode: TransformMode,
+  box: BBox,
+  dir: HandleDir,
+  start: Pt,
+  current: Pt,
+  shiftKey: boolean,
+): { fn: PointMap; scaleFactor: number } {
+  if (mode === 'rotate') return { fn: rotateMap([(box.minX + box.maxX) / 2, (box.minY + box.maxY) / 2], start, current, shiftKey), scaleFactor: 1 }
+  if (mode === 'skew') return { fn: skewMap(box, dir, start, current), scaleFactor: 1 }
+  if (mode === 'distort') {
+    const { map, areaRatio } = distortMap(box, dir, start, current)
+    return { fn: map, scaleFactor: Math.sqrt(areaRatio) }
+  }
+  return scaleMap(box, dir, current, shiftKey)
 }
