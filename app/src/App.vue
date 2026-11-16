@@ -12,19 +12,17 @@ import { createBusyRunner } from './composables/useBusyAction.ts'
 import { useCharacterList } from './composables/useCharacterList.ts'
 import { useLayerWorkspace } from './composables/useLayerWorkspace.ts'
 import { usePlayback } from './composables/usePlayback.ts'
+import { useStudioState } from './composables/useStudioState.ts'
 import { useTheme } from './composables/useTheme.ts'
 import { apiRequest, apiUrl, characterUrl } from './lib/api.ts'
-import { MISSING_FETCH_LIMIT, LAYER_ID, NUDGE_STEP } from './lib/constants.ts'
+import { MISSING_FETCH_LIMIT, LAYER_ID } from './lib/constants.ts'
 import { issueLabel } from './lib/labels.ts'
+import { resolveKeyAction } from './lib/keymap.ts'
 import type { CharacterDetail, CharacterSummary } from './types.ts'
 
-const selected = ref<CharacterDetail | null>(null)
-const message = ref('편집할 한자를 좌측 목록에서 선택하세요.')
-const error = ref('')
-const busy = ref(false)
+const studio = useStudioState()
+const { selected, message, error, busy, shown, reveal } = studio
 const run = createBusyRunner(busy, error)
-const shown = ref(0)
-const reveal = ref(1)
 const confirmDialog = ref<InstanceType<typeof ConfirmDialog> | null>(null)
 
 const { chars, query, statusFilter, filteredChars, statusCounts, loadList, clearSearch } = useCharacterList(error)
@@ -96,7 +94,7 @@ const {
   refreshOutlineMapping,
   duplicateActiveLayer,
   deleteActiveCustomLayer,
-} = useLayerWorkspace(selected, shown, reveal, message, error, busy, loadList, stop)
+} = useLayerWorkspace(studio, { onReloadList: loadList, stopPlayback: stop })
 
 // 획 윤곽 자동 매핑에서 중심선 길잡이로 쓸 수 있는 레이어(획이 있는 레이어, 작업 획 우선)
 const outlineGuideLayers = computed(() => layers.value
@@ -117,106 +115,60 @@ function onGlobalKeyDown(event: KeyboardEvent) {
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
   if (!selected.value) return
 
-  const keyLower = event.key.toLowerCase()
-  if ((event.metaKey || event.ctrlKey) && !event.altKey) {
-    if (keyLower === 's') {
-      event.preventDefault()
+  const action = resolveKeyAction({
+    key: event.key,
+    meta: event.metaKey,
+    ctrl: event.ctrlKey,
+    alt: event.altKey,
+    shift: event.shiftKey,
+    activeTool: activeTool.value,
+    canNudge: !isEditableLocked.value,
+  })
+  if (!action) return
+  // Esc는 브라우저 기본 동작(전체화면 해제 등)을 그대로 둔다.
+  if (action.type !== 'cancel') event.preventDefault()
+
+  switch (action.type) {
+    case 'save':
       if (!busy.value) void saveAllDirtyLayers()
-      return
-    }
-    if (keyLower === 'z' && !event.shiftKey) {
-      event.preventDefault()
+      break
+    case 'undo':
       if (!busy.value && selected.value.history_count > 0) void undo()
-      return
-    }
-    return
-  }
-  if (event.altKey) return
-
-  if (keyLower === 'v') {
-    event.preventDefault()
-    selectTool('select')
-    return
-  }
-  if (keyLower === 'a') {
-    event.preventDefault()
-    selectTool('bezier')
-    return
-  }
-  if (keyLower === 'm') {
-    event.preventDefault()
-    selectTool('median')
-    return
-  }
-  if (keyLower === 'k') {
-    event.preventDefault()
-    selectTool('knife')
-    return
-  }
-  if (keyLower === 'p') {
-    event.preventDefault()
-    selectTool('connect')
-    return
-  }
-
-  if (activeTool.value === 'connect') {
-    if (event.key === 'Enter') {
-      event.preventDefault()
+      break
+    case 'tool':
+      selectTool(action.tool)
+      break
+    case 'commitConnect':
       commitConnectOutline()
-      return
-    }
-    if (event.key === 'Backspace') {
-      event.preventDefault()
+      break
+    case 'undoConnectPoint':
       undoConnectPoint()
-      return
-    }
-  }
-
-  if (event.shiftKey && activeTool.value === 'select' && !isEditableLocked.value) {
-    const step = NUDGE_STEP
-    if (event.key === 'ArrowLeft') {
-      event.preventDefault()
-      applyAffineToActive((x, y) => [x - step, y], 1)
-      return
-    }
-    if (event.key === 'ArrowRight') {
-      event.preventDefault()
-      applyAffineToActive((x, y) => [x + step, y], 1)
-      return
-    }
-    if (event.key === 'ArrowUp') {
-      event.preventDefault()
-      applyAffineToActive((x, y) => [x, y + step], 1)
-      return
-    }
-    if (event.key === 'ArrowDown') {
-      event.preventDefault()
-      applyAffineToActive((x, y) => [x, y - step], 1)
-      return
-    }
-  }
-
-  if (event.key === 'ArrowLeft') {
-    event.preventDefault()
-    if (shown.value > 1) {
-      shown.value -= 1
-      reveal.value = 1
-      selectedStrokeIndex.value = Math.max(0, shown.value - 1)
-    }
-  } else if (event.key === 'ArrowRight') {
-    event.preventDefault()
-    if (shown.value < workStrokeCount.value) {
-      shown.value += 1
-      reveal.value = 1
-      selectedStrokeIndex.value = shown.value - 1
-    }
-  } else if (event.key === ' ') {
-    event.preventDefault()
-    if (playing.value) stop()
-    else play()
-  } else if (event.key === 'Escape') {
-    if (knifeFrom.value) cancelKnife()
-    else if (connectPoints.value.length) cancelConnect()
+      break
+    case 'nudge':
+      applyAffineToActive((x, y) => [x + action.dx, y + action.dy], 1)
+      break
+    case 'stepPrev':
+      if (shown.value > 1) {
+        shown.value -= 1
+        reveal.value = 1
+        selectedStrokeIndex.value = Math.max(0, shown.value - 1)
+      }
+      break
+    case 'stepNext':
+      if (shown.value < workStrokeCount.value) {
+        shown.value += 1
+        reveal.value = 1
+        selectedStrokeIndex.value = shown.value - 1
+      }
+      break
+    case 'togglePlay':
+      if (playing.value) stop()
+      else play()
+      break
+    case 'cancel':
+      if (knifeFrom.value) cancelKnife()
+      else if (connectPoints.value.length) cancelConnect()
+      break
   }
 }
 

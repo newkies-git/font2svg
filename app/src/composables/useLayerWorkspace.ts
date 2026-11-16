@@ -1,21 +1,16 @@
-import type { Ref } from 'vue'
 import { useLayerAppearance } from './useLayerAppearance.ts'
 import { useLayerCommands } from './useLayerCommands.ts'
 import { useLayerSession } from './useLayerSession.ts'
 import { useStrokeEdit } from './useStrokeEdit.ts'
 import { createLayerEditorState } from './layerEditorState.ts'
-import type { CharacterDetail } from '../types.ts'
+import type { StudioState } from './useStudioState.ts'
 
 export function useLayerWorkspace(
-  selected: Ref<CharacterDetail | null>,
-  shown: Ref<number>,
-  reveal: Ref<number>,
-  message: Ref<string>,
-  error: Ref<string>,
-  busy: Ref<boolean>,
-  onReloadList: () => Promise<void>,
-  stopPlayback: () => void,
+  studio: StudioState,
+  hooks: { onReloadList: () => Promise<void>; stopPlayback: () => void },
 ) {
+  const { selected, shown, reveal, message, error, busy } = studio
+  const { onReloadList, stopPlayback } = hooks
   const state = createLayerEditorState(selected, shown, reveal)
   const session = useLayerSession(state, message, error, stopPlayback)
   let fetchReference: (layerId: string, keepActiveSelection?: boolean) => void = () => {}
