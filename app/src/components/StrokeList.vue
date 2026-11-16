@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { isContourLayer } from '../lib/layerKind.ts'
 import { LAYER_ID } from '../lib/constants.ts'
 import { computed, ref } from 'vue'
 import type { CapType, LayerRecord, StrokeRecord } from '../types.ts'
@@ -24,7 +25,7 @@ const emit = defineEmits<{
   mapContours: [index: number, contours: number[]]
 }>()
 
-const isContourMode = computed(() => props.layer?.kind === 'FONT' && props.layer.strokes.length === 0)
+const isContourMode = computed(() => (props.layer ? isContourLayer(props.layer) : false))
 const strokes = computed<StrokeRecord[]>(() => props.layer?.strokes ?? [])
 const currentStroke = computed<StrokeRecord | null>(() => strokes.value[props.selectedIndex] ?? null)
 

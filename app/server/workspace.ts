@@ -11,6 +11,7 @@ import { createIssues } from './issues.ts'
 import {
   createCustomLayer,
   deleteCustomLayer,
+  fontContoursOf,
   patchLayersMeta,
   resetNonStrokeLayer,
   sanitizeLayerStrokes,
@@ -151,9 +152,8 @@ function createWorkspace(rootDir: string) {
     const radicals = layer.strokes.flatMap((stroke, index) => (stroke.is_radical ? [index] : []))
 
     if (mode === 'fit_font') {
-      const fontLayer = detail.layers.find((item) => item.id === LAYER_ID.font)
-      const contours = fontLayer && fontLayer.paths.length > 0 ? fontLayer.paths : (font.getFont()?.contours(detail.char) ?? null)
-      if (!contours || contours.length === 0) throw new Error('궁서체 윤곽이 없어 자동 분할을 적용할 수 없습니다.')
+      const contours = fontContoursOf(detail)
+      if (contours.length === 0) throw new Error('궁서체 윤곽이 없어 자동 분할을 적용할 수 없습니다.')
       const split = splitByContours(contours, layer.strokes.map((stroke) => stroke.median_points))
       if (!split) {
         throw new Error('궁서체 윤곽 자동 분할 품질 검사를 통과하지 못했습니다. 중심선·위치를 조정하거나 [그대로 적용]을 사용하세요.')
@@ -183,9 +183,8 @@ function createWorkspace(rootDir: string) {
   function resegmentLayer(unicode: string, mediansRaw: unknown) {
     const detail = getCharacter(unicode)
     if (!detail) throw new Error('등록되지 않은 글자입니다.')
-    const fontLayer = detail.layers.find((item) => item.id === LAYER_ID.font)
-    const contours = fontLayer && fontLayer.paths.length > 0 ? fontLayer.paths : (font.getFont()?.contours(detail.char) ?? null)
-    if (!contours || contours.length === 0) throw new Error('궁서체 윤곽이 없어 재분할할 수 없습니다.')
+    const contours = fontContoursOf(detail)
+    if (contours.length === 0) throw new Error('궁서체 윤곽이 없어 재분할할 수 없습니다.')
     if (!Array.isArray(mediansRaw) || mediansRaw.length === 0) throw new Error('중심선 배열이 비어 있습니다.')
     const medians = mediansRaw.map((line, index) => {
       if (!Array.isArray(line) || line.length < 2) throw new Error(`${index + 1}획 중심선은 2점 이상이어야 합니다.`)

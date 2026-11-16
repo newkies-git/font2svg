@@ -1,3 +1,4 @@
+import { isContourLayer } from '../lib/layerKind.ts'
 import { LAYER_ID } from '../lib/constants.ts'
 import type { Ref } from 'vue'
 import { autoFitLayer, autoFitStroke } from '../lib/autoFit.ts'
@@ -78,7 +79,7 @@ export function useStrokeEdit(
   function moveStrokeInActive(index: number, delta: number) {
     const target = guardUnlocked()
     if (!target) return
-    if (target.kind === 'FONT' && target.strokes.length === 0) {
+    if (isContourLayer(target)) {
       const next = index + delta
       if (next < 0 || next >= target.paths.length) return
       const copy = target.paths.slice()
@@ -123,7 +124,7 @@ export function useStrokeEdit(
   function deleteStrokeAt(index: number) {
     const target = guardUnlocked()
     if (!target) return
-    if (target.kind === 'FONT' && target.strokes.length === 0) {
+    if (isContourLayer(target)) {
       if (target.paths.length <= 1) {
         error.value = '마지막 남은 윤곽은 삭제할 수 없습니다.'
         return
@@ -181,7 +182,7 @@ export function useStrokeEdit(
   function applyAffineToActive(fn: (x: number, y: number) => Pt, scaleFactor = 1) {
     const target = guardUnlocked()
     if (!target) return
-    if (target.kind === 'FONT' && target.strokes.length === 0) {
+    if (isContourLayer(target)) {
       if (transformScope.value === 'stroke' && target.paths[selectedStrokeIndex.value]) {
         const copy = target.paths.slice()
         copy[selectedStrokeIndex.value] = transformPath(copy[selectedStrokeIndex.value], fn)
@@ -252,7 +253,7 @@ export function useStrokeEdit(
   function updateSinglePathInActive(index: number, nextPath: string) {
     const target = guardUnlocked()
     if (!target) return
-    if (target.kind === 'FONT' && target.strokes.length === 0) {
+    if (isContourLayer(target)) {
       if (!target.paths[index]) return
       const copy = target.paths.slice()
       copy[index] = nextPath
@@ -328,7 +329,7 @@ export function useStrokeEdit(
     const to = { x: point[0], y: point[1] }
     knifeFrom.value = null
 
-    if (target.kind === 'FONT' && target.strokes.length === 0) {
+    if (isContourLayer(target)) {
       const idx = selectedStrokeIndex.value
       const d = target.paths[idx]
       if (!d) return
@@ -409,7 +410,7 @@ export function useStrokeEdit(
     connectPoints.value = []
     const idx = selectedStrokeIndex.value
 
-    if (target.kind === 'FONT' && target.strokes.length === 0) {
+    if (isContourLayer(target)) {
       if (!target.paths[idx]) return
       const copy = target.paths.slice()
       copy[idx] = path

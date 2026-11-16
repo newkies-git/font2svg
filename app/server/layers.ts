@@ -117,6 +117,12 @@ function readCachedRefStrokes(
   return { strokes, url: row.source_url }
 }
 
+// 작업에 쓸 궁서체 윤곽: 편집된 궁서체(font) 레이어가 있으면 그 윤곽, 없으면 글자에 저장된 궁서체 윤곽. 없으면 빈 배열.
+export function fontContoursOf(detail: { layers: LayerRecord[]; font_outline: string[] }): string[] {
+  const fontLayer = detail.layers.find((layer) => layer.id === LAYER_ID.font)
+  return fontLayer && fontLayer.paths.length > 0 ? fontLayer.paths : detail.font_outline
+}
+
 export function buildCharacterLayers(
   db: DatabaseSync,
   params: {

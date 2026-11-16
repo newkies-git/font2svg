@@ -9,6 +9,9 @@ import {
 } from '../lib/vectorEdit.ts'
 import { distortMap, MIN_BOX_SIDE, rotateMap, skewMap, type HandleDir, type TransformMode } from '../lib/transformMath.ts'
 import type { LayerRecord, Pt, StrokeRecord } from '../types.ts'
+import { cloneStroke } from './layerClone.ts'
+
+const cloneStrokesOf = (list: StrokeRecord[]): StrokeRecord[] => list.map(cloneStroke)
 
 export type ResizeDir = HandleDir
 
@@ -22,10 +25,6 @@ type DragEmit = {
   moveMedianVertex: (strokeIdx: number, ptIdx: number, to: Pt) => void
   addMedianVertex: (strokeIdx: number, at: Pt) => void
   deleteMedianVertex: (strokeIdx: number, ptIdx: number) => void
-}
-
-function cloneStrokes(list: StrokeRecord[]): StrokeRecord[] {
-  return list.map((s) => ({ ...s, median_points: s.median_points.map((p): Pt => [p[0], p[1]]) }))
 }
 
 export function useCanvasDrag(options: {
@@ -54,7 +53,7 @@ export function useCanvasDrag(options: {
     const startPt = eventToFont(event)
     if (!ed || !startPt || locked()) return
     stopActiveDrag()
-    const snapStrokes = cloneStrokes(ed.strokes)
+    const snapStrokes = cloneStrokesOf(ed.strokes)
     const snapPaths = ed.paths.slice()
 
     const onMove = (moveEvent: PointerEvent) => {
@@ -62,7 +61,7 @@ export function useCanvasDrag(options: {
       if (!cur) return
       const dx = cur[0] - startPt[0]
       const dy = cur[1] - startPt[1]
-      emit.restoreSnapshot(cloneStrokes(snapStrokes), snapPaths.slice())
+      emit.restoreSnapshot(cloneStrokesOf(snapStrokes), snapPaths.slice())
       emit.transformBy((x, y) => [x + dx, y + dy], 1)
     }
     const onUp = () => stopActiveDrag()
@@ -83,7 +82,7 @@ export function useCanvasDrag(options: {
     if (!ed || !box || !startPt || locked()) return
     stopActiveDrag()
 
-    const snapStrokes = cloneStrokes(ed.strokes)
+    const snapStrokes = cloneStrokesOf(ed.strokes)
     const snapPaths = ed.paths.slice()
     const initBox = { ...box }
     const mode = transformMode()
@@ -124,7 +123,7 @@ export function useCanvasDrag(options: {
       const cur = eventToFont(moveEvent)
       if (!cur) return
       const { fn, scaleFactor } = buildTransform(cur, moveEvent.shiftKey)
-      emit.restoreSnapshot(cloneStrokes(snapStrokes), snapPaths.slice())
+      emit.restoreSnapshot(cloneStrokesOf(snapStrokes), snapPaths.slice())
       emit.transformBy(fn, scaleFactor)
     }
     const onUp = () => stopActiveDrag()

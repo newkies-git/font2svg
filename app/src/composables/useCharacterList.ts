@@ -1,3 +1,4 @@
+import { apiRequest, apiUrl } from '../lib/api.ts'
 import { computed, onBeforeUnmount, ref, type Ref } from 'vue'
 import type { CharacterSummary, IssueStatus, StatusFilter } from '../types.ts'
 
@@ -31,11 +32,11 @@ export function useCharacterList(error: Ref<string>) {
     listAbortController = new AbortController()
 
     try {
-      const response = await fetch(`/api/characters?q=${encodeURIComponent(query.value)}`, {
-        signal: listAbortController.signal,
-      })
-      if (!response.ok) throw new Error('한자 목록 조회 실패: 서버 연결 상태를 확인하세요.')
-      chars.value = await response.json()
+      chars.value = await apiRequest<CharacterSummary[]>(
+        `${apiUrl('characters')}?q=${encodeURIComponent(query.value)}`,
+        '한자 목록 조회 실패: 서버 연결 상태를 확인하세요.',
+        { signal: listAbortController.signal },
+      )
     } catch (cause) {
       if (cause instanceof DOMException && cause.name === 'AbortError') return
       error.value = cause instanceof Error ? cause.message : '한자 목록 조회 실패: 잠시 후 다시 시도하세요.'

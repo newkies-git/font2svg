@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { isContourLayer } from '../lib/layerKind.ts'
 import { computed, ref } from 'vue'
 import { useCanvasDrag, type ResizeDir } from '../composables/useCanvasDrag.ts'
 import { useCanvasFit, visibleWorkStrokes } from '../composables/useCanvasFit.ts'
@@ -94,7 +95,7 @@ const overlayStrokes = computed<StrokeRecord[]>(() => {
 const activeBBox = computed<BBox | null>(() => {
   const ed = props.editableLayer
   if (!ed || !ed.visible) return null
-  if (ed.kind === 'FONT' && ed.strokes.length === 0) {
+  if (isContourLayer(ed)) {
     if (props.scope === 'stroke') {
       const p = ed.paths[props.selectedIndex]
       return p ? pathsBBox([p]) : null
@@ -123,7 +124,7 @@ const resizeHandles = computed<{ dir: ResizeDir; x: number; y: number }[]>(() =>
 const targetBezierPath = computed<string | null>(() => {
   const ed = props.editableLayer
   if (!ed || props.tool !== 'bezier') return null
-  if (ed.kind === 'FONT' && ed.strokes.length === 0) {
+  if (isContourLayer(ed)) {
     return ed.paths[props.selectedIndex] ?? null
   }
   return ed.strokes[props.selectedIndex]?.outline_path ?? null

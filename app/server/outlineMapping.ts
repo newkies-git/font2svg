@@ -2,7 +2,7 @@ import type { DatabaseSync } from 'node:sqlite'
 import { DEFAULT_STROKE_WIDTH, LAYER_ID } from '../src/lib/constants.ts'
 import type { LayerRecord, StrokeRecord } from '../src/types.ts'
 import { ribbonPath, splitOutlinePieces } from './geometry.ts'
-import { patchLayersMeta, saveNonStrokeLayerContent } from './layers.ts'
+import { fontContoursOf, patchLayersMeta, saveNonStrokeLayerContent } from './layers.ts'
 
 export const OUTLINE_LAYER_ID = LAYER_ID.outline
 const SOURCE_FALLBACK_IDS = [LAYER_ID.naver, LAYER_ID.mmh, LAYER_ID.acjk] as const
@@ -19,10 +19,9 @@ function pickGuideLayer(layers: LayerRecord[], sourceLayerId?: string): LayerRec
 
 type OutlineDetail = { char: string; font_outline: string[]; layers: LayerRecord[] }
 
-function fontContoursOf(detail: OutlineDetail): string[] {
-  const font = detail.layers.find((layer) => layer.id === LAYER_ID.font)
-  const contours = font && font.paths.length > 0 ? font.paths : detail.font_outline
-  if (!contours || contours.length === 0) throw new Error('궁서체 윤곽이 없어 획 윤곽을 만들 수 없습니다.')
+function requireFontContours(detail: OutlineDetail): string[] {
+  const contours = fontContoursOf(detail)
+  if (contours.length === 0) throw new Error('궁서체 윤곽이 없어 획 윤곽을 만들 수 없습니다.')
   return contours
 }
 
@@ -37,7 +36,7 @@ export function createOutlineMapping(db: DatabaseSync, deps: { getCharacter: (un
   // 사람이 직접 매핑한 획(map_manual)은 획 수가 같을 때 그대로 보존한다.
   function generate(unicode: string, sourceLayerId?: string) {
     const detail = requireDetail(unicode)
-    const contours = fontContoursOf(detail)
+    const contours = requireFontContours(detail)
     const guide = pickGuideLayer(detail.layers, sourceLayerId)
     const pieces = splitOutlinePieces(contours, guide.strokes.map((stroke) => stroke.median_points))
     if (!pieces) throw new Error('궁서체 윤곽을 획으로 나누지 못했습니다. 길잡이 레이어를 바꿔 보세요.')
@@ -71,7 +70,7 @@ export function createOutlineMapping(db: DatabaseSync, deps: { getCharacter: (un
   // 획 하나를 궁서체 윤곽(들)에 수작업으로 매핑한다. 빈 배열이면 매핑을 해제하고 중심선 띠 모양으로 되돌린다.
   function mapStroke(unicode: string, strokeIndex: number, contourIndicesRaw: unknown) {
     const detail = requireDetail(unicode)
-    const contours = fontContoursOf(detail)
+    const contours = requireFontContours(detail)
     const layer = detail.layers.find((item) => item.id === OUTLINE_LAYER_ID)
     const target = layer?.strokes[strokeIndex]
     if (!layer || !target) throw new Error('매핑할 획이 없습니다. 먼저 [자동 매핑]으로 획 윤곽을 만드세요.')

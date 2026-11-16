@@ -8,10 +8,12 @@ import StepControls from './components/StepControls.vue'
 import StrokeList from './components/StrokeList.vue'
 import StudioTopBar from './components/StudioTopBar.vue'
 import ToolRail from './components/ToolRail.vue'
+import { createBusyRunner } from './composables/useBusyAction.ts'
 import { useCharacterList } from './composables/useCharacterList.ts'
 import { useLayerWorkspace } from './composables/useLayerWorkspace.ts'
 import { usePlayback } from './composables/usePlayback.ts'
 import { useTheme } from './composables/useTheme.ts'
+import { apiRequest, apiUrl, characterUrl } from './lib/api.ts'
 import { MISSING_FETCH_LIMIT, LAYER_ID } from './lib/constants.ts'
 import { issueLabel } from './lib/labels.ts'
 import type { CharacterDetail, CharacterSummary } from './types.ts'
@@ -20,6 +22,7 @@ const selected = ref<CharacterDetail | null>(null)
 const message = ref('편집할 한자를 좌측 목록에서 선택하세요.')
 const error = ref('')
 const busy = ref(false)
+const run = createBusyRunner(busy, error)
 const shown = ref(0)
 const reveal = ref(1)
 const confirmDialog = ref<InstanceType<typeof ConfirmDialog> | null>(null)
@@ -219,24 +222,16 @@ function onGlobalKeyDown(event: KeyboardEvent) {
 async function uploadInitial(event: Event) {
   const file = (event.target as HTMLInputElement).files?.[0]
   if (!file) return
-  busy.value = true
-  error.value = ''
-  try {
+  await run(async () => {
     const entries = JSON.parse(await file.text()) as unknown
-    const response = await fetch('/api/import', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ entries }),
-    })
-    const body = await response.json()
-    if (!response.ok) throw new Error(body.error ?? '파일 업로드 실패: 올바른 한자 JSON 형식인지 확인하세요.')
+    const body = await apiRequest<{ imported: number }>(
+      apiUrl('import'),
+      '파일 업로드 실패: 올바른 한자 JSON 형식인지 확인하세요.',
+      { method: 'POST', body: { entries } },
+    )
     message.value = `${body.imported}자 등록 완료. 한자 선택 시 레퍼런스 획 데이터를 수신합니다.`
     await loadList()
-  } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : '초기 파일 업로드 실패: 파일 형식과 인코딩을 확인하세요.'
-  } finally {
-    busy.value = false
-  }
+  }, '초기 파일 업로드 실패: 파일 형식과 인코딩을 확인하세요.')
 }
 
 function openFirst() {
@@ -245,16 +240,10 @@ function openFirst() {
 
 async function openChar(row: CharacterSummary) {
   stop()
-  error.value = ''
-  busy.value = true
-  try {
-    const response = await fetch(`/api/characters/${encodeURIComponent(row.unicode)}`)
-    if (!response.ok) throw new Error('한자 정보 조회 실패: 잠시 후 다시 시도하세요.')
-    const detail = (await response.json()) as CharacterDetail
+  await run(async () => {
+    const detail = await apiRequest<CharacterDetail>(characterUrl(row.unicode), '한자 정보 조회 실패: 잠시 후 다시 시도하세요.')
     if (detail.strokes.length === 0 && !detail.issue_status) {
-      const fetched = await fetch(`/api/characters/${encodeURIComponent(row.unicode)}/reference`, { method: 'POST' })
-      const fetchedBody = await fetched.json()
-      if (!fetched.ok) throw new Error(fetchedBody.error ?? '레퍼런스 데이터 수신 실패: 잠시 후 다시 시도하세요.')
+      await apiRequest(characterUrl(row.unicode, 'reference'), '레퍼런스 데이터 수신 실패: 잠시 후 다시 시도하세요.', { method: 'POST' })
       return openChar(row)
     }
     selected.value = detail
@@ -268,11 +257,7 @@ async function openChar(row: CharacterSummary) {
     ]
       .filter(Boolean)
       .join(' · ')
-  } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : '한자 상세 정보 조회 실패: 잠시 후 다시 시도하세요.'
-  } finally {
-    busy.value = false
-  }
+  }, '한자 상세 정보 조회 실패: 잠시 후 다시 시도하세요.')
 }
 
 async function reload() {
@@ -284,136 +269,99 @@ async function reload() {
 }
 
 async function pullReference() {
-  if (!selected.value) return
-  busy.value = true
-  error.value = ''
-  try {
-    const response = await fetch(`/api/characters/${encodeURIComponent(selected.value.unicode)}/reference`, { method: 'POST' })
-    const body = await response.json()
-    if (!response.ok) throw new Error(body.error ?? '레퍼런스 데이터 수신 실패: 잠시 후 다시 시도하세요.')
+  const current = selected.value
+  if (!current) return
+  await run(async () => {
+    const body = await apiRequest<{ source: string }>(
+      characterUrl(current.unicode, 'reference'),
+      '레퍼런스 데이터 수신 실패: 잠시 후 다시 시도하세요.',
+      { method: 'POST' },
+    )
     message.value = body.source === 'NONE' ? '참조 출처(Hanja, IDS) 검색 결과 없음' : `${body.source} 레퍼런스 데이터 반영 완료`
     await reload()
-  } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : '레퍼런스 데이터 수신 실패: 네트워크 상태를 확인하세요.'
-  } finally {
-    busy.value = false
-  }
+  }, '레퍼런스 데이터 수신 실패: 네트워크 상태를 확인하세요.')
 }
 
 async function approve() {
-  if (!selected.value) return
-  if (dirtyIds.value.has(LAYER_ID.strokes)) {
-    await saveAllDirtyLayers()
-    if (error.value) return
-  }
-  busy.value = true
-  error.value = ''
-  try {
-    const response = await fetch(`/api/characters/${encodeURIComponent(selected.value.unicode)}/approve`, { method: 'POST' })
-    const body = await response.json()
-    if (!response.ok) throw new Error(body.error ?? '승인 실패: 작업 데이터를 확인하세요.')
+  const current = selected.value
+  if (!current) return
+  await run(async () => {
+    await apiRequest(characterUrl(current.unicode, 'approve'), '승인 실패: 작업 데이터를 확인하세요.', { method: 'POST' })
     message.value = '작업 데이터를 승인해 최종 획(strokes)으로 옮겼습니다.'
     await reload()
-  } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : '승인 실패: 서버 상태를 확인하세요.'
-  } finally {
-    busy.value = false
-  }
+  }, '승인 실패: 서버 상태를 확인하세요.')
 }
 
 async function importSvg(event: Event) {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
   input.value = ''
-  if (!selected.value || !file) return
-  busy.value = true
-  error.value = ''
-  try {
-    const response = await fetch(`/api/characters/${encodeURIComponent(selected.value.unicode)}/import-svg`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ svg: await file.text() }),
-    })
-    const body = await response.json()
-    if (!response.ok) throw new Error(body.error ?? 'SVG 가져오기 실패: AnimCJK 형식 SVG인지 확인하세요.')
+  const current = selected.value
+  if (!current || !file) return
+  await run(async () => {
+    await apiRequest(
+      characterUrl(current.unicode, 'import-svg'),
+      'SVG 가져오기 실패: AnimCJK 형식 SVG인지 확인하세요.',
+      { method: 'POST', body: { svg: await file.text() } },
+    )
     message.value = 'SVG를 작업 데이터로 가져왔습니다. 확인 후 승인하세요.'
     await reload()
-  } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : 'SVG 가져오기 실패: 서버 상태를 확인하세요.'
-  } finally {
-    busy.value = false
-  }
+  }, 'SVG 가져오기 실패: 서버 상태를 확인하세요.')
 }
 
 async function applyNaver() {
-  if (!selected.value) return
+  const current = selected.value
+  if (!current) return
   if (workStrokeCount.value > 0) {
     const confirmed = await confirmDialog.value?.ask()
     if (!confirmed) return
   }
-  busy.value = true
-  error.value = ''
-  try {
-    const response = await fetch(`/api/characters/${encodeURIComponent(selected.value.unicode)}/apply-naver`, { method: 'POST' })
-    const body = await response.json()
-    if (!response.ok) throw new Error(body.error ?? '네이버 획순 적용 실패: 잠시 후 다시 시도하세요.')
+  await run(async () => {
+    await apiRequest(characterUrl(current.unicode, 'apply-naver'), '네이버 획순 적용 실패: 잠시 후 다시 시도하세요.', { method: 'POST' })
     message.value = '네이버 한자사전 획순을 적용했습니다.'
     await reload()
-  } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : '네이버 획순 적용 실패: 네트워크 상태를 확인하세요.'
-  } finally {
-    busy.value = false
-  }
+  }, '네이버 획순 적용 실패: 네트워크 상태를 확인하세요.')
 }
 
 async function undo() {
-  if (!selected.value) return
-  const response = await fetch(`/api/characters/${encodeURIComponent(selected.value.unicode)}/undo`, { method: 'POST' })
-  const body = await response.json()
-  if (!response.ok) {
-    error.value = body.error ?? '되돌리기 실패: 이전 편집 이력이 없습니다.'
-    return
+  const current = selected.value
+  if (!current) return
+  try {
+    const detail = await apiRequest<CharacterDetail>(characterUrl(current.unicode, 'undo'), '되돌리기 실패: 이전 편집 이력이 없습니다.', { method: 'POST' })
+    selected.value = detail
+    syncFromDetail(detail)
+    message.value = '이전 편집 상태로 복원 완료'
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : '되돌리기 실패: 이전 편집 이력이 없습니다.'
   }
-  const detail = body as CharacterDetail
-  selected.value = detail
-  syncFromDetail(detail)
-  message.value = '이전 편집 상태로 복원 완료'
 }
 
 async function compileChar() {
-  if (!selected.value) return
+  const current = selected.value
+  if (!current) return
   if (dirtyIds.value.has(LAYER_ID.strokes)) {
     await saveAllDirtyLayers()
     if (error.value) return
   }
-  const response = await fetch(`/api/characters/${encodeURIComponent(selected.value.unicode)}/compile`, { method: 'POST' })
-  const body = await response.json()
-  if (!response.ok) {
-    error.value = body.error ?? '컴파일 실패: 획 데이터 유효성을 확인하세요.'
-    await reload()
-    return
+  try {
+    await apiRequest(characterUrl(current.unicode, 'compile'), '컴파일 실패: 획 데이터 유효성을 확인하세요.', { method: 'POST' })
+    message.value = '배포용 컴파일 JSON 생성 완료'
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : '컴파일 실패: 획 데이터 유효성을 확인하세요.'
   }
-  message.value = '배포용 컴파일 JSON 생성 완료'
   await reload()
 }
 
 async function syncMissing() {
-  busy.value = true
-  error.value = ''
-  try {
-    const response = await fetch('/api/sync-missing', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ limit: MISSING_FETCH_LIMIT }),
-    })
-    const body = await response.json()
+  await run(async () => {
+    const body = await apiRequest<{ tried: number }>(
+      apiUrl('sync-missing'),
+      '일괄 레퍼런스 조회 실패: 서버 상태를 확인하세요.',
+      { method: 'POST', body: { limit: MISSING_FETCH_LIMIT } },
+    )
     message.value = `미완료 한자 ${body.tried}자 레퍼런스 조회 완료`
     await loadList()
-  } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : '일괄 레퍼런스 조회 실패: 네트워크 상태를 확인하세요.'
-  } finally {
-    busy.value = false
-  }
+  }, '일괄 레퍼런스 조회 실패: 네트워크 상태를 확인하세요.')
 }
 
 function firstStroke() {
