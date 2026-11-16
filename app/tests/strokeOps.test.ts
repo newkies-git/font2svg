@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { flattenContours } from '../shared/paths.ts'
-import { boxAlignTransform, moveItem, pointsToClosedPath, restrokeFromOutline, roundPt, splitStrokeAtKnife, withMedianPoints } from '../src/lib/strokeOps.ts'
+import { boxAlignTransform, moveItem, pointsToClosedPath, restrokeFromOutline, roundPt, separatePath, separateStroke, splitStrokeAtKnife, withCap, withMedianPoints } from '../src/lib/strokeOps.ts'
 import { rectPath, strokeOf } from './helpers.ts'
 
 test('roundPt·pointsToClosedPath: 소수 첫째 자리로 반올림해 닫힌 경로를 만든다', () => {
@@ -180,4 +180,54 @@ test('ㅍ: 가로 획을 떼어 내도 두 다리가 모두 남고, 가로 획�
   assert.ok(bottomBar)
   assert.deepEqual([bottomBar.start_cap_type, bottomBar.end_cap_type], ['NONE', 'NONE'], '가로 획 양 끝은 다리의 캡을 물려받지 않는다')
   for (const leg of second.filter(isLeg)) assert.ok(boundsOf(leg.outline_path).maxY > TOP_BAR_BOTTOM, '다리 윗끝이 위 가로 안쪽으로 들어간다')
+})
+
+// 가로 막대: x 100~600, y 460~540(폭 80)
+const CAP_BAR = 'M 100 460 L 600 460 L 600 540 L 100 540 Z'
+const CAP_BAR_WIDTH = 80
+
+function capBar() {
+  return strokeOf(CAP_BAR, [[140, 500], [560, 500]], { stroke_width: CAP_BAR_WIDTH })
+}
+
+test('withCap: 모양을 고르면 윤곽이 바뀌고 원본 획은 그대로이며, 기본으로 돌아오면 복원한다', () => {
+  const bar = capBar()
+  const rounded = withCap(bar, 'start', 'AUTO_ROUND')
+  assert.ok(rounded)
+  assert.notEqual(rounded.outline_path, bar.outline_path)
+  assert.equal(rounded.start_cap_type, 'AUTO_ROUND')
+  assert.equal(bar.start_cap_type, 'NONE', '원본은 바뀌지 않는다')
+  assert.equal(bar.outline_path, CAP_BAR)
+  const restored = withCap(rounded, 'start', 'NONE')
+  assert.ok(restored)
+  assert.equal(restored.start_cap_type, 'NONE')
+  assert.notEqual(restored.outline_path, rounded.outline_path)
+})
+
+test('withCap: 도장·직접 그리기, 모양이 없던 곳의 기본은 값만 바꾸고 윤곽을 건드리지 않는다', () => {
+  const bar = capBar()
+  for (const value of ['REF_STAMP', 'MANUAL', 'NONE'] as const) {
+    const next = withCap(bar, 'end', value)
+    assert.ok(next)
+    assert.equal(next.end_cap_type, value)
+    assert.equal(next.outline_path, bar.outline_path)
+  }
+})
+
+test('withCap: 모양을 적용할 수 없는 획은 null', () => {
+  assert.equal(withCap(strokeOf('M 0 0 Z', [[0, 0], [1, 1]]), 'start', 'AUTO_ROUND'), null)
+})
+
+test('separatePath·separateStroke: 칼 모드는 자르기, extract 모드는 교차 분리로 나눈다', () => {
+  const crossPath = 'M460 800 L540 800 L540 540 L800 540 L800 460 L540 460 L540 200 L460 200 L460 460 L200 460 L200 540 L460 540 Z'
+  const guide = [{ x: 200, y: 500 }, { x: 800, y: 500 }]
+  const cutLine = [{ x: 500, y: 0 }, { x: 500, y: 1000 }]
+  assert.equal(separatePath(crossPath, guide, 'extract')?.length, 2, '―와 ㅣ')
+  assert.equal(separatePath(crossPath, cutLine, 'cut')?.length, 2, '왼쪽과 오른쪽(세로 위·아래가 가운데에서 갈린다)')
+  assert.equal(separatePath(crossPath, [{ x: 0, y: 900 }, { x: 1000, y: 900 }], 'cut'), null)
+  assert.equal(separatePath(crossPath, [{ x: 0, y: 900 }, { x: 1000, y: 900 }], 'extract'), null)
+  const stroke = strokeOf(crossPath, [[0, 0], [1, 1]], { stroke_width: 80 })
+  assert.equal(separateStroke(stroke, guide, 'extract')?.length, 2)
+  assert.ok(separateStroke(stroke, cutLine, 'cut'))
+  assert.equal(separateStroke(stroke, [{ x: 0, y: 900 }, { x: 1000, y: 900 }], 'extract'), null)
 })

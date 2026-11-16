@@ -1,6 +1,6 @@
-import type { CapType, Pt, StrokeRecord } from '../../shared/types.ts'
+import type { CapType, KnifeMode, Pt, StrokeRecord } from '../../shared/types.ts'
 import { round1 } from '../../shared/paths.ts'
-import { applyCapAtFace, capLength, extractStrokeAlongGuide, KNIFE_OVERLAP, matchMedianEnd, recoverMedian, splitStrokeByKnife, type CapShape } from '../../shared/strokeCut.ts'
+import { applyCapAtFace, applyCapShape, capLength, extractStrokeAlongGuide, isCapShape, KNIFE_OVERLAP, matchMedianEnd, recoverMedian, splitStrokeByKnife, type CapShape } from '../../shared/strokeCut.ts'
 import type { BBox } from './vectorEdit.ts'
 import { recomputeStrokeWidth } from './vectorEdit.ts'
 
@@ -101,6 +101,30 @@ export function extractStrokeAtGuide(stroke: StrokeRecord, guide: readonly { x: 
   const extracted = extractStrokeAlongGuide(stroke.outline_path, guide)
   if (!extracted) return null
   return [...extracted.stroke, ...extracted.rest].map((path) => pieceOf(stroke, path))
+}
+
+// 칼 선(자르기)이나 안내선(교차 분리)으로 윤곽 경로 하나를 나눈다. 나눌 수 없으면 null. 교차 분리는 안내선에 닿은 획이 먼저 온다.
+export function separatePath(path: string, knife: readonly { x: number; y: number }[], mode: KnifeMode): string[] | null {
+  if (mode === 'extract') {
+    const extracted = extractStrokeAlongGuide(path, knife)
+    return extracted ? [...extracted.stroke, ...extracted.rest] : null
+  }
+  return splitStrokeByKnife(path, knife)?.map((piece) => piece.path) ?? null
+}
+
+// 칼 선(자르기)이나 안내선(교차 분리)으로 획 하나를 나눈다. 나눌 수 없으면 null.
+export function separateStroke(stroke: StrokeRecord, knife: readonly { x: number; y: number }[], mode: KnifeMode): StrokeRecord[] | null {
+  return mode === 'extract' ? extractStrokeAtGuide(stroke, knife) : splitStrokeAtKnife(stroke, knife)
+}
+
+// 획의 기필(start)·수필(end) 모양을 value로 바꾼 새 획. 모양을 윤곽에 반영해야 하는데 적용할 수 없으면 null이다.
+// 모양(둥글게 등)은 그 끝의 윤곽에 반영하고, 모양에서 기본(NONE)으로 돌아오면 끝을 되돌린다. 도장·직접 그리기는 값만 바꾼다.
+export function withCap(stroke: StrokeRecord, end: 'start' | 'end', value: CapType): StrokeRecord | null {
+  const key = end === 'start' ? 'start_cap_type' : 'end_cap_type'
+  const restore = isCapShape(stroke[key])
+  if (!isCapShape(value) && !(value === 'NONE' && restore)) return { ...stroke, [key]: value }
+  const outline = applyCapShape(stroke.outline_path, stroke.median_points, end, isCapShape(value) ? value : null, stroke.stroke_width, restore)
+  return outline ? { ...stroke, outline_path: outline, [key]: value } : null
 }
 
 // 원본 상자를 대상 상자에 맞추는 좌표 변환과 평균 배율. 상자 크기가 0이어도 나눗셈이 깨지지 않게 최소 1로 본다.
