@@ -1,4 +1,5 @@
 import type { Ref } from 'vue'
+import { autoFitLayer, autoFitStroke } from '../lib/autoFit.ts'
 import { recoverMedian, splitStrokeByKnife } from '../lib/strokeCut.ts'
 import {
   insertMedianPoint,
@@ -219,6 +220,32 @@ export function useStrokeEdit(
     message.value = `'${target.name}' 레이어의 위치·크기를 궁서체 윤곽 영역에 맞췄습니다.`
   }
 
+  // 겹침 비율(IoU)을 최대화해 활성 레이어를 궁서체 윤곽에 자동으로 맞춘다.
+  // 전체 변환 범위면 레이어 전체(+획별 보정), 단일 획 범위면 선택한 획만 맞춘다.
+  function autoFitToFont() {
+    const target = guardUnlocked()
+    const fl = fontLayer.value
+    if (!target || !fl || fl.paths.length === 0) {
+      error.value = '맞춤 기준이 될 궁서체(TTF) 윤곽이 없습니다.'
+      return
+    }
+    if (target.strokes.length === 0) {
+      error.value = '자동으로 맞출 획 데이터가 없습니다.'
+      return
+    }
+    const single = transformScope.value === 'stroke' && Boolean(target.strokes[selectedStrokeIndex.value])
+    const result = single
+      ? autoFitStroke(target.strokes, fl.paths, selectedStrokeIndex.value)
+      : autoFitLayer(target.strokes, fl.paths)
+    const percent = (value: number) => `${Math.round(value * 100)}%`
+    const subject = single ? `${selectedStrokeIndex.value + 1}획` : `'${target.name}' 레이어`
+    if (result.after <= result.before) {
+      message.value = `${subject}: 더 나은 위치를 찾지 못했습니다 (겹침 ${percent(result.before)}). 수동으로 대략 맞춘 뒤 다시 시도하세요.`
+      return
+    }
+    updateTargetStrokes(result.strokes, `${subject} 자동 맞춤: 궁서체 겹침 ${percent(result.before)} → ${percent(result.after)}. 확인 후 저장하세요.`)
+  }
+
   // 베지어 편집 결과 반영
   function updateSinglePathInActive(index: number, nextPath: string) {
     const target = guardUnlocked()
@@ -414,6 +441,7 @@ export function useStrokeEdit(
     restoreActiveSnapshot,
     applyAffineToActive,
     alignActiveToFont,
+    autoFitToFont,
     updateSinglePathInActive,
     moveMedianVertex,
     addMedianVertex,

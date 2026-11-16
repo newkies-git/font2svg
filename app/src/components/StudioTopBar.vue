@@ -30,6 +30,7 @@ const emit = defineEmits<{
   changeScope: [scope: 'layer' | 'stroke']
   changeTransformMode: [mode: TransformMode]
   alignFont: []
+  autoFit: []
   reverseMedian: []
   resegment: []
   cancelKnife: []
@@ -140,6 +141,18 @@ function runMenuAction(fn: () => void) {
           @click="emit('alignFont')"
         >
           궁서체 맞춤
+        </button>
+        <button
+          v-if="hasFont && editableLayer && editableLayer.id !== 'font'"
+          type="button"
+          class="bar-btn"
+          :disabled="locked || busy"
+          :title="scope === 'stroke'
+            ? '선택한 획을 그 획이 맡은 궁서체 영역에 겹침이 최대가 되도록 자동으로 맞춥니다'
+            : '레이어 전체를 궁서체 글자에 겹침이 최대가 되도록 맞추고, 획마다 한 번 더 보정합니다'"
+          @click="emit('autoFit')"
+        >
+          자동 맞춤
         </button>
       </template>
 

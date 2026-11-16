@@ -36,3 +36,24 @@ export const ACJK_SVG_Y_ORIGIN = 900
 export const BADGE_RADIUS = 28
 export const REVEAL_STEP = 0.04
 export const FRAME_MS = 30
+// 자동 맞춤: 래스터 격자(칸 수), 격자가 덮는 좌표 범위의 여백, 윤곽 평탄화 허용 오차
+export const FIT_GRID = 256
+export const FIT_MARGIN = 128
+export const FIT_FLATNESS = 2
+// 자동 맞춤 탐색: 단계 수와 단계별 줄이는 비율, 한 단계의 최대 반복, 개선으로 인정하는 최소 IoU 증가량
+export const FIT_LEVELS = 6
+export const FIT_STEP_DECAY = 0.5
+export const FIT_MAX_SWEEPS = 6
+export const FIT_MIN_GAIN = 1e-4
+// 자동 맞춤 첫 단계 보폭: 이동(좌표), 배율, 회전(라디안), 기울임
+export const FIT_STEP_SHIFT = 24
+export const FIT_STEP_SCALE = 0.08
+export const FIT_STEP_ANGLE = 0.1
+export const FIT_STEP_SHEAR = 0.1
+// 자동 맞춤이 허용하는 변형 한계(초기 위치 기준): 이동, 배율 범위, 회전, 기울임
+export const FIT_LIMIT_SHIFT = 160
+export const FIT_LIMIT_SCALE = 0.5
+export const FIT_LIMIT_ANGLE = 0.5
+export const FIT_LIMIT_SHEAR = 0.5
+// 획별 보정을 영역 재할당과 번갈아 반복하는 횟수
+export const FIT_REFINE_ROUNDS = 2

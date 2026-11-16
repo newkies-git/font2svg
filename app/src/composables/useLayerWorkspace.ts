@@ -83,6 +83,7 @@ export function useLayerWorkspace(
     restoreActiveSnapshot: edit.restoreActiveSnapshot,
     applyAffineToActive: edit.applyAffineToActive,
     alignActiveToFont: edit.alignActiveToFont,
+    autoFitToFont: edit.autoFitToFont,
     updateSinglePathInActive: edit.updateSinglePathInActive,
     moveMedianVertex: edit.moveMedianVertex,
     addMedianVertex: edit.addMedianVertex,

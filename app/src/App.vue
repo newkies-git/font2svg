@@ -72,6 +72,7 @@ const {
   restoreActiveSnapshot,
   applyAffineToActive,
   alignActiveToFont,
+  autoFitToFont,
   updateSinglePathInActive,
   moveMedianVertex,
   addMedianVertex,
@@ -480,6 +481,7 @@ onBeforeUnmount(() => {
         @change-scope="transformScope = $event"
         @change-transform-mode="transformMode = $event"
         @align-font="alignActiveToFont"
+        @auto-fit="autoFitToFont"
         @reverse-median="reverseActiveStrokeMedian()"
         @resegment="resegmentActiveByFont"
         @cancel-knife="cancelKnife"
