@@ -8,13 +8,17 @@ function applyTheme(mode: ThemeMode) {
     delete document.documentElement.dataset.theme
     try {
       localStorage.removeItem('color-scheme')
-    } catch {}
+    } catch {
+      // localStorage가 막혀 있어도(사생활 보호 모드 등) 테마 적용은 계속한다.
+    }
   } else {
     if (meta) meta.setAttribute('content', mode)
     document.documentElement.dataset.theme = mode
     try {
       localStorage.setItem('color-scheme', mode)
-    } catch {}
+    } catch {
+      // 저장하지 못해도 이번 화면의 테마는 이미 적용됐다.
+    }
   }
 }
 
@@ -47,7 +51,9 @@ export function useTheme() {
       } else {
         themeMode.value = 'system'
       }
-    } catch {}
+    } catch {
+      // localStorage를 읽을 수 없으면 시스템 테마를 쓴다.
+    }
     window.addEventListener('storage', handleStorageChange)
   })
 

@@ -23,7 +23,7 @@ export async function readJsonBody(
   if (!text) return {}
   try {
     return JSON.parse(text) as Record<string, unknown>
-  } catch {
-    throw new Error('JSON 형식이 아닙니다.')
+  } catch (error) {
+    throw new Error('JSON 형식이 아닙니다.', { cause: error })
   }
 }

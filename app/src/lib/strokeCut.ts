@@ -1,4 +1,5 @@
 import { DEFAULT_STROKE_WIDTH, MIN_STROKE_WIDTH, STROKE_WIDTH_CAP_RATIO, STROKE_WIDTH_MARGIN } from './constants.ts'
+import { warnOnce } from './log.ts'
 import { flattenContours, samplePath, type Pt } from './paths.ts'
 
 type Raster = {
@@ -19,6 +20,9 @@ type Segment = {
   path?: string
   median?: Pt[]
 }
+
+// 윤곽이 너무 작거나 골격을 못 만드는 등, 입력 모양 때문에 예상되는 실패. 호출한 쪽이 대체값으로 넘어가며 경고하지 않는다.
+export class GeometryError extends Error {}
 
 export type GlyphModel = {
   raster: Raster
@@ -55,15 +59,15 @@ const N8Y = [0, 0, 1, -1, 1, -1, 1, -1]
 
 export function prepareGlyph(contourPaths: string[]): GlyphModel {
   const contours = contourPaths.flatMap((d) => flattenContours(d, PREPARE_FLATNESS))
-  if (contours.length === 0) throw new Error('윤곽이 없습니다.')
+  if (contours.length === 0) throw new GeometryError('윤곽이 없습니다.')
   const raster = rasterize(contours)
   const skeleton = zhangSuen(raster.ink, raster.w, raster.h)
   pruneSpurs(skeleton, raster.w, raster.h)
-  if (count(skeleton) < 2) throw new Error('획의 중심선을 만들지 못했습니다.')
+  if (count(skeleton) < 2) throw new GeometryError('획의 중심선을 만들지 못했습니다.')
   const dt = distanceToBackground(raster.ink, raster.w, raster.h)
   const deg = degrees(skeleton, raster.w, raster.h)
   const segments = buildSegments(skeleton, deg, raster.w, raster.h)
-  if (segments.length === 0) throw new Error('획의 중심선을 만들지 못했습니다.')
+  if (segments.length === 0) throw new GeometryError('획의 중심선을 만들지 못했습니다.')
   return { raster, skeleton, dt, deg, segments }
 }
 
@@ -76,7 +80,9 @@ export function recoverMedian(path: string, defaultStrokeWidth = DEFAULT_STROKE_
     const radii = coverRadii(path, median)
     const width = computeOptimalStrokeWidth(path, median, defaultStrokeWidth)
     return { median, width, radii }
-  } catch {
+  } catch (error) {
+    // 입력 모양 탓의 예상된 실패는 조용히 대체값을 쓰고, 그 밖의 오류(코드 결함)는 한 번 알린다.
+    if (!(error instanceof GeometryError)) warnOnce('recoverMedian', error)
     return { median: [], width: defaultStrokeWidth, radii: [] }
   }
 }
@@ -458,7 +464,7 @@ function rasterize(contours: Pt[][]): Raster {
       wind = next
     }
   }
-  if (count(ink) < 8) throw new Error('윤곽을 채우지 못했습니다.')
+  if (count(ink) < 8) throw new GeometryError('윤곽을 채우지 못했습니다.')
   return { w, h, ink, minX, maxY, scale, pad: PAD }
 }
 

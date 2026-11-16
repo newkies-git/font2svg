@@ -1,3 +1,4 @@
+import { warnOnce } from '../src/lib/log.ts'
 import { FETCH_TIMEOUT_MS, MEDIAN_MIN_POINTS } from '../src/lib/constants.ts'
 import { recoverMedian } from '../src/lib/strokeCut.ts'
 import type { Pt } from '../src/types.ts'
@@ -90,7 +91,9 @@ export function parseHanja(text: string): HanjaGlyph | null {
     const radical = Array.isArray(radicalSource) ? radicalSource.map(Number).filter(Number.isInteger)
       : typeof data.acjk === 'string' ? radicalStrokes(data.acjk, medians.length) : []
     return medians.length || outlines.length ? { medians, outlines, radical } : null
-  } catch {
+  } catch (error) {
+    // 저장된 레퍼런스 원문을 해석하지 못함(형식이 바뀌었을 수 있다). 없는 것으로 취급한다.
+    warnOnce('parseHanja', error)
     return null
   }
 }

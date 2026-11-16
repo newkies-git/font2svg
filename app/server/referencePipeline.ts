@@ -1,3 +1,4 @@
+import { warnOnce } from '../src/lib/log.ts'
 import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -102,7 +103,9 @@ export function createReferencePipeline(
         fresh.value ? 1 : 0,
       )
       return fresh.value ? { ...fresh, value: fresh.value } : null
-    } catch {
+    } catch (error) {
+      // 네트워크 실패나 캐시 저장 실패. 이 글자는 이번에 "레퍼런스 없음"으로 넘어가고 다음 요청에서 다시 시도한다.
+      warnOnce(`reference:${source}`, error)
       return null
     }
   }
@@ -171,7 +174,8 @@ export function createReferencePipeline(
         const response = await fetchLimited(IDS_URL, IDS_FILE_LIMIT)
         if (!response.ok || !response.text.includes(IDS_HEADER)) return new Map()
         fs.writeFileSync(file, response.text)
-      } catch {
+      } catch (error) {
+        warnOnce('ids-download', error)
         return new Map()
       }
     }

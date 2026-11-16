@@ -1,3 +1,4 @@
+import { warnOnce } from '../lib/log.ts'
 import { apiRequest, characterUrl } from '../lib/api.ts'
 import type { Ref } from 'vue'
 import { META_PATCH_DEBOUNCE_MS, OPACITY_STEPS } from '../lib/constants.ts'
@@ -30,8 +31,9 @@ export function useLayerAppearance(
     pendingMeta.clear()
     try {
       await apiRequest(characterUrl(unicode, 'layers-meta'), '레이어 표시 설정 저장 실패', { method: 'POST', body: { patches } })
-    } catch {
-      // 뷰 표시 메타 저장 실패는 편집 작업을 막지 않는다.
+    } catch (error) {
+      // 뷰 표시 메타 저장 실패는 편집 작업을 막지 않는다. 다만 설정이 저장되지 않았음을 콘솔에 남긴다.
+      warnOnce('layers-meta', error)
     }
   }
 

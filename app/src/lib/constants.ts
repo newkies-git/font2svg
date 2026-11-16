@@ -83,3 +83,5 @@ export const PRE_MIGRATION_TAG = 'before'
 export const LAYER_BATCH_LIMIT = 64
 // API 요청 본문 상한(바이트). 레이어 저장·초기 글자 목록 업로드가 충분히 들어가는 크기
 export const API_BODY_LIMIT_BYTES = 8 * 1024 * 1024
+// warnOnce가 한 프로세스(또는 페이지)에서 기록하는 서로 다른 경고의 최대 개수. 넘으면 더 기록하지 않는다.
+export const WARN_ONCE_LIMIT = 100

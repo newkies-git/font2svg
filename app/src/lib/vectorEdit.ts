@@ -1,4 +1,5 @@
 import { COORD_DECIMALS, DEFAULT_STROKE_WIDTH, MEDIAN_MIN_POINTS, MIN_STROKE_WIDTH, STROKE_WIDTH_CAP_RATIO } from './constants.ts'
+import { warnOnce } from './log.ts'
 import { parseCommands, pathBBox, round1 } from './paths.ts'
 import { computeOptimalStrokeWidth, recoverMedian } from './strokeCut.ts'
 import type { Pt, StrokeRecord } from '../types.ts'
@@ -206,7 +207,8 @@ export function recomputeStrokeWidth(outlinePath: string, medianPoints: Pt[], fa
       outlinePath,
       medianPoints.map(([x, y]) => ({ x, y })),
     )
-  } catch {
+  } catch (error) {
+    warnOnce('recomputeStrokeWidth', error)
     return fallback
   }
 }

@@ -1,3 +1,4 @@
+import { warnOnce } from '../src/lib/log.ts'
 import path from 'node:path'
 import { OLLAMA_TIMEOUT_MS } from '../src/lib/constants.ts'
 import type { Box } from './geometry.ts'
@@ -110,7 +111,9 @@ export async function askOllama(char: string): Promise<string | null> {
     const data = await response.json() as { response?: string }
     const parsed = JSON.parse(data.response ?? '') as { ids?: unknown }
     return typeof parsed.ids === 'string' ? parsed.ids : null
-  } catch {
+  } catch (error) {
+    // 로컬 Ollama가 꺼져 있거나 응답이 JSON이 아닌 경우. IDS 추론 없이 계속한다.
+    warnOnce('ollama', error)
     return null
   }
 }
