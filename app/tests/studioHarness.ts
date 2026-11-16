@@ -42,7 +42,8 @@ export function fakeApi() {
   return {
     calls,
     on(method: string, pattern: RegExp, handler: Handler | unknown) {
-      routes.push({ method, pattern, handler: typeof handler === 'function' ? handler as Handler : () => ({ body: handler }) })
+      // 나중에 등록한 경로가 우선한다(같은 경로의 응답을 시험 중에 바꿀 수 있다).
+      routes.unshift({ method, pattern, handler: typeof handler === 'function' ? handler as Handler : () => ({ body: handler }) })
     },
     urls: () => calls.map((call) => `${call.method} ${call.url.replace('/api/characters/' + ENCODED_UNICODE, '')}`),
     restore: () => fetchMock.mock.restore(),
