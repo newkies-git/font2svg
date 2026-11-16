@@ -9,6 +9,9 @@ database/graphics*.txt
 database/dictionary*.txt
 database/*.before-*.db
 
+# 작업 DB (용량이 커서 저장소에서 제외)
+database/chusa1817.db
+
 # Python
 __pycache__/
 *.pyc
