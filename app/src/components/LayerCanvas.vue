@@ -73,12 +73,6 @@ function visibleStrokesOfWork(strokes: StrokeRecord[]): StrokeRecord[] {
   return visibleWorkStrokes(strokes, props.shown)
 }
 
-// 작업 획(STROKES) 레이어의 표시 대상 획 목록
-const workStrokes = computed<StrokeRecord[]>(() => {
-  const work = props.orderedLayers.find((l) => l.id === 'strokes')
-  return work ? visibleStrokesOfWork(work.strokes) : []
-})
-
 /** 중심선·번호 오버레이는 현재 편집 대상 레이어의 획만 쓴다. 표시 여부는 MEDIANS/NUMBERS 레이어 visible로만 제어한다. */
 const overlayStrokes = computed<StrokeRecord[]>(() => {
   const ed = props.editableLayer
