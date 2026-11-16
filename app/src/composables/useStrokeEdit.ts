@@ -2,13 +2,12 @@ import { isContourLayer } from '../lib/layerKind.ts'
 import { LAYER_ID } from '../lib/constants.ts'
 import type { Ref } from 'vue'
 import { autoFitLayer, autoFitStroke } from '../lib/autoFit.ts'
-import { round1 } from '../lib/paths.ts'
-import { recoverMedian, splitStrokeByKnife } from '../lib/strokeCut.ts'
+import { splitStrokeByKnife } from '../lib/strokeCut.ts'
+import { boxAlignTransform, moveItem, pointsToClosedPath, restrokeFromOutline, roundPt, withMedianPoints } from '../lib/strokeOps.ts'
 import {
   insertMedianPoint,
   mergeTwoStrokes,
   pathsBBox,
-  recomputeStrokeWidth,
   removeMedianPoint,
   reverseMedian,
   strokesBBox,
@@ -18,18 +17,6 @@ import {
 import type { CapType, LayerRecord, Pt, StrokeRecord } from '../types.ts'
 import { cloneStroke } from './layerClone.ts'
 import type { LayerEditorState } from './layerEditorState.ts'
-
-function roundPt(p: Pt): Pt {
-  return [round1(p[0]), round1(p[1])]
-}
-
-function pointsToClosedPath(points: Pt[]): string {
-  const pts = points.map(roundPt)
-  const [x0, y0] = pts[0]
-  let d = `M ${x0} ${y0}`
-  for (let i = 1; i < pts.length; i++) d += ` L ${pts[i][0]} ${pts[i][1]}`
-  return `${d} Z`
-}
 
 export function useStrokeEdit(
   state: LayerEditorState,
@@ -76,25 +63,32 @@ export function useStrokeEdit(
     if (statusMsg) message.value = statusMsg
   }
 
+  // 잠금을 확인하고 index번 획 하나를 복제해 고친 뒤 반영한다. mutate가 null을 돌려주면 아무것도 바꾸지 않는다.
+  function editStroke(index: number, mutate: (stroke: StrokeRecord) => StrokeRecord | null, statusMsg?: string): boolean {
+    const target = guardUnlocked()
+    if (!target || !target.strokes[index]) return false
+    const copy = target.strokes.map(cloneStroke)
+    const next = mutate(copy[index])
+    if (!next) return false
+    copy[index] = next
+    updateTargetStrokes(copy, statusMsg)
+    return true
+  }
+
   function moveStrokeInActive(index: number, delta: number) {
     const target = guardUnlocked()
     if (!target) return
+    const next = index + delta
     if (isContourLayer(target)) {
-      const next = index + delta
-      if (next < 0 || next >= target.paths.length) return
-      const copy = target.paths.slice()
-      const [item] = copy.splice(index, 1)
-      copy.splice(next, 0, item)
-      updateTargetPaths(copy, '윤곽 순서를 변경했습니다.')
+      const moved = moveItem(target.paths, index, delta)
+      if (!moved) return
+      updateTargetPaths(moved, '윤곽 순서를 변경했습니다.')
       selectedStrokeIndex.value = next
       return
     }
-    const next = index + delta
-    if (next < 0 || next >= target.strokes.length) return
-    const copy = target.strokes.slice()
-    const [item] = copy.splice(index, 1)
-    copy.splice(next, 0, item)
-    updateTargetStrokes(copy, `${index + 1}획을 ${next + 1}획 위치로 이동했습니다.`)
+    const moved = moveItem(target.strokes, index, delta)
+    if (!moved) return
+    updateTargetStrokes(moved, `${index + 1}획을 ${next + 1}획 위치로 이동했습니다.`)
     selectedStrokeIndex.value = next
   }
 
@@ -114,11 +108,7 @@ export function useStrokeEdit(
   }
 
   function reverseActiveStrokeMedian(index = selectedStrokeIndex.value) {
-    const target = guardUnlocked()
-    if (!target || !target.strokes[index]) return
-    const copy = target.strokes.map(cloneStroke)
-    copy[index].median_points = reverseMedian(copy[index].median_points)
-    updateTargetStrokes(copy, `${index + 1}획의 기필↔수필 방향을 반전했습니다.`)
+    editStroke(index, (stroke) => ({ ...stroke, median_points: reverseMedian(stroke.median_points) }), `${index + 1}획의 기필↔수필 방향을 반전했습니다.`)
   }
 
   function deleteStrokeAt(index: number) {
@@ -212,14 +202,8 @@ export function useStrokeEdit(
     const fontBox = pathsBBox(fl.paths)
     const srcBox = target.strokes.length > 0 ? strokesBBox(target.strokes) : pathsBBox(target.paths)
     if (!fontBox || !srcBox) return
-    const sw = Math.max(1, srcBox.maxX - srcBox.minX)
-    const sh = Math.max(1, srcBox.maxY - srcBox.minY)
-    const sx = (fontBox.maxX - fontBox.minX) / sw
-    const sy = (fontBox.maxY - fontBox.minY) / sh
-    applyAffineToActive(
-      (x, y) => [fontBox.minX + (x - srcBox.minX) * sx, fontBox.minY + (y - srcBox.minY) * sy],
-      (sx + sy) / 2,
-    )
+    const { map, scale } = boxAlignTransform(fontBox, srcBox)
+    applyAffineToActive(map, scale)
     message.value = `'${target.name}' 레이어의 위치·크기를 궁서체 윤곽 영역에 맞췄습니다.`
   }
 
@@ -260,53 +244,38 @@ export function useStrokeEdit(
       updateTargetPaths(copy)
       return
     }
-    if (!target.strokes[index]) return
-    const copy = target.strokes.map(cloneStroke)
-    copy[index].outline_path = nextPath
-    copy[index].stroke_width = recomputeStrokeWidth(nextPath, copy[index].median_points, copy[index].stroke_width)
-    updateTargetStrokes(copy)
+    editStroke(index, (stroke) => withMedianPoints({ ...stroke, outline_path: nextPath }, stroke.median_points))
   }
 
   // 중심선 정점 이동 / 추가 / 삭제
   function moveMedianVertex(strokeIdx: number, ptIdx: number, to: Pt) {
-    const target = guardUnlocked()
-    if (!target || !target.strokes[strokeIdx]) return
-    const copy = target.strokes.map(cloneStroke)
-    const pts = copy[strokeIdx].median_points
-    if (!pts[ptIdx]) return
-    pts[ptIdx] = roundPt(to)
-    copy[strokeIdx].stroke_width = recomputeStrokeWidth(copy[strokeIdx].outline_path, pts, copy[strokeIdx].stroke_width)
-    updateTargetStrokes(copy)
+    editStroke(strokeIdx, (stroke) => {
+      if (!stroke.median_points[ptIdx]) return null
+      const points = stroke.median_points.slice()
+      points[ptIdx] = roundPt(to)
+      return withMedianPoints(stroke, points)
+    })
   }
 
   function addMedianVertex(strokeIdx: number, at: Pt) {
-    const target = guardUnlocked()
-    if (!target || !target.strokes[strokeIdx]) return
-    const copy = target.strokes.map(cloneStroke)
-    const { points, insertedIndex } = insertMedianPoint(copy[strokeIdx].median_points, at)
-    copy[strokeIdx].median_points = points
-    copy[strokeIdx].stroke_width = recomputeStrokeWidth(copy[strokeIdx].outline_path, points, copy[strokeIdx].stroke_width)
-    selectedMedianPointIndex.value = insertedIndex
-    updateTargetStrokes(copy, `${strokeIdx + 1}획 중심선에 정점을 추가했습니다.`)
+    let insertedAt = 0
+    const done = editStroke(strokeIdx, (stroke) => {
+      const { points, insertedIndex } = insertMedianPoint(stroke.median_points, at)
+      insertedAt = insertedIndex
+      return withMedianPoints(stroke, points)
+    }, `${strokeIdx + 1}획 중심선에 정점을 추가했습니다.`)
+    if (done) selectedMedianPointIndex.value = insertedAt
   }
 
   function deleteMedianVertex(strokeIdx: number, ptIdx: number) {
-    const target = guardUnlocked()
-    if (!target || !target.strokes[strokeIdx]) return
-    const cur = target.strokes[strokeIdx].median_points
-    if (cur.length <= 2) {
-      error.value = '중심선은 최소 2개의 정점이 필요합니다.'
-      return
-    }
-    const copy = target.strokes.map(cloneStroke)
-    copy[strokeIdx].median_points = removeMedianPoint(cur, ptIdx)
-    copy[strokeIdx].stroke_width = recomputeStrokeWidth(
-      copy[strokeIdx].outline_path,
-      copy[strokeIdx].median_points,
-      copy[strokeIdx].stroke_width,
-    )
-    selectedMedianPointIndex.value = null
-    updateTargetStrokes(copy, `${strokeIdx + 1}획 중심선 정점을 삭제했습니다.`)
+    const done = editStroke(strokeIdx, (stroke) => {
+      if (stroke.median_points.length <= 2) {
+        error.value = '중심선은 최소 2개의 정점이 필요합니다.'
+        return null
+      }
+      return withMedianPoints(stroke, removeMedianPoint(stroke.median_points, ptIdx))
+    }, `${strokeIdx + 1}획 중심선 정점을 삭제했습니다.`)
+    if (done) selectedMedianPointIndex.value = null
   }
 
   // 칼 분할 (모든 잠금 해제된 획 레이어 및 FONT 윤곽 레이어 지원)
@@ -352,18 +321,11 @@ export function useStrokeEdit(
       error.value = '획 분할 불가: 선택된 획의 외곽선과 교차하도록 두 점을 지정하세요.'
       return
     }
-    const [left, right] = parts.map((path): StrokeRecord => {
-      const median = recoverMedian(path, stroke.stroke_width)
-      const pts = median.median.map((p): Pt => roundPt([p.x, p.y]))
-      return {
-        ...stroke,
-        outline_path: path,
-        median_points: pts.length >= 2 ? pts : stroke.median_points,
-        stroke_width: median.width,
-        // 획 윤곽(OUTLINE) 레이어에서 나이프로 가른 조각은 사람이 만든 매핑이라 자동 매핑이 덮어쓰지 않는다.
-        ...(target.kind === 'OUTLINE' ? { map_manual: 1 as const } : {}),
-      }
-    })
+    const [left, right] = parts.map((path): StrokeRecord => ({
+      ...restrokeFromOutline(stroke, path),
+      // 획 윤곽(OUTLINE) 레이어에서 나이프로 가른 조각은 사람이 만든 매핑이라 자동 매핑이 덮어쓰지 않는다.
+      ...(target.kind === 'OUTLINE' ? { map_manual: 1 as const } : {}),
+    }))
     const copy = target.strokes.map(cloneStroke)
     copy.splice(idx, 1, left, right)
     updateTargetStrokes(copy, `${idx + 1}획을 2개로 분할했습니다. [레이어 저장]을 누르면 반영됩니다.`)
@@ -418,18 +380,7 @@ export function useStrokeEdit(
       return
     }
 
-    const stroke = target.strokes[idx]
-    if (!stroke) return
-    const median = recoverMedian(path, stroke.stroke_width)
-    const pts = median.median.map((p): Pt => roundPt([p.x, p.y]))
-    const copy = target.strokes.map(cloneStroke)
-    copy[idx] = {
-      ...copy[idx],
-      outline_path: path,
-      median_points: pts.length >= 2 ? pts : copy[idx].median_points,
-      stroke_width: median.width,
-    }
-    updateTargetStrokes(copy, `${idx + 1}획 윤곽을 지정한 점으로 다시 연결했습니다. [레이어 저장]을 누르면 반영됩니다.`)
+    editStroke(idx, (stroke) => restrokeFromOutline(stroke, path), `${idx + 1}획 윤곽을 지정한 점으로 다시 연결했습니다. [레이어 저장]을 누르면 반영됩니다.`)
   }
 
   return {
