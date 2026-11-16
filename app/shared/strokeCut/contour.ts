@@ -1,4 +1,4 @@
-import type { Pt } from '../paths.ts'
+import { polygonArea, type Pt } from '../paths.ts'
 import { dilate, enclosedHoles } from './mask.ts'
 import { pixelPointToFont, type Raster } from './raster.ts'
 
@@ -29,7 +29,7 @@ export function traceLoops(mask: Uint8Array, w: number, h: number): Pt[][] {
       const pts = moore(mask, w, h, x, y)
       if (pts.length < MIN_LOOP_POINTS) continue
       for (const point of pts) used[point.y * w + point.x] = 1
-      const area = Math.abs(shoelace(pts))
+      const area = Math.abs(polygonArea(pts))
       if (area > MIN_LOOP_AREA) loops.push({ pts, area })
     }
   }
@@ -86,16 +86,6 @@ function chaikin(points: Pt[]): Pt[] {
     out.push({ x: a.x * CHAIKIN_FAR + b.x * CHAIKIN_NEAR, y: a.y * CHAIKIN_FAR + b.y * CHAIKIN_NEAR })
   }
   return out
-}
-
-function shoelace(pts: Pt[]): number {
-  let sum = 0
-  for (let i = 0; i < pts.length; i++) {
-    const a = pts[i]
-    const b = pts[(i + 1) % pts.length]
-    sum += a.x * b.y - b.x * a.y
-  }
-  return sum / 2
 }
 
 function rdp(points: Pt[], epsilon: number): Pt[] {
@@ -158,12 +148,12 @@ export function outlineOfMask(mask: Uint8Array, raster: Raster): string | null {
   const { w, h } = raster
   const outer = traceLoops(mask, w, h)[0]
   if (!outer) return null
-  const outerSign = Math.sign(shoelace(outer))
+  const outerSign = Math.sign(polygonArea(outer))
   const parts = [outlineOfLoop(outer, raster)]
   for (const hole of enclosedHoles(mask, w, h)) {
     const loop = traceLoops(dilate(hole, w, h), w, h)[0]
     if (!loop) continue
-    parts.push(outlineOfLoop(Math.sign(shoelace(loop)) === outerSign ? loop.slice().reverse() : loop, raster))
+    parts.push(outlineOfLoop(Math.sign(polygonArea(loop)) === outerSign ? loop.slice().reverse() : loop, raster))
   }
   return parts.join(' ')
 }

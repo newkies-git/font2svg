@@ -3,6 +3,7 @@ import test from 'node:test'
 import { DEFAULT_STROKE_WIDTH } from '../shared/constants.ts'
 import { flattenContours } from '../shared/paths.ts'
 import { splitStrokeByKnife } from '../shared/strokeCut.ts'
+import { pathBounds } from './helpers.ts'
 
 // ㅏ: 세로 막대(x 460~560)와 그 오른쪽에 붙은 가로 획(x 560~800)
 const STEM = { minX: 460, maxX: 560, minY: 100, maxY: 920 }
@@ -13,13 +14,6 @@ const KNIFE_BOTTOM = 1000
 // 래스터화 오차(한 칸)를 감안한 허용 거리
 const TOLERANCE = 4
 
-function boundsOf(path: string) {
-  const points = flattenContours(path, 1.4)[0]
-  const xs = points.map((point) => point.x)
-  const ys = points.map((point) => point.y)
-  return { minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) }
-}
-
 function cutAt(x: number): string[] {
   const parts = splitStrokeByKnife(AH, [{ x, y: KNIFE_TOP }, { x, y: KNIFE_BOTTOM }])
   assert.ok(parts)
@@ -29,8 +23,8 @@ function cutAt(x: number): string[] {
 
 test('칼이 ㅣ의 경계에 맞으면 ㅣ는 파이지 않고, 두 조각이 접합부에서 서로 겹친다', () => {
   const [bar, stem] = cutAt(STEM.maxX)
-  const stemBounds = boundsOf(stem)
-  const barBounds = boundsOf(bar)
+  const stemBounds = pathBounds(stem)
+  const barBounds = pathBounds(bar)
   assert.ok(stemBounds.minX <= STEM.minX + TOLERANCE && stemBounds.minY <= STEM.minY + TOLERANCE && stemBounds.maxY >= STEM.maxY - TOLERANCE)
   assert.ok(stemBounds.maxX > STEM.maxX + TOLERANCE, 'ㅣ가 ㅡ의 뿌리 쪽으로 넘어가 겹친다')
   assert.ok(barBounds.minX < STEM.maxX - TOLERANCE, 'ㅡ가 ㅣ 안쪽으로 넘어가 겹친다')
@@ -39,14 +33,14 @@ test('칼이 ㅣ의 경계에 맞으면 ㅣ는 파이지 않고, 두 조각이 �
 
 test('겹침 깊이는 기본 획 폭의 일부로 제한된다(세로 막대 전체로 번지지 않는다)', () => {
   const [bar] = cutAt(STEM.maxX)
-  const barBounds = boundsOf(bar)
+  const barBounds = pathBounds(bar)
   assert.ok(STEM.maxX - barBounds.minX <= DEFAULT_STROKE_WIDTH * 0.2)
   assert.ok(barBounds.maxY - barBounds.minY < (BAR.maxY - BAR.minY) * 2, 'ㅡ 조각이 ㅣ의 길이만큼 늘어나지 않는다')
 })
 
 test('칼이 ㅣ의 경계에서 몇 칸 어긋나도 ㅣ에 파임이 남지 않는다', () => {
   for (const x of [STEM.maxX - TOLERANCE, STEM.maxX + TOLERANCE]) {
-    const intact = cutAt(x).map(boundsOf).some((bounds) => bounds.minX <= STEM.minX + TOLERANCE && bounds.maxX >= STEM.maxX - TOLERANCE
+    const intact = cutAt(x).map(pathBounds).some((bounds) => bounds.minX <= STEM.minX + TOLERANCE && bounds.maxX >= STEM.maxX - TOLERANCE
       && bounds.minY <= STEM.minY + TOLERANCE && bounds.maxY >= STEM.maxY - TOLERANCE)
     assert.ok(intact, `칼 x=${x}`)
   }
@@ -70,12 +64,12 @@ test('칼의 한쪽에서 떨어진 덩어리는 각각 조각이 된다(ㅍ의 
   const upper = splitStrokeByKnife(pieung, [{ x: 0, y: 780 }, { x: 1000, y: 780 }])
   assert.ok(upper)
   assert.equal(upper.length, 2, '위 가로와 (다리+아래 가로)')
-  const lower = upper.find((piece) => boundsOf(piece.path).minY < 200)
+  const lower = upper.find((piece) => pathBounds(piece.path).minY < 200)
   assert.ok(lower)
   assert.equal(lower.ends.length, 2, '두 다리의 윗끝이 모두 획의 끝이다')
   const legs = splitStrokeByKnife(lower.path, [{ x: 0, y: 260 }, { x: 1000, y: 260 }])
   assert.ok(legs)
-  const boundsList = legs.map((piece) => boundsOf(piece.path))
+  const boundsList = legs.map((piece) => pathBounds(piece.path))
   assert.equal(legs.length, 3, '아래 가로와 다리 둘')
   assert.equal(boundsList.filter((bounds) => bounds.maxY - bounds.minY > 400).length, 2, '두 다리가 모두 남는다')
 })
@@ -103,7 +97,7 @@ test('틀의 세로 변을 차례로 떼어 내면 구멍이 열리고, 칼 가�
   assert.equal(contourCount(rest.path), 3)
   const second = splitStrokeByKnife(rest.path, [{ x: RIGHT_SIDE_EDGE, y: 0 }, { x: RIGHT_SIDE_EDGE, y: 1000 }])
   assert.ok(second)
-  const inner = second.find((piece) => boundsOf(piece.path).minX < RIGHT_SIDE_EDGE - 100)
+  const inner = second.find((piece) => pathBounds(piece.path).minX < RIGHT_SIDE_EDGE - 100)
   assert.ok(inner)
   assert.equal(contourCount(inner.path), 1, '오른쪽 변까지 떼어 내면 구멍이 모두 열려 윤곽이 하나다(구멍 가장자리 띠가 구멍을 닫지 않는다)')
 })
@@ -118,22 +112,22 @@ test('꺾인 칼 한 번으로 ㄱ(위 가로 + 오른쪽 세로)이 한 조각�
   const pieces = splitStrokeByKnife(GIYEOK, [{ x: 0, y: GIYEOK_INNER_Y }, { x: GIYEOK_INNER_X, y: GIYEOK_INNER_Y }, { x: GIYEOK_INNER_X, y: 0 }])
   assert.ok(pieces)
   assert.equal(pieces.length, 2, 'ㄱ과 매달린 세로, 두 조각')
-  const giyeok = pieces.find((piece) => boundsOf(piece.path).minY < 250)
+  const giyeok = pieces.find((piece) => pathBounds(piece.path).minY < 250)
   const stem = pieces.find((piece) => piece !== giyeok)
   assert.ok(giyeok && stem)
-  const bounds = boundsOf(giyeok.path)
+  const bounds = pathBounds(giyeok.path)
   assert.ok(bounds.minX <= 200 + TOLERANCE && bounds.maxX >= 800 - TOLERANCE && bounds.maxY >= 800 - TOLERANCE, 'ㄱ이 가로 전체와 바깥 모서리를 가진다')
   assert.ok(bounds.minY <= 200 + TOLERANCE, 'ㄱ이 오른쪽 세로 끝까지 이어진다')
   assert.equal(giyeok.ends.length, 0, 'ㄱ은 칼의 긴 변을 따라 닿으므로 끝 단면이 없다')
   assert.equal(stem.ends.length, 1, '매달린 세로의 윗끝은 획의 끝이다')
-  assert.ok(boundsOf(stem.path).maxY > GIYEOK_STEM_TOP + TOLERANCE, '세로의 윗끝이 ㄱ 안쪽으로 들어간다')
+  assert.ok(pathBounds(stem.path).maxY > GIYEOK_STEM_TOP + TOLERANCE, '세로의 윗끝이 ㄱ 안쪽으로 들어간다')
 })
 
 test('꺾이는 점의 바깥쪽 모서리도 같은 조각에 속한다(ㄱ의 바깥 모서리가 잘리지 않는다)', () => {
   const pieces = splitStrokeByKnife(GIYEOK, [{ x: 0, y: GIYEOK_INNER_Y }, { x: GIYEOK_INNER_X, y: GIYEOK_INNER_Y }, { x: GIYEOK_INNER_X, y: 0 }])
   assert.ok(pieces)
   const containsCorner = pieces.filter((piece) => {
-    const bounds = boundsOf(piece.path)
+    const bounds = pathBounds(piece.path)
     return bounds.maxX >= 800 - TOLERANCE && bounds.maxY >= 800 - TOLERANCE
   })
   assert.equal(containsCorner.length, 1)

@@ -1,5 +1,5 @@
 import { AREA_FLATNESS, CANVAS, DEFAULT_STROKE_WIDTH, OUTLINE_CONTOUR_MATCH_RATIO, OUTLINE_CONTOUR_TOLERANCE, MAX_COVERED_AREA_RATIO, MEDIAN_BBOX_INSET, MEDIAN_MIN_POINTS, MEDIAN_SIMPLIFY_TOLERANCE, MIN_COVERED_AREA_RATIO, MIN_STROKE_AREA_RATIO } from '../shared/constants.ts'
-import { flattenContours, round1, type Pt as Point } from '../shared/paths.ts'
+import { flattenContours, polygonArea, round1, type Pt as Point } from '../shared/paths.ts'
 import { computeOptimalStrokeWidth, recoverMedian, segmentOutlineByMedians, simplifyPolyline } from '../shared/strokeCut.ts'
 import type { Pt } from '../shared/types.ts'
 
@@ -10,15 +10,7 @@ export type ImportedStrokes = { medians: Pt[][]; outlines: string[]; widths?: nu
 const toPoints = (line: Pt[]): Point[] => line.map(([x, y]) => ({ x, y }))
 
 function contourArea(d: string): number {
-  return flattenContours(d, AREA_FLATNESS).reduce((sum, contour) => {
-    let twice = 0
-    for (let i = 0; i < contour.length; i++) {
-      const a = contour[i]
-      const b = contour[(i + 1) % contour.length]
-      twice += a.x * b.y - b.x * a.y
-    }
-    return sum + twice / 2
-  }, 0)
+  return flattenContours(d, AREA_FLATNESS).reduce((sum, contour) => sum + polygonArea(contour), 0)
 }
 
 // 길잡이 중심선의 시작점에 가까운 쪽을 시작으로 맞춘다.

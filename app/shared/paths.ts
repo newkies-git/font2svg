@@ -118,6 +118,17 @@ export function samplePath(d: string, flatness: number): Pt[] {
   return pts
 }
 
+// 꼭짓점으로 이은 다각형의 부호 있는 면적(신발끈 공식). 감는 방향에 따라 부호가 다르다.
+export function polygonArea(points: Pt[]): number {
+  let twice = 0
+  for (let i = 0; i < points.length; i++) {
+    const a = points[i]
+    const b = points[(i + 1) % points.length]
+    twice += a.x * b.y - b.x * a.y
+  }
+  return twice / 2
+}
+
 export function flattenContours(d: string, flatness: number): Pt[][] {
   const contours: Pt[][] = []
   let current: Pt[] = []

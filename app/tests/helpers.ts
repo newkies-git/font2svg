@@ -4,6 +4,7 @@ import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import opentype from 'opentype.js'
 import { migrate, seed } from '../server/schema.ts'
+import { flattenContours, polygonArea } from '../shared/paths.ts'
 import type { StrokeRecord } from '../shared/types.ts'
 
 export function tempDir(prefix = 'font2svg-test-'): string {
@@ -70,4 +71,35 @@ export function drawRect(target: opentype.Path, x0: number, y0: number, x1: numb
   target.lineTo(x1, y1)
   target.lineTo(x0, y1)
   target.close()
+}
+
+// 테스트가 윤곽 경로를 점검할 때 쓰는 기하 도우미. 곡선은 같은 허용 오차로 편다.
+const TEST_FLATNESS = 1.4
+
+export function pathBounds(path: string): { minX: number; maxX: number; minY: number; maxY: number } {
+  const points = flattenContours(path, TEST_FLATNESS).flat()
+  const xs = points.map((point) => point.x)
+  const ys = points.map((point) => point.y)
+  return { minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) }
+}
+
+// 구멍(반대로 감긴 윤곽)을 뺀 면적
+export function pathArea(path: string): number {
+  return Math.abs(flattenContours(path, TEST_FLATNESS).reduce((sum, contour) => sum + polygonArea(contour), 0))
+}
+
+// 윤곽(구멍 포함, 비영 감기수 규칙)이 점을 덮는지
+export function pathCovers(path: string, point: { x: number; y: number }): boolean {
+  let winding = 0
+  for (const contour of flattenContours(path, TEST_FLATNESS)) {
+    for (let i = 0; i < contour.length; i++) {
+      const a = contour[i]
+      const b = contour[(i + 1) % contour.length]
+      if ((a.y <= point.y) !== (b.y <= point.y)) {
+        const t = (point.y - a.y) / (b.y - a.y)
+        if (a.x + t * (b.x - a.x) > point.x) winding += b.y > a.y ? 1 : -1
+      }
+    }
+  }
+  return winding !== 0
 }

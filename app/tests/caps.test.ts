@@ -3,7 +3,7 @@ import test from 'node:test'
 import { flattenContours } from '../shared/paths.ts'
 import { applyCapShape, capLength, isCapShape, matchMedianEnd } from '../shared/strokeCut.ts'
 import type { Pt } from '../shared/types.ts'
-import { rectPath } from './helpers.ts'
+import { pathArea, pathBounds, rectPath } from './helpers.ts'
 
 // 가로 막대: x 100~600, y 460~540(폭 80), 중심선은 왼쪽에서 오른쪽
 const BAR = { minX: 100, maxX: 600, minY: 460, maxY: 540 }
@@ -16,36 +16,19 @@ const AREA_TOLERANCE = 0.2
 // 윤곽을 래스터로 다시 따면 한 번에 가장자리가 1칸쯤 줄어든다. 여러 번 거친 면적을 비교할 때의 허용 비율.
 const RETRACE_TOLERANCE = 0.05
 
-function areaOf(path: string): number {
-  const points = flattenContours(path, 1.4)[0]
-  let sum = 0
-  for (let i = 0; i < points.length; i++) {
-    const a = points[i]
-    const b = points[(i + 1) % points.length]
-    sum += a.x * b.y - b.x * a.y
-  }
-  return Math.abs(sum / 2)
-}
-
-function boundsOf(path: string) {
-  const points = flattenContours(path, 1.4)[0]
-  const xs = points.map((point) => point.x)
-  return { minX: Math.min(...xs), maxX: Math.max(...xs) }
-}
-
 const halfWidth = WIDTH / 2
 // 모양을 붙이지 않고 같은 경로(래스터화 → 윤곽 추적)만 거친 면적: 깎인 정도를 재는 기준
 const flatPath = applyCapShape(BAR_PATH, MEDIAN, 'start', null, WIDTH, true)
 assert.ok(flatPath)
-const barArea = areaOf(flatPath)
+const barArea = pathArea(flatPath)
 
 test('둥글게: 끝의 모서리만 깎이고 끝점 위치와 다른 쪽 끝은 그대로다', () => {
   const path = applyCapShape(BAR_PATH, MEDIAN, 'start', 'AUTO_ROUND', WIDTH, false)
   assert.ok(path)
-  const bounds = boundsOf(path)
+  const bounds = pathBounds(path)
   assert.ok(Math.abs(bounds.minX - BAR.minX) <= TOLERANCE && Math.abs(bounds.maxX - BAR.maxX) <= TOLERANCE)
   const lost = 2 * halfWidth * capLength('AUTO_ROUND', WIDTH) * (1 - Math.PI / 4)
-  assert.ok(Math.abs(barArea - areaOf(path) - lost) <= lost * AREA_TOLERANCE, `깎인 면적 ${barArea - areaOf(path)} (기대 ${lost})`)
+  assert.ok(Math.abs(barArea - pathArea(path) - lost) <= lost * AREA_TOLERANCE, `깎인 면적 ${barArea - pathArea(path)} (기대 ${lost})`)
 })
 
 // 모양을 붙인 끝(end)의 끝점 가까이에서 이어진 두 꼭짓점이 획 폭만큼 위아래로 벌어진 선분
@@ -76,7 +59,7 @@ test('끝(end)을 고르면 반대쪽 끝이 다듬어진다', () => {
   const start = applyCapShape(BAR_PATH, MEDIAN, 'start', 'POINTED', WIDTH, false)
   const end = applyCapShape(BAR_PATH, MEDIAN, 'end', 'POINTED', WIDTH, false)
   assert.ok(start && end)
-  assert.ok(Math.abs(areaOf(start) - areaOf(end)) <= barArea * RETRACE_TOLERANCE, '대칭이라 깎인 면적이 같다')
+  assert.ok(Math.abs(pathArea(start) - pathArea(end)) <= barArea * RETRACE_TOLERANCE, '대칭이라 깎인 면적이 같다')
   assert.notEqual(start, end)
 })
 
@@ -85,7 +68,7 @@ test('뾰족하게는 둥글게보다 더 깎고, 눌러서(부풀림)는 폭보
   const pointed = applyCapShape(BAR_PATH, MEDIAN, 'start', 'POINTED', WIDTH, false)
   const bulge = applyCapShape(BAR_PATH, MEDIAN, 'start', 'BULGE', WIDTH, false)
   assert.ok(round && pointed && bulge)
-  assert.ok(areaOf(pointed) < areaOf(round))
+  assert.ok(pathArea(pointed) < pathArea(round))
   const ys = flattenContours(bulge, 1.4)[0].map((point) => point.y)
   assert.ok(Math.max(...ys) - Math.min(...ys) > WIDTH + TOLERANCE, '부풀린 머리가 획 폭보다 넓다')
 })
@@ -96,11 +79,11 @@ test('모양을 바꾸면 앞 모양이 남지 않고, 기본으로 돌아오면
   const fresh = applyCapShape(BAR_PATH, MEDIAN, 'start', 'AUTO_ROUND', WIDTH, false)
   const switched = applyCapShape(pointed, MEDIAN, 'start', 'AUTO_ROUND', WIDTH, true)
   assert.ok(fresh && switched)
-  assert.ok(Math.abs(areaOf(switched) - areaOf(fresh)) <= barArea * RETRACE_TOLERANCE, '뾰족 → 둥글게가 처음부터 둥글게와 같다')
-  assert.ok(areaOf(switched) > areaOf(pointed) + (areaOf(fresh) - areaOf(pointed)) / 2, '뾰족하게 깎인 부분이 되살아난다')
+  assert.ok(Math.abs(pathArea(switched) - pathArea(fresh)) <= barArea * RETRACE_TOLERANCE, '뾰족 → 둥글게가 처음부터 둥글게와 같다')
+  assert.ok(pathArea(switched) > pathArea(pointed) + (pathArea(fresh) - pathArea(pointed)) / 2, '뾰족하게 깎인 부분이 되살아난다')
   const restored = applyCapShape(switched, MEDIAN, 'start', null, WIDTH, true)
   assert.ok(restored)
-  assert.ok(Math.abs(areaOf(restored) - barArea) <= barArea * RETRACE_TOLERANCE, '기본으로 복원')
+  assert.ok(Math.abs(pathArea(restored) - barArea) <= barArea * RETRACE_TOLERANCE, '기본으로 복원')
 })
 
 test('적용할 수 없는 입력은 null: 중심선이 짧거나 윤곽이 비었거나 되돌릴 것도 모양도 없을 때', () => {
