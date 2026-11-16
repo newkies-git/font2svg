@@ -9,6 +9,7 @@ import {
   ACTION_SVG,
   ACTION_UNDO,
   ACTOR_USER,
+  normalizeCap,
   ORIGIN_MANUAL,
   type MedianLine,
   type StrokeItem,
@@ -45,10 +46,6 @@ export function clampWidth(value: number): number {
   return Math.max(MIN_STROKE_WIDTH, Math.min(Math.round(DEFAULT_STROKE_WIDTH * STROKE_WIDTH_CAP_RATIO), Math.round(value) || DEFAULT_STROKE_WIDTH))
 }
 
-export function cap(value: string): string {
-  return value === 'AUTO_ROUND' || value === 'REF_STAMP' ? value : 'NONE'
-}
-
 export function createStrokeStore(db: DatabaseSync) {
   function requireCharacter(unicode: string): { char: string } {
     const character = db.prepare('SELECT char FROM characters WHERE unicode = ?').get(unicode) as { char: string } | undefined
@@ -80,7 +77,7 @@ export function createStrokeStore(db: DatabaseSync) {
   function itemsOf(row: { stroke_outlines: string; median_line: string }): StrokeItem[] {
     const outlines = JSON.parse(row.stroke_outlines) as StrokeOutline[]
     const lines = new Map((JSON.parse(row.median_line) as MedianLine[]).map((line) => [line.order, line]))
-    return outlines.map((outline) => {
+    return outlines.map((outline): StrokeItem => {
       const line = lines.get(outline.order)
       if (!line) throw new Error(`${outline.order}획의 중심선 데이터가 없습니다.`)
       return {
@@ -88,8 +85,8 @@ export function createStrokeStore(db: DatabaseSync) {
         median_points: line.points,
         stroke_width: line.width,
         is_radical: outline.radical ? 1 : 0,
-        start_cap_type: line.start_cap,
-        end_cap_type: line.end_cap,
+        start_cap_type: normalizeCap(line.start_cap),
+        end_cap_type: normalizeCap(line.end_cap),
       }
     })
   }
@@ -167,7 +164,7 @@ export function createStrokeStore(db: DatabaseSync) {
 
   function updateStrokes(unicode: string, strokes: StrokeItem[], action: string) {
     requireCharacter(unicode)
-    const items = strokes.map((stroke, index) => {
+    const items = strokes.map((stroke, index): StrokeItem => {
       if (!Array.isArray(stroke.median_points) || stroke.median_points.length < 2) {
         throw new Error(`${index + 1}획의 중심선이 없습니다.`)
       }
@@ -176,8 +173,8 @@ export function createStrokeStore(db: DatabaseSync) {
         median_points: roundPoints(stroke.median_points),
         stroke_width: clampWidth(stroke.stroke_width),
         is_radical: stroke.is_radical ? 1 : 0,
-        start_cap_type: cap(stroke.start_cap_type),
-        end_cap_type: cap(stroke.end_cap_type),
+        start_cap_type: normalizeCap(stroke.start_cap_type),
+        end_cap_type: normalizeCap(stroke.end_cap_type),
       }
     })
     transaction(db, () => {

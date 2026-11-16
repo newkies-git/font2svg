@@ -52,3 +52,14 @@ test('궁서체 윤곽 해석: 편집된 font 레이어 → 저장된 윤곽', (
   assert.deepEqual(fontContoursOf({ layers: layer([]), font_outline: ['B'] }), ['B'])
   assert.deepEqual(fontContoursOf({ layers: [], font_outline: [] }), [])
 })
+
+test('저장된 레이어 JSON: 형식이 맞으면 그대로, 어긋나면 빈 값', async () => {
+  const { parseStoredPaths, parseStoredStrokes } = await import('../server/layers.ts')
+  const stroke = { outline_path: 'M 0 0 Z', median_points: [[0, 0], [1, 1]], stroke_width: 70, is_radical: 0 }
+  assert.deepEqual(parseStoredStrokes(JSON.stringify([stroke])), [stroke])
+  assert.deepEqual(parseStoredStrokes('[{"outline_path":1}]'), [])
+  assert.deepEqual(parseStoredStrokes('{"a":1}'), [])
+  assert.deepEqual(parseStoredStrokes('not json'), [])
+  assert.deepEqual(parseStoredPaths('["M 0 0 Z"]'), ['M 0 0 Z'])
+  assert.deepEqual(parseStoredPaths('[1]'), [])
+})

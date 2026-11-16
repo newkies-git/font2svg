@@ -1,11 +1,11 @@
 import type { DatabaseSync } from 'node:sqlite'
 import { UNICODE_HEX_PAD } from '../src/lib/constants.ts'
-import type { CapType, StrokeRecord } from '../src/types.ts'
+import type { StrokeRecord } from '../src/types.ts'
 import { transaction } from './db.ts'
 import { buildCharacterLayers } from './layers.ts'
 import { ACTOR_USER } from './model.ts'
 import type { CharacterRow } from './schema.ts'
-import { cap, type StrokeStore } from './strokeStore.ts'
+import { type StrokeStore } from './strokeStore.ts'
 
 function unicodeOf(char: string): string {
   return `U+${char.codePointAt(0)!.toString(16).toUpperCase().padStart(UNICODE_HEX_PAD, '0')}`
@@ -48,15 +48,7 @@ export function createCharacterCatalog(
     const working = meta ? undefined : strokes.readWorkingRow(unicode)
     const shown = meta ?? working
     const strokeItems = shown ? strokes.itemsOf(shown) : []
-    const strokeRecords: StrokeRecord[] = strokeItems.map((stroke, index) => ({
-      stroke_order: index + 1,
-      outline_path: stroke.outline_path,
-      median_points: stroke.median_points,
-      stroke_width: stroke.stroke_width,
-      is_radical: stroke.is_radical ? 1 : 0,
-      start_cap_type: cap(stroke.start_cap_type) as CapType,
-      end_cap_type: cap(stroke.end_cap_type) as CapType,
-    }))
+    const strokeRecords: StrokeRecord[] = strokeItems.map((stroke, index) => ({ stroke_order: index + 1, ...stroke }))
     const history = db.prepare('SELECT COUNT(*) AS n FROM strokes_history WHERE char = ? AND undoable = 1').get(String(row.char)) as { n: number }
     const issue = db.prepare('SELECT reason, status, in_font FROM issues WHERE char = ?').get(String(row.char)) as
       { reason: string; status: string; in_font: number } | undefined

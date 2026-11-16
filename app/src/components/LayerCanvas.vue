@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { isContourLayer } from '../lib/layerKind.ts'
+import { isContourLayer, isReferenceKind } from '../lib/layerKind.ts'
 import { computed, ref } from 'vue'
 import { useCanvasDrag, type ResizeDir } from '../composables/useCanvasDrag.ts'
 import { useCanvasFit, visibleWorkStrokes } from '../composables/useCanvasFit.ts'
@@ -310,7 +310,7 @@ function connectLabel(idx: number, total: number): string {
 
         <!-- 2. 레퍼런스 및 커스텀 레이어 (MMH / ACJK / NAVER / CUSTOM) -->
         <g
-          v-else-if="layer.visible && (layer.kind === 'OUTLINE' || layer.kind === 'MMH' || layer.kind === 'ACJK' || layer.kind === 'NAVER' || layer.kind === 'CUSTOM')"
+          v-else-if="layer.visible && (layer.kind === 'OUTLINE' || isReferenceKind(layer.kind) || layer.kind === 'CUSTOM')"
           class="svg-layer layer-ref"
           :data-color="layer.label_color"
           :opacity="layer.opacity"

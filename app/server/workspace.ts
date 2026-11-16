@@ -4,12 +4,14 @@ import { DatabaseSync } from 'node:sqlite'
 import { DB_BUSY_TIMEOUT_MS, DEFAULT_STROKE_WIDTH, LAYER_BATCH_LIMIT, LAYER_ID } from '../src/lib/constants.ts'
 import type { LayerMetaPatch, Pt } from '../src/types.ts'
 import { createCharacterCatalog } from './characterCatalog.ts'
+import { isReferenceKind } from '../src/lib/layerKind.ts'
 import { createCompileOutput } from './compileOutput.ts'
 import { transaction } from './db.ts'
 import { createFontApply } from './fontApply.ts'
 import { roundPoints, splitByContours } from './geometry.ts'
 import { createIssues } from './issues.ts'
 import {
+  assertLayerUnlocked,
   createCustomLayer,
   deleteCustomLayer,
   fontContoursOf,
@@ -114,8 +116,9 @@ function createWorkspace(rootDir: string) {
 
   // 레이어 하나를 저장한다(응답은 만들지 않는다). 작업 획 레이어는 이력이 남는 획 저장을 쓴다.
   function writeLayer(unicode: string, char: string, layerId: string, payload: LayerSavePayload) {
+    assertLayerUnlocked(db, char, layerId)
     if (layerId === LAYER_ID.strokes) {
-      strokes.updateStrokes(unicode, sanitizeLayerStrokes(payload.strokes) as StrokeItem[], payload.action ?? '획 편집')
+      strokes.updateStrokes(unicode, sanitizeLayerStrokes(payload.strokes), payload.action ?? '획 편집')
       return
     }
     saveNonStrokeLayerContent(db, char, layerId, payload)
@@ -176,7 +179,7 @@ function createWorkspace(rootDir: string) {
     if (!detail) throw new Error('등록되지 않은 글자입니다.')
     const layer = detail.layers.find((item) => item.id === layerId)
     if (!layer || layer.strokes.length === 0) throw new Error('적용할 획 데이터가 없는 레이어입니다.')
-    const source = layer.kind === 'NAVER' || layer.kind === 'ACJK' || layer.kind === 'MMH' ? layer.kind : ORIGIN_MANUAL
+    const source = isReferenceKind(layer.kind) ? layer.kind : ORIGIN_MANUAL
     const radicals = layer.strokes.flatMap((stroke, index) => (stroke.is_radical ? [index] : []))
 
     if (mode === 'fit_font') {

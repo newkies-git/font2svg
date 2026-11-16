@@ -1,7 +1,7 @@
 import path from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
 import { FONT_BATCH_LIMIT } from '../src/lib/constants.ts'
-import type { Pt } from '../src/types.ts'
+import type { Pt, StrokeRecord } from '../src/types.ts'
 import { transaction } from './db.ts'
 import { loadFont, type FontFile } from './font.ts'
 import { roundPoints, splitByContours, type ImportedStrokes } from './geometry.ts'
@@ -13,12 +13,7 @@ const FONT_FILE = path.join('app', 'fonts', 'Gungseouche.ttf')
 
 type FontGlyph = {
   char: string
-  strokes: {
-    median_points: Pt[]
-    is_radical: number
-    start_cap_type: string
-    end_cap_type: string
-  }[]
+  strokes: Pick<StrokeRecord, 'median_points' | 'is_radical' | 'start_cap_type' | 'end_cap_type'>[]
 }
 
 export function createFontApply(

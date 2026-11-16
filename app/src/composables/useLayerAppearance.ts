@@ -2,6 +2,7 @@ import { warnOnce } from '../lib/log.ts'
 import { apiRequest, characterUrl } from '../lib/api.ts'
 import type { Ref } from 'vue'
 import { META_PATCH_DEBOUNCE_MS, OPACITY_STEPS } from '../lib/constants.ts'
+import { isReferenceKind } from '../lib/layerKind.ts'
 import type { LayerColor, LayerMetaPatch, LayerRecord } from '../types.ts'
 import type { LayerEditorState } from './layerEditorState.ts'
 
@@ -38,7 +39,7 @@ export function useLayerAppearance(
   }
 
   function canAutoFetch(layer: LayerRecord): boolean {
-    return !layer.available && (layer.kind === 'NAVER' || layer.kind === 'ACJK' || layer.kind === 'MMH')
+    return !layer.available && isReferenceKind(layer.kind)
   }
 
   function isSoloed(layerId: string): boolean {

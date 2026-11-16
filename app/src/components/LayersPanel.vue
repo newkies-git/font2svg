@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
 import { CANVAS, LAYER_ID } from '../lib/constants.ts'
+import { isReferenceKind } from '../lib/layerKind.ts'
 import type { LayerColor, LayerRecord } from '../types.ts'
 
 const props = defineProps<{
@@ -99,7 +100,7 @@ function moveActiveStep(delta: -1 | 1) {
 }
 
 function canFetch(layer: LayerRecord): boolean {
-  return !layer.available && (layer.kind === 'NAVER' || layer.kind === 'ACJK' || layer.kind === 'MMH')
+  return !layer.available && isReferenceKind(layer.kind)
 }
 
 function canApplyToStrokes(layer: LayerRecord | null): boolean {
@@ -109,7 +110,7 @@ function canApplyToStrokes(layer: LayerRecord | null): boolean {
 
 function canReset(layer: LayerRecord | null): boolean {
   if (!layer) return false
-  if (layer.kind !== 'FONT' && layer.kind !== 'OUTLINE' && layer.kind !== 'MMH' && layer.kind !== 'ACJK' && layer.kind !== 'NAVER') return false
+  if (layer.kind !== 'FONT' && layer.kind !== 'OUTLINE' && !isReferenceKind(layer.kind)) return false
   return layer.modified || props.dirtyIds.has(layer.id)
 }
 

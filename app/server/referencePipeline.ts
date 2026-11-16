@@ -10,6 +10,7 @@ import {
   IDS_MAX_DEPTH,
   MISSING_FETCH_LIMIT,
 } from '../src/lib/constants.ts'
+import { isReferenceKind, type ReferenceKind } from '../src/lib/layerKind.ts'
 import type { Pt } from '../src/types.ts'
 import { transaction } from './db.ts'
 import type { FontFile } from './font.ts'
@@ -65,6 +66,10 @@ type IssueWriter = {
   clearIssue: (unicode: string) => void
 }
 
+// 레퍼런스 종류별 원본 버전과 가져온 데이터의 기록자.
+const REFERENCE_VERSION: Record<ReferenceKind, string> = { MMH: HANJA_VERSION, ACJK: ACJK_VERSION, NAVER: NAVER_VERSION }
+const REFERENCE_ACTOR: Record<ReferenceKind, string> = { MMH: ACTOR_HANJA, ACJK: ACTOR_ACJK, NAVER: ACTOR_NAVER }
+
 export function createReferencePipeline(
   db: DatabaseSync,
   rootDir: string,
@@ -79,7 +84,7 @@ export function createReferencePipeline(
   let idsIndex: Map<string, string[]> | undefined
   let acjkIndex: Map<string, { raw: string; url: string }> | undefined
 
-  async function loadSource<T>(unicode: string, source: 'MMH' | 'ACJK' | 'NAVER', url: string, fetchFresh: () => Promise<Remote<T>>): Promise<Found<T> | null> {
+  async function loadSource<T>(unicode: string, source: ReferenceKind, url: string, fetchFresh: () => Promise<Remote<T>>): Promise<Found<T> | null> {
     const cached = db.prepare('SELECT found, raw_data, source_url FROM reference_data WHERE unicode = ? AND source = ?')
       .get(unicode, source) as { found: number; raw_data: string | null; source_url: string | null } | undefined
     if (cached) {
@@ -96,7 +101,7 @@ export function createReferencePipeline(
       `).run(
         unicode,
         source,
-        source === 'MMH' ? HANJA_VERSION : source === 'ACJK' ? ACJK_VERSION : NAVER_VERSION,
+        REFERENCE_VERSION[source],
         fresh.url,
         fresh.value ? fresh.raw : null,
         fresh.value ? createHash('sha256').update(fresh.raw).digest('hex') : null,
@@ -156,7 +161,7 @@ export function createReferencePipeline(
   function saveImported(unicode: string, source: string, url: string | null, radical: number[], glyph: ImportedStrokes, action = `${source} 가져오기`) {
     const { medians, fontOutline } = glyph
     // 궁서체 윤곽으로 나눠졌으면 궁서체 교체와 같은 상태다(이후 레퍼런스가 중심선을 되덮지 않는다).
-    const by = fontOutline ? ACTOR_FONT : source === 'MMH' ? ACTOR_HANJA : source === 'NAVER' ? ACTOR_NAVER : ACTOR_ACJK
+    const by = fontOutline ? ACTOR_FONT : isReferenceKind(source) ? REFERENCE_ACTOR[source] : ACTOR_ACJK
     transaction(db, () => {
       strokes.writeStrokes(unicode, toItems(glyph, new Set(radical)), by, action, { source, url }, fontOutline)
       db.prepare('DELETE FROM working_data WHERE char = (SELECT char FROM characters WHERE unicode = ?)').run(unicode)

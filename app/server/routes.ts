@@ -1,6 +1,6 @@
 import { ACJK_BATCH_LIMIT, FONT_BATCH_LIMIT, MISSING_FETCH_LIMIT } from '../src/lib/constants.ts'
 import type { LayerMetaPatch } from '../src/types.ts'
-import type { StrokeItem } from './model.ts'
+import { sanitizeLayerStrokes } from './layers.ts'
 import type { Workspace } from './workspace.ts'
 
 export const HTTP_OK = 200
@@ -87,7 +87,7 @@ const ROUTES: Route[] = [
     pattern: 'characters/:unicode/strokes',
     handler: async ({ ws, params, body }) => {
       const payload = await body()
-      return ws.updateStrokes(params.unicode, payload.strokes as StrokeItem[], String(payload.action ?? '편집'))
+      return ws.updateStrokes(params.unicode, sanitizeLayerStrokes(payload.strokes), String(payload.action ?? '편집'))
     },
   },
   {

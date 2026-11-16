@@ -117,3 +117,15 @@ test('초기 글자 목록은 배열 본문과 {entries} 본문을 모두 받는
   assert.deepEqual(calls[0].args, [[{ 한자: '丁' }]])
   assert.deepEqual(calls[1].args, [[{ 한자: '丙' }]])
 })
+
+test('획 저장 경로는 입력을 검증한 획만 작업 공간에 넘긴다', async () => {
+  const { ws, calls } = fakeWorkspace()
+  const stroke = { outline_path: 'M 0 0 L 10 0 L 10 10 Z', median_points: [[1, 1], [9, 9]], stroke_width: 70, is_radical: 1 }
+  await handleApi(ws, request('POST', '/api/characters/U%2B4E01/strokes', { strokes: [stroke], action: '편집' }))
+  const sent = calls[0].args[1] as { stroke_order: number; start_cap_type: string }[]
+  assert.equal(sent[0].stroke_order, 1)
+  assert.equal(sent[0].start_cap_type, 'NONE')
+  const bad = await handleApi(ws, request('POST', '/api/characters/U%2B4E01/strokes', { strokes: 'x' }))
+  assert.equal(bad.status, HTTP_BAD_REQUEST)
+  assert.equal(calls.length, 1, '형식이 틀리면 작업 공간을 호출하지 않는다')
+})

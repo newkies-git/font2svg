@@ -1,10 +1,13 @@
 import { createHash, randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
 import { DEFAULT_STROKE_WIDTH, FONT_FINGERPRINT_LENGTH, MIN_STROKE_WIDTH, OPACITY_STEPS, STROKE_WIDTH_CAP_RATIO, LAYER_ID } from '../src/lib/constants.ts'
+import { warnOnce } from '../src/lib/log.ts'
+import { isReferenceKind, type ReferenceKind } from '../src/lib/layerKind.ts'
 import { isValidSvgPath } from '../src/lib/paths.ts'
-import type { CapType, LayerColor, LayerKind, LayerMetaPatch, LayerRecord, Pt, StrokeRecord } from '../src/types.ts'
+import type { LayerColor, LayerKind, LayerMetaPatch, LayerRecord, Pt, StrokeRecord } from '../src/types.ts'
 import { transaction } from './db.ts'
 import { ribbonPath, roundPoints } from './geometry.ts'
+import { normalizeCap } from './model.ts'
 import { hanjaStrokes, parseHanja } from './references.ts'
 import type { CharacterLayerRow } from './schema.ts'
 
@@ -33,10 +36,6 @@ export const BUILTIN_LAYERS: readonly BuiltinLayerSpec[] = [
 
 const FONT_HASH_RE = /^[0-9a-f]+$/
 const VALID_COLORS = new Set<LayerColor>(['none', 'ink', 'slate', 'blue', 'violet', 'green', 'amber', 'rose'])
-
-function normalizeCap(value: unknown): CapType {
-  return value === 'AUTO_ROUND' || value === 'REF_STAMP' ? value : 'NONE'
-}
 
 function clampStrokeWidth(value: number): number {
   const max = Math.round(DEFAULT_STROKE_WIDTH * STROKE_WIDTH_CAP_RATIO)
@@ -94,10 +93,41 @@ export function sanitizeLayerPaths(raw: unknown): string[] {
   })
 }
 
+// character_layers에 저장된 JSON을 읽는 유일한 지점. 형식이 어긋난 값(손상·이전 버전)은 화면 전체를 깨뜨리지 않도록
+// 경고만 남기고 해당 레이어를 비운다. 획은 최소한 윤곽 문자열과 중심선 배열이 있어야 한다.
+function parseStoredJson(text: string, label: string): unknown {
+  try {
+    return JSON.parse(text)
+  } catch (error) {
+    warnOnce(`layers-${label}`, error)
+    return null
+  }
+}
+
+function isStoredStroke(value: unknown): value is StrokeRecord {
+  if (typeof value !== 'object' || value === null) return false
+  const stroke = value as Partial<StrokeRecord>
+  return typeof stroke.outline_path === 'string' && Array.isArray(stroke.median_points)
+}
+
+export function parseStoredStrokes(text: string): StrokeRecord[] {
+  const value = parseStoredJson(text, 'strokes')
+  if (Array.isArray(value) && value.every(isStoredStroke)) return value
+  if (value !== null) warnOnce('layers-strokes', new Error('저장된 레이어 획 형식이 올바르지 않습니다.'))
+  return []
+}
+
+export function parseStoredPaths(text: string): string[] {
+  const value = parseStoredJson(text, 'paths')
+  if (Array.isArray(value) && value.every((item) => typeof item === 'string')) return value
+  if (value !== null) warnOnce('layers-paths', new Error('저장된 레이어 윤곽 형식이 올바르지 않습니다.'))
+  return []
+}
+
 function readCachedRefStrokes(
   db: DatabaseSync,
   unicode: string,
-  source: 'MMH' | 'ACJK' | 'NAVER',
+  source: ReferenceKind,
 ): { strokes: StrokeRecord[]; url: string | null } {
   const row = db
     .prepare('SELECT found, raw_data, source_url FROM reference_data WHERE unicode = ? AND source = ?')
@@ -162,8 +192,8 @@ export function buildCharacterLayers(
     const name = saved?.name ? saved.name : defaultName
 
     if (spec.kind === 'FONT') {
-      const customPaths = saved?.modified && saved.paths_json ? (JSON.parse(saved.paths_json) as string[]) : null
-      const customStrokes = saved?.modified && saved.strokes_json ? (JSON.parse(saved.strokes_json) as StrokeRecord[]) : []
+      const customPaths = saved?.modified && saved.paths_json ? parseStoredPaths(saved.paths_json) : null
+      const customStrokes = saved?.modified && saved.strokes_json ? parseStoredStrokes(saved.strokes_json) : []
       const paths = customPaths ?? params.fontContours
       fontPaths = paths
       records.push({
@@ -185,7 +215,7 @@ export function buildCharacterLayers(
     }
 
     if (spec.kind === 'OUTLINE') {
-      const strokes = saved?.strokes_json ? (JSON.parse(saved.strokes_json) as StrokeRecord[]) : []
+      const strokes = saved?.strokes_json ? parseStoredStrokes(saved.strokes_json) : []
       const currentHash = fontFingerprint(fontPaths)
       records.push({
         id: spec.id,
@@ -206,9 +236,9 @@ export function buildCharacterLayers(
       continue
     }
 
-    if (spec.kind === 'MMH' || spec.kind === 'ACJK' || spec.kind === 'NAVER') {
+    if (isReferenceKind(spec.kind)) {
       const ref = readCachedRefStrokes(db, params.unicode, spec.kind)
-      const customStrokes = saved?.modified && saved.strokes_json ? (JSON.parse(saved.strokes_json) as StrokeRecord[]) : null
+      const customStrokes = saved?.modified && saved.strokes_json ? parseStoredStrokes(saved.strokes_json) : null
       const strokes = customStrokes ?? ref.strokes
       records.push({
         id: spec.id,
@@ -267,8 +297,8 @@ export function buildCharacterLayers(
 
   for (const saved of savedRows) {
     if (saved.kind !== 'CUSTOM') continue
-    const strokes = saved.strokes_json ? (JSON.parse(saved.strokes_json) as StrokeRecord[]) : []
-    const paths = saved.paths_json ? (JSON.parse(saved.paths_json) as string[]) : []
+    const strokes = saved.strokes_json ? parseStoredStrokes(saved.strokes_json) : []
+    const paths = saved.paths_json ? parseStoredPaths(saved.paths_json) : []
     records.push({
       id: saved.layer_id,
       kind: 'CUSTOM',
@@ -347,6 +377,16 @@ export function patchLayersMeta(db: DatabaseSync, char: string, patches: LayerMe
       )
     }
   })
+}
+
+// 레이어가 잠겨 있으면 내용 저장을 거부한다(화면 밖에서 온 요청도 같은 규칙을 따른다). 저장된 행이 없으면 기본 잠금 상태를 따른다.
+// 외부 수신·원본 복원·작업 획 적용·윤곽 매핑은 레이어 내용을 직접 저장하는 경로가 아니므로 이 검사를 거치지 않는다.
+export function assertLayerUnlocked(db: DatabaseSync, char: string, layerId: string): void {
+  const row = db
+    .prepare('SELECT locked FROM character_layers WHERE char = ? AND layer_id = ?')
+    .get(char, layerId) as { locked: number } | undefined
+  const locked = row ? Boolean(row.locked) : (BUILTIN_LAYERS.find((spec) => spec.id === layerId)?.locked ?? false)
+  if (locked) throw new Error('잠긴 레이어는 저장할 수 없습니다. 잠금을 해제한 뒤 저장하세요.')
 }
 
 export function saveNonStrokeLayerContent(
