@@ -1,8 +1,17 @@
+import { COORD_ROUND } from './constants.ts'
+
 export type Pt = { x: number; y: number }
 
 type Cmd = { op: 'M' | 'L' | 'Q' | 'C' | 'Z'; n: number[] }
 
-import { COORD_DECIMALS, COORD_ROUND } from './constants.ts'
+// 3차 베지어 평탄화: 재귀 깊이 한계와, 제어점 편차(제곱)를 허용 오차(제곱)와 비교하는 배율
+const FLATTEN_MAX_DEPTH = 8
+const FLATTEN_TOLERANCE_FACTOR = 16
+
+// 저장 좌표는 소수점 1자리로 반올림한다(COORD_ROUND).
+export function round1(value: number): number {
+  return Math.round(value * COORD_ROUND) / COORD_ROUND
+}
 
 const NUM = /-?(?:\d+\.\d+|\d+|\.\d+)/g
 const SAFE_SVG_PATH_RE = /^[MLHVCSQTZmlhvcsqtz0-9.,\s-]+$/
@@ -13,25 +22,6 @@ export function isValidSvgPath(d: string): boolean {
   if (!trimmed || trimmed.length > MAX_PATH_LENGTH) return false
   if (!SAFE_SVG_PATH_RE.test(trimmed)) return false
   return /^[Mm]/.test(trimmed) && /[Zz]\s*$/.test(trimmed)
-}
-
-export function roundPath1(d: string): string {
-  const s = d.trim().replace(/\s+/g, ' ')
-  return s.replace(NUM, (m) => {
-    const v = Math.round(Number(m) * COORD_ROUND) / COORD_ROUND
-    return Number.isInteger(v) ? String(v) : v.toFixed(COORD_DECIMALS)
-  })
-}
-
-export function splitClosedSubpaths(d: string): string[] {
-  const parts: string[] = []
-  const re = /[Mm][^Mm]*?[Zz]/g
-  let m: RegExpExecArray | null
-  while ((m = re.exec(d))) {
-    const sub = m[0].trim()
-    if (sub) parts.push(sub)
-  }
-  return parts.length > 0 ? parts : (d.trim() ? [d.trim()] : [])
 }
 
 export function parseCommands(d: string): Cmd[] {
@@ -195,7 +185,7 @@ function flattenCubic(p0: Pt, p1: Pt, p2: Pt, p3: Pt, flat: number, push: (p: Pt
   const uy = 3 * p1.y - 2 * p0.y - p3.y
   const vx = 3 * p2.x - 2 * p3.x - p0.x
   const vy = 3 * p2.y - 2 * p3.y - p0.y
-  if (depth > 8 || Math.max(ux * ux + uy * uy, vx * vx + vy * vy) <= flat * flat * 16) {
+  if (depth > FLATTEN_MAX_DEPTH || Math.max(ux * ux + uy * uy, vx * vx + vy * vy) <= flat * flat * FLATTEN_TOLERANCE_FACTOR) {
     push(p3)
     return
   }

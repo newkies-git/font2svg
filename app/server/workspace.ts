@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { DB_BUSY_TIMEOUT_MS, DEFAULT_STROKE_WIDTH } from '../src/lib/constants.ts'
+import { DB_BUSY_TIMEOUT_MS, DEFAULT_STROKE_WIDTH, LAYER_ID } from '../src/lib/constants.ts'
 import type { LayerMetaPatch, Pt } from '../src/types.ts'
 import { createCharacterCatalog } from './characterCatalog.ts'
 import { createCompileOutput } from './compileOutput.ts'
@@ -110,7 +110,7 @@ function createWorkspace(rootDir: string) {
 
   function saveLayer(unicode: string, layerId: string, payload: { strokes?: unknown; paths?: unknown; action?: string }) {
     const character = strokes.requireCharacter(unicode)
-    if (layerId === 'strokes') {
+    if (layerId === LAYER_ID.strokes) {
       return updateStrokes(unicode, sanitizeLayerStrokes(payload.strokes), payload.action ?? '획 편집')
     }
     saveNonStrokeLayerContent(db, character.char, layerId, payload)
@@ -125,14 +125,14 @@ function createWorkspace(rootDir: string) {
 
   async function fetchLayer(unicode: string, layerId: string) {
     const character = strokes.requireCharacter(unicode)
-    if (layerId === 'naver') {
+    if (layerId === LAYER_ID.naver) {
       db.prepare(`DELETE FROM reference_data WHERE unicode = ? AND source = 'NAVER' AND found = 0`).run(unicode)
       const naver = await references.loadSource(unicode, 'NAVER', naverUrl(character.char), () => fetchNaver(character.char))
       if (!naver) throw new Error('네이버 한자사전에서 이 글자의 획순을 찾지 못했습니다.')
-    } else if (layerId === 'acjk') {
+    } else if (layerId === LAYER_ID.acjk) {
       const acjk = await references.loadSource(unicode, 'ACJK', ACJK_BLOB, () => references.fetchAcjk(character.char))
       if (!acjk) throw new Error('AnimCJK에서 이 글자 데이터를 찾지 못했습니다.')
-    } else if (layerId === 'mmh') {
+    } else if (layerId === LAYER_ID.mmh) {
       const mmh = await references.loadSource(unicode, 'MMH', hanjaUrl(character.char), () => fetchHanja(character.char))
       if (!mmh) throw new Error('Hanzi(MMH)에서 이 글자 데이터를 찾지 못했습니다.')
     } else {
@@ -151,7 +151,7 @@ function createWorkspace(rootDir: string) {
     const radicals = layer.strokes.flatMap((stroke, index) => (stroke.is_radical ? [index] : []))
 
     if (mode === 'fit_font') {
-      const fontLayer = detail.layers.find((item) => item.id === 'font')
+      const fontLayer = detail.layers.find((item) => item.id === LAYER_ID.font)
       const contours = fontLayer && fontLayer.paths.length > 0 ? fontLayer.paths : (font.getFont()?.contours(detail.char) ?? null)
       if (!contours || contours.length === 0) throw new Error('궁서체 윤곽이 없어 자동 분할을 적용할 수 없습니다.')
       const split = splitByContours(contours, layer.strokes.map((stroke) => stroke.median_points))
@@ -183,7 +183,7 @@ function createWorkspace(rootDir: string) {
   function resegmentLayer(unicode: string, mediansRaw: unknown) {
     const detail = getCharacter(unicode)
     if (!detail) throw new Error('등록되지 않은 글자입니다.')
-    const fontLayer = detail.layers.find((item) => item.id === 'font')
+    const fontLayer = detail.layers.find((item) => item.id === LAYER_ID.font)
     const contours = fontLayer && fontLayer.paths.length > 0 ? fontLayer.paths : (font.getFont()?.contours(detail.char) ?? null)
     if (!contours || contours.length === 0) throw new Error('궁서체 윤곽이 없어 재분할할 수 없습니다.')
     if (!Array.isArray(mediansRaw) || mediansRaw.length === 0) throw new Error('중심선 배열이 비어 있습니다.')

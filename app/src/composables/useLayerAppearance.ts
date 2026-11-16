@@ -1,4 +1,5 @@
 import type { Ref } from 'vue'
+import { META_PATCH_DEBOUNCE_MS, OPACITY_STEPS } from '../lib/constants.ts'
 import type { LayerColor, LayerMetaPatch, LayerRecord } from '../types.ts'
 import type { LayerEditorState } from './layerEditorState.ts'
 
@@ -18,7 +19,7 @@ export function useLayerAppearance(
     if (metaTimer) clearTimeout(metaTimer)
     metaTimer = setTimeout(() => {
       flushMetaPatches()
-    }, 180)
+    }, META_PATCH_DEBOUNCE_MS)
   }
 
   async function flushMetaPatches() {
@@ -138,7 +139,7 @@ export function useLayerAppearance(
   function setLayerOpacity(layerId: string, opacity: number) {
     const target = layers.value.find((l) => l.id === layerId)
     if (!target) return
-    const clamped = Math.max(0, Math.min(1, Math.round(opacity * 100) / 100))
+    const clamped = Math.max(0, Math.min(1, Math.round(opacity * OPACITY_STEPS) / OPACITY_STEPS))
     target.opacity = clamped
     queueMetaPatch({ id: target.id, opacity: clamped })
   }

@@ -1,5 +1,5 @@
-import { AREA_FLATNESS, CANVAS, COORD_ROUND, DEFAULT_STROKE_WIDTH, OUTLINE_CONTOUR_MATCH_RATIO, OUTLINE_CONTOUR_TOLERANCE, MAX_COVERED_AREA_RATIO, MEDIAN_BBOX_INSET, MEDIAN_MIN_POINTS, MEDIAN_SIMPLIFY_TOLERANCE, MIN_COVERED_AREA_RATIO, MIN_STROKE_AREA_RATIO } from '../src/lib/constants.ts'
-import { flattenContours, type Pt as Point } from '../src/lib/paths.ts'
+import { AREA_FLATNESS, CANVAS, DEFAULT_STROKE_WIDTH, OUTLINE_CONTOUR_MATCH_RATIO, OUTLINE_CONTOUR_TOLERANCE, MAX_COVERED_AREA_RATIO, MEDIAN_BBOX_INSET, MEDIAN_MIN_POINTS, MEDIAN_SIMPLIFY_TOLERANCE, MIN_COVERED_AREA_RATIO, MIN_STROKE_AREA_RATIO } from '../src/lib/constants.ts'
+import { flattenContours, round1, type Pt as Point } from '../src/lib/paths.ts'
 import { computeOptimalStrokeWidth, recoverMedian, segmentOutlineByMedians, simplifyPolyline } from '../src/lib/strokeCut.ts'
 import type { Pt } from '../src/types.ts'
 
@@ -167,8 +167,4 @@ export function ribbonPath(median: Pt[], width: number): string {
 
 export function roundPoints(points: Pt[]): Pt[] {
   return points.map(([x, y]) => [round1(x), round1(y)])
-}
-
-function round1(value: number): number {
-  return Math.round(value * COORD_ROUND) / COORD_ROUND
 }

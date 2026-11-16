@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { LAYER_ID } from '../lib/constants.ts'
 import { ref } from 'vue'
 import { ISSUE_LABELS } from '../lib/labels.ts'
 import type { TransformMode } from '../lib/transformMath.ts'
@@ -133,7 +134,7 @@ function runMenuAction(fn: () => void) {
           </button>
         </div>
         <button
-          v-if="hasFont && editableLayer && editableLayer.id !== 'font'"
+          v-if="hasFont && editableLayer && editableLayer.id !== LAYER_ID.font"
           type="button"
           class="bar-btn"
           :disabled="locked || busy"
@@ -143,7 +144,7 @@ function runMenuAction(fn: () => void) {
           궁서체 맞춤
         </button>
         <button
-          v-if="hasFont && editableLayer && editableLayer.id !== 'font'"
+          v-if="hasFont && editableLayer && editableLayer.id !== LAYER_ID.font"
           type="button"
           class="bar-btn"
           :disabled="locked || busy"

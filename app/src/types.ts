@@ -10,15 +10,6 @@ export type LayerKind = 'FONT' | 'OUTLINE' | 'MMH' | 'ACJK' | 'NAVER' | 'STROKES
 export type LayerColor = 'none' | 'ink' | 'slate' | 'blue' | 'violet' | 'green' | 'amber' | 'rose'
 export type EditorTool = 'select' | 'bezier' | 'median' | 'knife' | 'connect'
 
-export type RadicalInfo = {
-  id: number
-  radical_char: string
-  variant_chars: string[]
-  reading: string
-  meaning: string
-  stroke_count: number
-}
-
 export type CharacterSummary = {
   unicode: string
   char: string
@@ -121,14 +112,3 @@ export type CharacterDetail = {
   history_count: number
 }
 
-export type StrokeType = {
-  id: string
-  name: string
-  dx: number
-  dy: number
-}
-
-export type StrokeTypeBook = {
-  start: StrokeType[]
-  end: StrokeType[]
-}

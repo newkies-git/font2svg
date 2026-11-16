@@ -1,5 +1,5 @@
 import { onBeforeUnmount, ref, type Ref } from 'vue'
-import { REVEAL_STEP } from '../lib/constants.ts'
+import { REVEAL_STEP, REVEAL_STROKE_MS } from '../lib/constants.ts'
 
 // requestAnimationFrame 기반 필순 재생. shown/reveal은 뷰어와 공유하는 상태다.
 export function usePlayback(strokeCount: () => number, shown: Ref<number>, reveal: Ref<number>) {
@@ -50,8 +50,8 @@ export function usePlayback(strokeCount: () => number, shown: Ref<number>, revea
       if (!lastTimestamp) lastTimestamp = timestamp
       const elapsed = timestamp - lastTimestamp
 
-      // Smooth animation step based on elapsed time (~350ms per stroke)
-      const stepIncrement = elapsed > 0 ? elapsed / 350 : REVEAL_STEP
+      // 경과 시간에 비례해 부드럽게 진행한다(한 획 REVEAL_STROKE_MS)
+      const stepIncrement = elapsed > 0 ? elapsed / REVEAL_STROKE_MS : REVEAL_STEP
       lastTimestamp = timestamp
 
       reveal.value = Math.min(1, reveal.value + stepIncrement)

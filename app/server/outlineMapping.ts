@@ -1,15 +1,15 @@
 import type { DatabaseSync } from 'node:sqlite'
-import { DEFAULT_STROKE_WIDTH } from '../src/lib/constants.ts'
+import { DEFAULT_STROKE_WIDTH, LAYER_ID } from '../src/lib/constants.ts'
 import type { LayerRecord, StrokeRecord } from '../src/types.ts'
 import { ribbonPath, splitOutlinePieces } from './geometry.ts'
 import { patchLayersMeta, saveNonStrokeLayerContent } from './layers.ts'
 
-export const OUTLINE_LAYER_ID = 'outline'
-const SOURCE_FALLBACK_IDS = ['naver', 'mmh', 'acjk'] as const
+export const OUTLINE_LAYER_ID = LAYER_ID.outline
+const SOURCE_FALLBACK_IDS = [LAYER_ID.naver, LAYER_ID.mmh, LAYER_ID.acjk] as const
 
 // 중심선 길잡이로 쓸 레이어: 지정한 레이어 → 작업 획 → 네이버 → MMH → ACJK 순으로 획이 있는 첫 레이어.
 function pickGuideLayer(layers: LayerRecord[], sourceLayerId?: string): LayerRecord {
-  const ids = [sourceLayerId, 'strokes', ...SOURCE_FALLBACK_IDS].filter((id): id is string => Boolean(id))
+  const ids = [sourceLayerId, LAYER_ID.strokes, ...SOURCE_FALLBACK_IDS].filter((id): id is string => Boolean(id))
   for (const id of ids) {
     const layer = layers.find((item) => item.id === id)
     if (layer && layer.strokes.length > 0) return layer
@@ -20,7 +20,7 @@ function pickGuideLayer(layers: LayerRecord[], sourceLayerId?: string): LayerRec
 type OutlineDetail = { char: string; font_outline: string[]; layers: LayerRecord[] }
 
 function fontContoursOf(detail: OutlineDetail): string[] {
-  const font = detail.layers.find((layer) => layer.id === 'font')
+  const font = detail.layers.find((layer) => layer.id === LAYER_ID.font)
   const contours = font && font.paths.length > 0 ? font.paths : detail.font_outline
   if (!contours || contours.length === 0) throw new Error('궁서체 윤곽이 없어 획 윤곽을 만들 수 없습니다.')
   return contours

@@ -1,3 +1,4 @@
+import { LAYER_ID } from '../lib/constants.ts'
 import type { Ref } from 'vue'
 import type { CharacterDetail, LayerRecord, Pt, StrokeRecord } from '../types.ts'
 import { cloneLayer } from './layerClone.ts'
@@ -191,7 +192,7 @@ export function useLayerCommands(state: LayerEditorState, deps: LayerCommandsDep
       if (!response.ok) throw new Error(body.error ?? '작업 획 적용에 실패했습니다.')
       selected.value = body as CharacterDetail
       syncFromDetail(body as CharacterDetail)
-      activeLayerId.value = 'strokes'
+      activeLayerId.value = LAYER_ID.strokes
       message.value = mode === 'fit_font'
         ? '선택 레이어의 중심선으로 궁서체 윤곽을 분할해 작업 획에 적용했습니다.'
         : '선택 레이어의 획 데이터를 작업 획에 적용했습니다.'
@@ -235,7 +236,7 @@ export function useLayerCommands(state: LayerEditorState, deps: LayerCommandsDep
   // 획 윤곽(OUTLINE) 레이어 서버 작업. 미저장 편집이 있으면 먼저 저장해 서버 결과가 덮어쓰지 않게 한다.
   async function postOutline(action: 'generate' | 'map', payload: Record<string, unknown>, doneMessage: string, failMessage: string) {
     if (!selected.value) return
-    if (dirtyIds.value.has('outline')) {
+    if (dirtyIds.value.has(LAYER_ID.outline)) {
       await saveAllDirtyLayers()
       if (error.value) return
     } else {
@@ -253,7 +254,7 @@ export function useLayerCommands(state: LayerEditorState, deps: LayerCommandsDep
       if (!response.ok) throw new Error(body.error ?? failMessage)
       selected.value = body as CharacterDetail
       syncFromDetail(body as CharacterDetail)
-      activeLayerId.value = 'outline'
+      activeLayerId.value = LAYER_ID.outline
       message.value = doneMessage
     } catch (cause) {
       error.value = cause instanceof Error ? cause.message : failMessage
@@ -320,7 +321,7 @@ export function useLayerCommands(state: LayerEditorState, deps: LayerCommandsDep
       const body = await response.json()
       if (!response.ok) throw new Error(body.error ?? '레이어 삭제에 실패했습니다.')
       selected.value = body as CharacterDetail
-      activeLayerId.value = 'strokes'
+      activeLayerId.value = LAYER_ID.strokes
       syncFromDetail(body as CharacterDetail)
       message.value = `'${cur.name}' 레이어를 삭제했습니다.`
     } catch (cause) {

@@ -1,3 +1,4 @@
+import { LAYER_ID } from '../lib/constants.ts'
 import { computed, ref, type ComputedRef, type Ref } from 'vue'
 import type { TransformMode } from '../lib/transformMath.ts'
 import type { CharacterDetail, EditorTool, LayerRecord, Pt, StrokeRecord } from '../types.ts'
@@ -35,7 +36,7 @@ export function createLayerEditorState(
   reveal: Ref<number>,
 ): LayerEditorState {
   const layers = ref<LayerRecord[]>([])
-  const activeLayerId = ref<string>('strokes')
+  const activeLayerId = ref<string>(LAYER_ID.strokes)
   const activeTool = ref<EditorTool>('select')
   const transformScope = ref<'layer' | 'stroke'>('layer')
   const transformMode = ref<TransformMode>('scale')
@@ -52,10 +53,10 @@ export function createLayerEditorState(
   // 합성 렌더링용(아래→위)
   const orderedLayers = computed(() => layers.value.slice().sort((a, b) => a.z_index - b.z_index))
 
-  const strokesLayer = computed(() => layers.value.find((l) => l.id === 'strokes') ?? null)
-  const mediansLayer = computed(() => layers.value.find((l) => l.id === 'medians') ?? null)
-  const numbersLayer = computed(() => layers.value.find((l) => l.id === 'numbers') ?? null)
-  const fontLayer = computed(() => layers.value.find((l) => l.id === 'font') ?? null)
+  const strokesLayer = computed(() => layers.value.find((l) => l.id === LAYER_ID.strokes) ?? null)
+  const mediansLayer = computed(() => layers.value.find((l) => l.id === LAYER_ID.medians) ?? null)
+  const numbersLayer = computed(() => layers.value.find((l) => l.id === LAYER_ID.numbers) ?? null)
+  const fontLayer = computed(() => layers.value.find((l) => l.id === LAYER_ID.font) ?? null)
 
   const activeLayer = computed(() => layers.value.find((l) => l.id === activeLayerId.value) ?? strokesLayer.value)
 

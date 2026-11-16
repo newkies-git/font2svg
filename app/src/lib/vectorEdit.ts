@@ -1,5 +1,5 @@
-import { COORD_DECIMALS, COORD_ROUND, DEFAULT_STROKE_WIDTH, MEDIAN_MIN_POINTS, MIN_STROKE_WIDTH, STROKE_WIDTH_CAP_RATIO } from './constants.ts'
-import { parseCommands, pathBBox } from './paths.ts'
+import { COORD_DECIMALS, DEFAULT_STROKE_WIDTH, MEDIAN_MIN_POINTS, MIN_STROKE_WIDTH, STROKE_WIDTH_CAP_RATIO } from './constants.ts'
+import { parseCommands, pathBBox, round1 } from './paths.ts'
 import { computeOptimalStrokeWidth, recoverMedian } from './strokeCut.ts'
 import type { Pt, StrokeRecord } from '../types.ts'
 
@@ -17,21 +17,17 @@ export type HandleRef =
   | { kind: 'c1'; segIndex: number }
   | { kind: 'c2'; segIndex: number }
 
-function r1(v: number): number {
-  return Math.round(v * COORD_ROUND) / COORD_ROUND
-}
-
 function fmt(v: number): string {
-  const n = r1(v)
+  const n = round1(v)
   return Number.isInteger(n) ? String(n) : n.toFixed(COORD_DECIMALS)
 }
 
 export function parseEditablePath(d: string): EditableSeg[] {
   return parseCommands(d).map((cmd): EditableSeg => {
-    if (cmd.op === 'M') return { op: 'M', x: r1(cmd.n[0]), y: r1(cmd.n[1]) }
-    if (cmd.op === 'L') return { op: 'L', x: r1(cmd.n[0]), y: r1(cmd.n[1]) }
-    if (cmd.op === 'Q') return { op: 'Q', x1: r1(cmd.n[0]), y1: r1(cmd.n[1]), x: r1(cmd.n[2]), y: r1(cmd.n[3]) }
-    if (cmd.op === 'C') return { op: 'C', x1: r1(cmd.n[0]), y1: r1(cmd.n[1]), x2: r1(cmd.n[2]), y2: r1(cmd.n[3]), x: r1(cmd.n[4]), y: r1(cmd.n[5]) }
+    if (cmd.op === 'M') return { op: 'M', x: round1(cmd.n[0]), y: round1(cmd.n[1]) }
+    if (cmd.op === 'L') return { op: 'L', x: round1(cmd.n[0]), y: round1(cmd.n[1]) }
+    if (cmd.op === 'Q') return { op: 'Q', x1: round1(cmd.n[0]), y1: round1(cmd.n[1]), x: round1(cmd.n[2]), y: round1(cmd.n[3]) }
+    if (cmd.op === 'C') return { op: 'C', x1: round1(cmd.n[0]), y1: round1(cmd.n[1]), x2: round1(cmd.n[2]), y2: round1(cmd.n[3]), x: round1(cmd.n[4]), y: round1(cmd.n[5]) }
     return { op: 'Z' }
   })
 }
@@ -56,13 +52,13 @@ export function moveEditableHandle(segs: EditableSeg[], handle: HandleRef, to: P
   if (!target || target.op === 'Z') return next
 
   if (handle.kind === 'c1' && (target.op === 'Q' || target.op === 'C')) {
-    target.x1 = r1(to[0])
-    target.y1 = r1(to[1])
+    target.x1 = round1(to[0])
+    target.y1 = round1(to[1])
     return next
   }
   if (handle.kind === 'c2' && target.op === 'C') {
-    target.x2 = r1(to[0])
-    target.y2 = r1(to[1])
+    target.x2 = round1(to[0])
+    target.y2 = round1(to[1])
     return next
   }
   if (handle.kind === 'anchor') {
@@ -70,16 +66,16 @@ export function moveEditableHandle(segs: EditableSeg[], handle: HandleRef, to: P
     const dy = to[1] - target.y
     const oldX = target.x
     const oldY = target.y
-    target.x = r1(to[0])
-    target.y = r1(to[1])
+    target.x = round1(to[0])
+    target.y = round1(to[1])
     if (target.op === 'C') {
-      target.x2 = r1(target.x2 + dx)
-      target.y2 = r1(target.y2 + dy)
+      target.x2 = round1(target.x2 + dx)
+      target.y2 = round1(target.y2 + dy)
     }
     const after = next[handle.segIndex + 1]
     if (after && (after.op === 'Q' || after.op === 'C')) {
-      after.x1 = r1(after.x1 + dx)
-      after.y1 = r1(after.y1 + dy)
+      after.x1 = round1(after.x1 + dx)
+      after.y1 = round1(after.y1 + dy)
     }
     // 서브패스의 시작점(M)과 닫힘 직전 끝점이 같은 좌표였다면 함께 맞춰 닫힌 윤곽을 유지한다.
     if (target.op === 'M') {
@@ -92,8 +88,8 @@ export function moveEditableHandle(segs: EditableSeg[], handle: HandleRef, to: P
             prev.x = target.x
             prev.y = target.y
             if (prev.op === 'C') {
-              prev.x2 = r1(prev.x2 + dx)
-              prev.y2 = r1(prev.y2 + dy)
+              prev.x2 = round1(prev.x2 + dx)
+              prev.y2 = round1(prev.y2 + dy)
             }
           }
           break
@@ -108,18 +104,18 @@ export function transformPath(d: string, fn: (x: number, y: number) => Pt): stri
   const segs = parseEditablePath(d).map((s): EditableSeg => {
     if (s.op === 'M' || s.op === 'L') {
       const [x, y] = fn(s.x, s.y)
-      return { op: s.op, x: r1(x), y: r1(y) }
+      return { op: s.op, x: round1(x), y: round1(y) }
     }
     if (s.op === 'Q') {
       const [x1, y1] = fn(s.x1, s.y1)
       const [x, y] = fn(s.x, s.y)
-      return { op: 'Q', x1: r1(x1), y1: r1(y1), x: r1(x), y: r1(y) }
+      return { op: 'Q', x1: round1(x1), y1: round1(y1), x: round1(x), y: round1(y) }
     }
     if (s.op === 'C') {
       const [x1, y1] = fn(s.x1, s.y1)
       const [x2, y2] = fn(s.x2, s.y2)
       const [x, y] = fn(s.x, s.y)
-      return { op: 'C', x1: r1(x1), y1: r1(y1), x2: r1(x2), y2: r1(y2), x: r1(x), y: r1(y) }
+      return { op: 'C', x1: round1(x1), y1: round1(y1), x2: round1(x2), y2: round1(y2), x: round1(x), y: round1(y) }
     }
     return { op: 'Z' }
   })
@@ -134,7 +130,7 @@ export function transformStroke(stroke: StrokeRecord, fn: (x: number, y: number)
     outline_path: transformPath(stroke.outline_path, fn),
     median_points: stroke.median_points.map(([x, y]): Pt => {
       const [nx, ny] = fn(x, y)
-      return [r1(nx), r1(ny)]
+      return [round1(nx), round1(ny)]
     }),
     stroke_width: scaledWidth,
   }
@@ -177,7 +173,7 @@ export function strokesBBox(strokes: StrokeRecord[]): BBox | null {
 // 선분들 중 클릭 지점과 가장 가까운 선분을 찾아 그 사이에 새 중심선 정점을 끼워 넣는다.
 export function insertMedianPoint(points: Pt[], at: Pt): { points: Pt[]; insertedIndex: number } {
   if (points.length < 2) {
-    const next: Pt[] = [...points, [r1(at[0]), r1(at[1])]]
+    const next: Pt[] = [...points, [round1(at[0]), round1(at[1])]]
     return { points: next, insertedIndex: next.length - 1 }
   }
   let bestSeg = 0
@@ -190,7 +186,7 @@ export function insertMedianPoint(points: Pt[], at: Pt): { points: Pt[]; inserte
     }
   }
   const copy = points.map((p): Pt => [p[0], p[1]])
-  copy.splice(bestSeg + 1, 0, [r1(at[0]), r1(at[1])])
+  copy.splice(bestSeg + 1, 0, [round1(at[0]), round1(at[1])])
   return { points: copy, insertedIndex: bestSeg + 1 }
 }
 
@@ -221,7 +217,7 @@ export function mergeTwoStrokes(first: StrokeRecord, second: StrokeRecord): Stro
   const recovered = recoverMedian(combinedPath, Math.max(first.stroke_width, second.stroke_width))
   const fallbackMedian: Pt[] = [...first.median_points, ...second.median_points]
   const rawMedian: Pt[] = recovered.median.length >= MEDIAN_MIN_POINTS
-    ? recovered.median.map((p): Pt => [r1(p.x), r1(p.y)])
+    ? recovered.median.map((p): Pt => [round1(p.x), round1(p.y)])
     : fallbackMedian
   // 첫 획의 기필(시작점)에 가까운 쪽이 시작점이 되도록 방향을 맞춘다.
   const start = first.median_points[0]

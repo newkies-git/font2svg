@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
-import { CANVAS } from '../lib/constants.ts'
+import { CANVAS, LAYER_ID } from '../lib/constants.ts'
 import type { LayerColor, LayerRecord } from '../types.ts'
 
 const props = defineProps<{
@@ -104,7 +104,7 @@ function canFetch(layer: LayerRecord): boolean {
 
 function canApplyToStrokes(layer: LayerRecord | null): boolean {
   if (!layer) return false
-  return layer.id !== 'strokes' && layer.strokes.length > 0
+  return layer.id !== LAYER_ID.strokes && layer.strokes.length > 0
 }
 
 function canReset(layer: LayerRecord | null): boolean {
@@ -242,7 +242,7 @@ function thumbPaths(layer: LayerRecord): string[] {
           <div v-else class="layer-name-row">
             <span class="layer-name-text">{{ layer.name }}</span>
             <span v-if="dirtyIds.has(layer.id)" class="layer-dirty-dot" title="미저장 변경">●</span>
-            <span v-else-if="layer.modified && layer.id !== 'strokes'" class="layer-badge mod">편집됨</span>
+            <span v-else-if="layer.modified && layer.id !== LAYER_ID.strokes" class="layer-badge mod">편집됨</span>
             <span v-if="layerCountText(layer)" class="layer-count">{{ layerCountText(layer) }}</span>
           </div>
         </div>

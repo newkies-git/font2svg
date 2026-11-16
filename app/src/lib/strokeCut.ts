@@ -1,18 +1,5 @@
-import { COORD_DECIMALS, COORD_ROUND, DEFAULT_STROKE_WIDTH, MIN_STROKE_WIDTH, STROKE_WIDTH_CAP_RATIO, STROKE_WIDTH_MARGIN } from './constants.ts'
+import { DEFAULT_STROKE_WIDTH, MIN_STROKE_WIDTH, STROKE_WIDTH_CAP_RATIO, STROKE_WIDTH_MARGIN } from './constants.ts'
 import { flattenContours, samplePath, type Pt } from './paths.ts'
-
-export type StrokeGeometry = {
-  path: string
-  median: Pt[]
-  width: number
-  radii: number[]
-}
-
-export type ShapeChoice = {
-  id: number
-  path: string
-  median: Pt[]
-}
 
 type Raster = {
   w: number
@@ -53,6 +40,16 @@ const MIN_LOOP_POINTS = 12
 const MIN_LOOP_AREA = 20
 const COVER_NEIGHBOR = 2
 const COVER_PADDING = 4
+// 교차부 공유 확장 반경: 기본 획 폭 대비 비율, 최소 픽셀
+const COVER_RADIUS_RATIO = 0.42
+const COVER_RADIUS_MIN_PX = 4
+// 골격 가지치기: 가지 탐색 최대 길이, 이 길이 미만이면 가지로 보고 지우는 기준, 반복 횟수
+const SPUR_SCAN_LENGTH = 14
+const SPUR_MAX_LENGTH = 12
+const SPUR_PASSES = 6
+// Chaikin 코너 깎기: 가까운 점/먼 점 가중치
+const CHAIKIN_NEAR = 0.75
+const CHAIKIN_FAR = 0.25
 const N8 = [1, -1, 0, 0, 1, 1, -1, -1]
 const N8Y = [0, 0, 1, -1, 1, -1, 1, -1]
 
@@ -68,36 +65,6 @@ export function prepareGlyph(contourPaths: string[]): GlyphModel {
   const segments = buildSegments(skeleton, deg, raster.w, raster.h)
   if (segments.length === 0) throw new Error('획의 중심선을 만들지 못했습니다.')
   return { raster, skeleton, dt, deg, segments }
-}
-
-export type Region = { minX: number; minY: number; maxX: number; maxY: number }
-
-export function shapesInRegion(model: GlyphModel, region: Region): ShapeChoice[] {
-  const { raster, skeleton } = model
-  const counts = new Map<number, number>()
-  for (let i = 0; i < skeleton.length; i++) {
-    if (!skeleton[i]) continue
-    const point = pixelToFont(raster, i)
-    if (point.x < region.minX || point.x > region.maxX || point.y < region.minY || point.y > region.maxY) continue
-    for (const seg of segmentsThrough(model, i)) counts.set(seg.id, (counts.get(seg.id) ?? 0) + 1)
-  }
-  const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1])
-  if (ranked.length === 0) return []
-  const meaningful = ranked.filter((item) => item[1] > 1)
-  const pool = meaningful.length > 0 ? meaningful : ranked
-  const best = pool[0][1]
-  const kept = pool.filter((item) => item[1] * 3 >= best)
-  return kept.flatMap(([id]) => {
-    const seg = model.segments[id]
-    const preview = ensurePreview(model, seg)
-    return preview ? [{ id: seg.id, path: preview.path, median: preview.median }] : []
-  })
-}
-
-export function extractFromShapes(model: GlyphModel, startId: number, endId: number, startPt: Pt, endPt: Pt): StrokeGeometry {
-  const chain = chainForShapes(model, startId, endId, startPt, endPt)
-  if (!chain || chain.length < 2) throw new Error('두 점이 같은 획으로 이어지지 않습니다. 획 위를 다시 찍으세요.')
-  return geometryFromChain(model, chain)
 }
 
 export function recoverMedian(path: string, defaultStrokeWidth = DEFAULT_STROKE_WIDTH): { median: Pt[]; width: number; radii: number[] } {
@@ -204,7 +171,7 @@ export function segmentOutlineByMedians(fullOutlinePaths: string[], medians: Pt[
   }
 
   // 교차점 부근 공유 확장(숨겨진 기필/수필 및 교차부 연속성 확보)
-  const radiusPx = Math.max(4, Math.round((defaultWidth * 0.42) * raster.scale))
+  const radiusPx = Math.max(COVER_RADIUS_MIN_PX, Math.round((defaultWidth * COVER_RADIUS_RATIO) * raster.scale))
   for (let s = 0; s < medians.length; s++) {
     const med = medians[s]
     const mask = strokeMasks[s]
@@ -243,23 +210,6 @@ export function segmentOutlineByMedians(fullOutlinePaths: string[], medians: Pt[
     strokes,
     widths,
     coverage: totalInk > 0 ? coveredPixels / totalInk : 1,
-  }
-}
-
-function geometryFromChain(model: GlyphModel, chain: number[]): StrokeGeometry {
-  const raw = chain.map((index) => model.dt[index])
-  const tip = tipZone(model, chain, bodyRadius(raw))
-  const radii = smoothRadii(clampRadii(raw, tip))
-  const region = fillStrokeTips(model, chain, ribbon(model, chain, radii), tip)
-  const loops = traceLoops(region, model.raster.w, model.raster.h)
-  if (loops.length === 0) throw new Error('이 구간의 획 윤곽을 만들지 못했습니다.')
-  const median = chainMedian(model.raster, chain)
-  const path = outlinePath(loops[0], model, chain, radii)
-  return {
-    path,
-    median,
-    width: ribbonWidth(radii, model.raster.scale),
-    radii: coverRadii(path, median),
   }
 }
 
@@ -341,22 +291,6 @@ function orientHeuristic(raster: Raster, chain: number[]): number[] {
   return reverse ? [...chain].reverse() : chain
 }
 
-function ensurePreview(model: GlyphModel, seg: Segment): { path: string; median: Pt[] } | null {
-  if (seg.path && seg.median) return { path: seg.path, median: seg.median }
-  try {
-    const geometry = geometryFromChain(model, seg.chain)
-    seg.path = geometry.path
-    seg.median = geometry.median
-    return { path: seg.path, median: seg.median }
-  } catch {
-    return null
-  }
-}
-
-function segmentsThrough(model: GlyphModel, pixel: number): Segment[] {
-  return model.segments.filter((seg) => seg.chain.includes(pixel))
-}
-
 function sharesNode(a: Segment, b: Segment): boolean {
   return a.a === b.a || a.a === b.b || a.b === b.a || a.b === b.b
 }
@@ -435,152 +369,6 @@ function shortestSegments(model: GlyphModel, startId: number, endId: number): nu
   return found
 }
 
-function bodyRadius(raw: number[]): number {
-  const finite = raw.map((value) => (Number.isFinite(value) && value > 0 ? value : 1))
-  const sorted = [...finite].sort((a, b) => a - b)
-  const mid = sorted[Math.floor(sorted.length / 2)] || 1
-  const body = finite.filter((value) => value <= mid * 1.2)
-  return median(body.length ? body : finite)
-}
-
-function clampRadii(raw: number[], tip: boolean[]): number[] {
-  const finite = raw.map((value) => (Number.isFinite(value) && value > 0 ? value : 1))
-  const base = bodyRadius(finite)
-  return finite.map((value, index) => (tip[index] || value <= base * 1.25 ? value : base))
-}
-
-function tipZone(model: GlyphModel, chain: number[], base: number): boolean[] {
-  const zone = chain.map(() => false)
-  const onChain = new Uint8Array(model.raster.w * model.raster.h)
-  for (const index of chain) onChain[index] = 1
-  const reach = Math.ceil(Math.max(8, base * 1.4))
-  const limit = Math.ceil(Math.max(12, base * 3.2))
-  const mark = (fromStart: boolean) => {
-    for (let step = 0; step < chain.length && step < limit; step++) {
-      const index = fromStart ? step : chain.length - 1 - step
-      if (seesForeignSkeleton(model, onChain, chain[index], reach)) break
-      zone[index] = true
-    }
-  }
-  mark(true)
-  mark(false)
-  return zone
-}
-
-function seesForeignSkeleton(model: GlyphModel, onChain: Uint8Array, start: number, reach: number): boolean {
-  const { skeleton, raster } = model
-  const w = raster.w
-  const h = raster.h
-  const seen = new Uint8Array(w * h)
-  const dist = new Int16Array(w * h)
-  const queue = [start]
-  seen[start] = 1
-  for (let q = 0; q < queue.length; q++) {
-    const index = queue[q]
-    if (!onChain[index]) return true
-    if (dist[index] >= reach) continue
-    const x = index % w
-    const y = (index / w) | 0
-    for (let k = 0; k < 8; k++) {
-      const nx = x + N8[k]
-      const ny = y + N8Y[k]
-      if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue
-      const next = ny * w + nx
-      if (seen[next] || !skeleton[next]) continue
-      seen[next] = 1
-      dist[next] = dist[index] + 1
-      queue.push(next)
-    }
-  }
-  return false
-}
-
-function fillStrokeTips(model: GlyphModel, chain: number[], region: Uint8Array, tip: boolean[]): Uint8Array {
-  if (!tip.some(Boolean)) return region
-  const { raster, skeleton } = model
-  const { w, h, ink } = raster
-  const nearest = nearestSkeleton(ink, skeleton, w, h)
-  const onChain = new Uint8Array(w * h)
-  for (const index of chain) onChain[index] = 1
-  const tipPixel = new Uint8Array(w * h)
-  for (let i = 0; i < chain.length; i++) if (tip[i]) tipPixel[chain[i]] = 1
-  absorbShortBranches(model, onChain, tipPixel, bodyRadius(chain.map((index) => model.dt[index])))
-  const out = region.slice()
-  for (let i = 0; i < ink.length; i++) {
-    if (!ink[i] || out[i]) continue
-    const owner = nearest[i]
-    if (owner >= 0 && tipPixel[owner]) out[i] = 1
-  }
-  return out
-}
-
-function absorbShortBranches(model: GlyphModel, onChain: Uint8Array, tipPixel: Uint8Array, base: number) {
-  const { skeleton, raster } = model
-  const w = raster.w
-  const h = raster.h
-  const limit = Math.ceil(Math.max(10, base * 3.5))
-  const seen = new Uint8Array(w * h)
-  for (let i = 0; i < tipPixel.length; i++) {
-    if (!tipPixel[i]) continue
-    const x = i % w
-    const y = (i / w) | 0
-    for (let k = 0; k < 8; k++) {
-      const nx = x + N8[k]
-      const ny = y + N8Y[k]
-      if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue
-      const seed = ny * w + nx
-      if (!skeleton[seed] || onChain[seed] || seen[seed]) continue
-      const branch = [seed]
-      const queue = [seed]
-      seen[seed] = 1
-      for (let q = 0; q < queue.length; q++) {
-        const index = queue[q]
-        const sx = index % w
-        const sy = (index / w) | 0
-        for (let n = 0; n < 8; n++) {
-          const ax = sx + N8[n]
-          const ay = sy + N8Y[n]
-          if (ax < 0 || ay < 0 || ax >= w || ay >= h) continue
-          const next = ay * w + ax
-          if (!skeleton[next] || onChain[next] || seen[next]) continue
-          seen[next] = 1
-          branch.push(next)
-          queue.push(next)
-        }
-      }
-      if (branch.length <= limit * 3) for (const index of branch) tipPixel[index] = 1
-    }
-  }
-}
-
-function nearestSkeleton(ink: Uint8Array, skeleton: Uint8Array, w: number, h: number): Int32Array {
-  const nearest = new Int32Array(w * h).fill(-1)
-  const dist = new Int32Array(w * h).fill(-1)
-  const queue: number[] = []
-  for (let i = 0; i < skeleton.length; i++) {
-    if (!skeleton[i]) continue
-    nearest[i] = i
-    dist[i] = 0
-    queue.push(i)
-  }
-  for (let q = 0; q < queue.length; q++) {
-    const index = queue[q]
-    const x = index % w
-    const y = (index / w) | 0
-    for (let k = 0; k < 8; k++) {
-      const nx = x + N8[k]
-      const ny = y + N8Y[k]
-      if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue
-      const next = ny * w + nx
-      if (!ink[next] || dist[next] !== -1) continue
-      dist[next] = dist[index] + 1
-      nearest[next] = nearest[index]
-      queue.push(next)
-    }
-  }
-  return nearest
-}
-
 export function coverRadii(path: string, median: Pt[]): number[] {
   if (median.length === 0) return []
   const samples = samplePath(path, COVER_SAMPLE_FLATNESS)
@@ -605,60 +393,6 @@ export function coverRadii(path: string, median: Pt[]): number[] {
     }
     return radius + COVER_PADDING
   })
-}
-
-function smoothRadii(values: number[]): number[] {
-  return values.map((value, index) => {
-    const left = values[Math.max(0, index - 2)]
-    const right = values[Math.min(values.length - 1, index + 2)]
-    return Math.max(1.5, (left + value + right) / 3)
-  })
-}
-
-function ribbon(model: GlyphModel, chain: number[], radii: number[]): Uint8Array {
-  const { raster } = model
-  const { w, h, ink } = raster
-  const region = new Uint8Array(w * h)
-  for (let i = 0; i < chain.length; i++) {
-    const cx = chain[i] % w
-    const cy = (chain[i] / w) | 0
-    const radius = radii[i] + 1.35
-    const reach = Math.ceil(radius)
-    for (let dy = -reach; dy <= reach; dy++) {
-      const y = cy + dy
-      if (y < 0 || y >= h) continue
-      for (let dx = -reach; dx <= reach; dx++) {
-        if (dx * dx + dy * dy > radius * radius) continue
-        const x = cx + dx
-        if (x < 0 || x >= w) continue
-        const index = y * w + x
-        if (ink[index]) region[index] = 1
-      }
-    }
-  }
-  const closed = region.slice()
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      const index = y * w + x
-      if (!ink[index] || region[index]) continue
-      for (let k = 0; k < 8; k++) {
-        const nx = x + N8[k]
-        const ny = y + N8Y[k]
-        if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue
-        if (region[ny * w + nx]) {
-          closed[index] = 1
-          break
-        }
-      }
-    }
-  }
-  return closed
-}
-
-function ribbonWidth(radii: number[], scale: number): number {
-  let max = 1
-  for (const radius of radii) if (radius > max) max = radius
-  return (max * 2 + 4) / scale
 }
 
 function chainMedian(raster: Raster, chain: number[]): Pt[] {
@@ -824,7 +558,7 @@ function zhangSuen(src: Uint8Array, w: number, h: number): Uint8Array {
 }
 
 function pruneSpurs(skeleton: Uint8Array, w: number, h: number) {
-  for (let pass = 0; pass < 6; pass++) {
+  for (let pass = 0; pass < SPUR_PASSES; pass++) {
     const deg = degrees(skeleton, w, h)
     let changed = false
     for (let i = 0; i < skeleton.length; i++) {
@@ -832,7 +566,7 @@ function pruneSpurs(skeleton: Uint8Array, w: number, h: number) {
       const chain = [i]
       let prev = -1
       let cur = i
-      while (chain.length < 14) {
+      while (chain.length < SPUR_SCAN_LENGTH) {
         const next = skelNeighbors(skeleton, w, h, cur).find((pixel) => pixel !== prev)
         if (next === undefined) break
         chain.push(next)
@@ -840,7 +574,7 @@ function pruneSpurs(skeleton: Uint8Array, w: number, h: number) {
         cur = next
         if (deg[cur] !== 2) break
       }
-      if (deg[cur] >= 3 && chain.length < 12) {
+      if (deg[cur] >= 3 && chain.length < SPUR_MAX_LENGTH) {
         for (const pixel of chain) if (pixel !== cur) skeleton[pixel] = 0
         changed = true
       }
@@ -989,8 +723,8 @@ function chaikin(points: Pt[]): Pt[] {
   for (let i = 0; i < points.length; i++) {
     const a = points[i]
     const b = points[(i + 1) % points.length]
-    out.push({ x: a.x * 0.75 + b.x * 0.25, y: a.y * 0.75 + b.y * 0.25 })
-    out.push({ x: a.x * 0.25 + b.x * 0.75, y: a.y * 0.25 + b.y * 0.75 })
+    out.push({ x: a.x * CHAIKIN_NEAR + b.x * CHAIKIN_FAR, y: a.y * CHAIKIN_NEAR + b.y * CHAIKIN_FAR })
+    out.push({ x: a.x * CHAIKIN_FAR + b.x * CHAIKIN_NEAR, y: a.y * CHAIKIN_FAR + b.y * CHAIKIN_NEAR })
   }
   return out
 }
@@ -1040,165 +774,6 @@ function pointLineDistance(p: Pt, a: Pt, b: Pt): number {
   return Math.abs(dy * p.x - dx * p.y + b.x * a.y - b.y * a.x) / len
 }
 
-function outlinePath(pixelPts: Pt[], model: GlyphModel, chain: number[], radii: number[]): string {
-  const smooth = chaikin(pixelPts)
-  const raster = model.raster
-  const fontPts = smooth.map((point) => pixelPointToFont(raster, point))
-  let flags = closeFlagGaps(markCrossing(fontPts, model, chain, radii), 64)
-  if (!flags.some(Boolean)) return loopsToPath([rdp(smooth, 1.6)], raster)
-  const start = flags.findIndex((flag) => !flag)
-  const orderedPx = start > 0 ? rotate(smooth, start) : smooth
-  const ordered = start > 0 ? rotate(fontPts, start) : fontPts
-  flags = start > 0 ? rotate(flags, start) : flags
-  const body = median(radii) / raster.scale
-  const parts: string[] = [`M${fmt(ordered[0].x)} ${fmt(ordered[0].y)}`]
-  const n = ordered.length
-  let i = 0
-  while (i < n) {
-    let j = i + 1
-    while (j < n && !flags[j]) j++
-    const line = rdp(orderedPx.slice(i, j), 1.6).map((point) => pixelPointToFont(raster, point))
-    for (let k = 1; k < line.length; k++) parts.push(`L${fmt(line[k].x)} ${fmt(line[k].y)}`)
-    if (j >= n) break
-    let k = j
-    while (k < n && flags[k]) k++
-    const from = ordered[j - 1]
-    const to = k < n ? ordered[k] : ordered[0]
-    const prev = ordered[Math.max(0, j - 2)]
-    const after = k < n ? ordered[Math.min(n - 1, k + 1)] : ordered[Math.min(1, n - 1)]
-    const curve = crossingCubic(from, to, prev, after, body * 0.18)
-    const mid = cubicPoint(from, curve.c1, curve.c2, to, 0.5)
-    let near = Math.hypot(to.x - mid.x, to.y - mid.y)
-    for (let t = Math.max(0, j - 1); t < n && t <= k; t++) {
-      near = Math.min(near, Math.hypot(ordered[t].x - mid.x, ordered[t].y - mid.y))
-    }
-    if (near > body * 1.25) {
-      const fallback = rdp(orderedPx.slice(j - 1, Math.min(n, k + 1)), 1.6).map((point) => pixelPointToFont(raster, point))
-      for (let t = 1; t < fallback.length; t++) parts.push(`L${fmt(fallback[t].x)} ${fmt(fallback[t].y)}`)
-    } else {
-      parts.push(`C${fmt(curve.c1.x)} ${fmt(curve.c1.y)} ${fmt(curve.c2.x)} ${fmt(curve.c2.y)} ${fmt(to.x)} ${fmt(to.y)}`)
-    }
-    if (k >= n) break
-    i = k
-  }
-  return `${parts.join('')}Z`
-}
-
-function markCrossing(fontPts: Pt[], model: GlyphModel, chain: number[], radii: number[]): boolean[] {
-  const flags = crossingFlags(model, chain, radii)
-  const samples: { x: number; y: number; cross: boolean }[] = []
-  for (let i = 0; i < chain.length; i += 2) {
-    const point = pixelToFont(model.raster, chain[i])
-    samples.push({
-      x: point.x,
-      y: point.y,
-      cross: flags[i] || flags[Math.min(chain.length - 1, i + 1)],
-    })
-  }
-  if (samples.length === 0) return fontPts.map(() => false)
-  return fontPts.map((point) => {
-    let best = 0
-    let bestD = Infinity
-    for (let i = 0; i < samples.length; i++) {
-      const d = (samples[i].x - point.x) ** 2 + (samples[i].y - point.y) ** 2
-      if (d < bestD) {
-        bestD = d
-        best = i
-      }
-    }
-    return samples[best].cross
-  })
-}
-
-function closeFlagGaps(flags: boolean[], gap: number): boolean[] {
-  const out = flags.slice()
-  let i = 0
-  while (i < out.length) {
-    if (out[i]) {
-      i++
-      continue
-    }
-    let j = i
-    while (j < out.length && !out[j]) j++
-    if (i > 0 && out[i - 1] && j < out.length && out[j] && j - i <= gap) {
-      for (let k = i; k < j; k++) out[k] = true
-    }
-    i = j
-  }
-  return out
-}
-
-function crossingFlags(model: GlyphModel, chain: number[], radii: number[]): boolean[] {
-  const reach = Math.ceil(Math.max(8, median(radii) * 2))
-  const margin = reach
-  const flags = chain.map((index, i) => model.deg[index] >= 3 && i > margin && i < chain.length - 1 - margin)
-  const out = flags.slice()
-  for (let i = 0; i < flags.length; i++) {
-    if (!flags[i]) continue
-    const from = Math.max(margin, i - reach)
-    const to = Math.min(flags.length - 1 - margin, i + reach)
-    for (let j = from; j <= to; j++) out[j] = true
-  }
-  return out
-}
-
-function crossingCubic(from: Pt, to: Pt, prev: Pt, next: Pt, bow: number): { c1: Pt; c2: Pt } {
-  const chord = { x: to.x - from.x, y: to.y - from.y }
-  const dist = Math.hypot(chord.x, chord.y) || 1
-  const unitChord = { x: chord.x / dist, y: chord.y / dist }
-  let t0 = unitOf(from.x - prev.x, from.y - prev.y)
-  let t1 = unitOf(next.x - to.x, next.y - to.y)
-  if (t0.x * unitChord.x + t0.y * unitChord.y < 0.35) t0 = unitChord
-  if (t1.x * unitChord.x + t1.y * unitChord.y < 0.35) t1 = unitChord
-  return {
-    c1: clampToChord({ x: from.x + (t0.x * dist) / 3, y: from.y + (t0.y * dist) / 3 }, from, to, bow),
-    c2: clampToChord({ x: to.x - (t1.x * dist) / 3, y: to.y - (t1.y * dist) / 3 }, from, to, bow),
-  }
-}
-
-function clampToChord(control: Pt, from: Pt, to: Pt, limit: number): Pt {
-  const dx = to.x - from.x
-  const dy = to.y - from.y
-  const len2 = dx * dx + dy * dy || 1
-  const t = ((control.x - from.x) * dx + (control.y - from.y) * dy) / len2
-  const proj = { x: from.x + dx * t, y: from.y + dy * t }
-  let ox = control.x - proj.x
-  let oy = control.y - proj.y
-  const offset = Math.hypot(ox, oy)
-  if (offset > limit && offset > 0) {
-    ox *= limit / offset
-    oy *= limit / offset
-  }
-  return { x: proj.x + ox, y: proj.y + oy }
-}
-
-function cubicPoint(p0: Pt, c1: Pt, c2: Pt, p1: Pt, t: number): Pt {
-  const u = 1 - t
-  const b0 = u * u * u
-  const b1 = 3 * u * u * t
-  const b2 = 3 * u * t * t
-  const b3 = t * t * t
-  return {
-    x: p0.x * b0 + c1.x * b1 + c2.x * b2 + p1.x * b3,
-    y: p0.y * b0 + c1.y * b1 + c2.y * b2 + p1.y * b3,
-  }
-}
-
-function unitOf(x: number, y: number): Pt {
-  const len = Math.hypot(x, y)
-  if (len < 1e-6) return { x: 0, y: 0 }
-  return { x: x / len, y: y / len }
-}
-
-function rotate<T>(items: T[], start: number): T[] {
-  return items.slice(start).concat(items.slice(0, start))
-}
-
-function fmt(value: number): string {
-  const rounded = Math.round(value * COORD_ROUND) / COORD_ROUND
-  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(COORD_DECIMALS)
-}
-
 function loopsToPath(loops: Pt[][], raster: Raster): string {
   return loops
     .map((loop) => {
@@ -1227,11 +802,6 @@ function pixelToFont(raster: Raster, indexOr: number): Pt {
     x: raster.minX + (x - raster.pad) / raster.scale,
     y: raster.maxY - (y - raster.pad) / raster.scale,
   }
-}
-
-function median(values: number[]): number {
-  const sorted = [...values].sort((a, b) => a - b)
-  return sorted[Math.floor(sorted.length / 2)] || 1
 }
 
 function count(bin: Uint8Array): number {

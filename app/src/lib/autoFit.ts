@@ -234,10 +234,3 @@ export function autoFitLayer(strokes: StrokeRecord[], fontPaths: string[]): FitR
   const after = meanOf(current.map((stroke, i) => iou(fillMask(strokeLoops(stroke)), finalRegions[i])))
   return { strokes: current, before, after }
 }
-
-// 화면 표시용: 전/후 겹침을 모두 "획별 평균"으로 비교하기 위한 측정값
-export function strokeOverlapScore(strokes: StrokeRecord[], fontPaths: string[]): number {
-  const fontMask = fillMask(loopsOf(fontPaths))
-  const regions = assignRegions(fontMask, strokes)
-  return meanOf(strokes.map((stroke, i) => iou(fillMask(strokeLoops(stroke)), regions[i])))
-}

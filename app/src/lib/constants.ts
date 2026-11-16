@@ -1,9 +1,26 @@
 export const CANVAS = 1024
+// 기본 레이어 id. 서버(BUILTIN_LAYERS)와 화면이 같은 값을 쓴다.
+export const LAYER_ID = {
+  font: 'font',
+  outline: 'outline',
+  mmh: 'mmh',
+  acjk: 'acjk',
+  naver: 'naver',
+  strokes: 'strokes',
+  medians: 'medians',
+  numbers: 'numbers',
+} as const
 export const DEFAULT_STROKE_WIDTH = 135
 export const MIN_STROKE_WIDTH = 40
 export const STROKE_WIDTH_CAP_RATIO = 2.5
 export const STROKE_WIDTH_MARGIN = 14
 export const COORD_ROUND = 10
+// 투명도는 소수 둘째 자리(1/OPACITY_STEPS 단위)로 반올림한다.
+export const OPACITY_STEPS = 100
+// 재생: 한 획이 드러나는 데 걸리는 시간(ms)
+export const REVEAL_STROKE_MS = 350
+// 레이어 표시 메타(눈·투명도·잠금 등) 변경을 모아 서버로 보내기 전 대기 시간(ms)
+export const META_PATCH_DEBOUNCE_MS = 180
 export const COORD_DECIMALS = 1
 export const UNICODE_HEX_PAD = 4
 export const SHA256_HEX_LENGTH = 64
@@ -35,7 +52,6 @@ export const ANIM_STROKE_STEP_SECONDS = 1
 export const ACJK_SVG_Y_ORIGIN = 900
 export const BADGE_RADIUS = 28
 export const REVEAL_STEP = 0.04
-export const FRAME_MS = 30
 // 자동 맞춤: 래스터 격자(칸 수), 격자가 덮는 좌표 범위의 여백, 윤곽 평탄화 허용 오차
 export const FIT_GRID = 256
 export const FIT_MARGIN = 128

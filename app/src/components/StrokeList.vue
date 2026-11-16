@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { LAYER_ID } from '../lib/constants.ts'
 import { computed, ref } from 'vue'
 import type { CapType, LayerRecord, StrokeRecord } from '../types.ts'
 
@@ -198,7 +199,7 @@ function toggleContour(contour: number) {
 
         <div class="insp-actions" role="toolbar" aria-label="선택 획 편집 작업">
           <button
-            v-if="layer && layer.id !== 'strokes'"
+            v-if="layer && layer.id !== LAYER_ID.strokes"
             type="button"
             title="이 획을 작업 획 레이어 끝에 추가합니다"
             @click="emit('copyToWork', selectedIndex)"

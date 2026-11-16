@@ -1,3 +1,4 @@
+import { LAYER_ID } from '../lib/constants.ts'
 import type { Ref } from 'vue'
 import type { CharacterDetail, EditorTool, LayerRecord } from '../types.ts'
 import { cloneLayer, cloneStroke } from './layerClone.ts'
@@ -36,7 +37,7 @@ export function useLayerSession(
     connectPoints.value = []
     selectedMedianPointIndex.value = null
     if (!layers.value.some((l) => l.id === activeLayerId.value)) {
-      activeLayerId.value = 'strokes'
+      activeLayerId.value = LAYER_ID.strokes
     }
     const target = editableLayer.value
     const count = target?.kind === 'FONT' ? target.paths.length : (target?.strokes.length ?? 0)
@@ -50,7 +51,7 @@ export function useLayerSession(
     next.add(layerId)
     dirtyIds.value = next
     // STROKES 레이어가 바뀌면 selected.strokes와 획수도 즉시 맞춰 준다.
-    if (layerId === 'strokes' && selected.value) {
+    if (layerId === LAYER_ID.strokes && selected.value) {
       const sl = strokesLayer.value
       if (sl) selected.value = { ...selected.value, strokes: sl.strokes.map(cloneStroke) }
     }
@@ -70,7 +71,7 @@ export function useLayerSession(
     if (selectedStrokeIndex.value >= count) {
       selectedStrokeIndex.value = Math.max(0, count - 1)
     }
-    if (target?.id === 'strokes' && count > 0) {
+    if (target?.id === LAYER_ID.strokes && count > 0) {
       shown.value = Math.max(1, Math.min(count, shown.value || count))
     }
   }
@@ -89,7 +90,7 @@ export function useLayerSession(
     stopPlayback()
     selectedStrokeIndex.value = index
     selectedMedianPointIndex.value = null
-    if (editableLayer.value?.id === 'strokes') {
+    if (editableLayer.value?.id === LAYER_ID.strokes) {
       shown.value = index + 1
       reveal.value = 1
     }

@@ -1,5 +1,7 @@
+import { LAYER_ID } from '../lib/constants.ts'
 import type { Ref } from 'vue'
 import { autoFitLayer, autoFitStroke } from '../lib/autoFit.ts'
+import { round1 } from '../lib/paths.ts'
 import { recoverMedian, splitStrokeByKnife } from '../lib/strokeCut.ts'
 import {
   insertMedianPoint,
@@ -17,7 +19,7 @@ import { cloneStroke } from './layerClone.ts'
 import type { LayerEditorState } from './layerEditorState.ts'
 
 function roundPt(p: Pt): Pt {
-  return [Math.round(p[0] * 10) / 10, Math.round(p[1] * 10) / 10]
+  return [round1(p[0]), round1(p[1])]
 }
 
 function pointsToClosedPath(points: Pt[]): string {
@@ -53,7 +55,7 @@ export function useStrokeEdit(
     if (!target) return
     target.strokes = nextStrokes.map((s, idx) => ({ ...s, stroke_order: idx + 1 }))
     markDirty(target.id)
-    if (target.id === 'strokes') {
+    if (target.id === LAYER_ID.strokes) {
       shown.value = Math.max(1, Math.min(target.strokes.length, shown.value || target.strokes.length))
     }
     if (selectedStrokeIndex.value >= target.strokes.length) {
@@ -151,7 +153,7 @@ export function useStrokeEdit(
   function copyStrokeToWorkLayer(index: number) {
     const src = editableLayer.value
     const dst = strokesLayer.value
-    if (!src || !dst || src.id === 'strokes') return
+    if (!src || !dst || src.id === LAYER_ID.strokes) return
     if (dst.locked) {
       error.value = '작업 획 레이어가 잠겨 있습니다. 잠금을 해제한 뒤 복사하세요.'
       return
@@ -163,7 +165,7 @@ export function useStrokeEdit(
       stroke_order: idx + 1,
     }))
     dst.strokes = next
-    markDirty('strokes')
+    markDirty(LAYER_ID.strokes)
     shown.value = dst.strokes.length
     message.value = `'${src.name}'의 ${index + 1}획을 작업 획 레이어 끝에 추가했습니다.`
   }
@@ -271,7 +273,7 @@ export function useStrokeEdit(
     const copy = target.strokes.map(cloneStroke)
     const pts = copy[strokeIdx].median_points
     if (!pts[ptIdx]) return
-    pts[ptIdx] = [Math.round(to[0] * 10) / 10, Math.round(to[1] * 10) / 10]
+    pts[ptIdx] = roundPt(to)
     copy[strokeIdx].stroke_width = recomputeStrokeWidth(copy[strokeIdx].outline_path, pts, copy[strokeIdx].stroke_width)
     updateTargetStrokes(copy)
   }
@@ -351,7 +353,7 @@ export function useStrokeEdit(
     }
     const [left, right] = parts.map((path): StrokeRecord => {
       const median = recoverMedian(path, stroke.stroke_width)
-      const pts = median.median.map((p): Pt => [Math.round(p.x * 10) / 10, Math.round(p.y * 10) / 10])
+      const pts = median.median.map((p): Pt => roundPt([p.x, p.y]))
       return {
         ...stroke,
         outline_path: path,
@@ -365,7 +367,7 @@ export function useStrokeEdit(
     copy.splice(idx, 1, left, right)
     updateTargetStrokes(copy, `${idx + 1}획을 2개로 분할했습니다. [레이어 저장]을 누르면 반영됩니다.`)
     selectedStrokeIndex.value = idx + 1
-    if (target.id === 'strokes') shown.value = idx + 2
+    if (target.id === LAYER_ID.strokes) shown.value = idx + 2
   }
 
   function cancelConnect() {
@@ -418,7 +420,7 @@ export function useStrokeEdit(
     const stroke = target.strokes[idx]
     if (!stroke) return
     const median = recoverMedian(path, stroke.stroke_width)
-    const pts = median.median.map((p): Pt => [Math.round(p.x * 10) / 10, Math.round(p.y * 10) / 10])
+    const pts = median.median.map((p): Pt => roundPt([p.x, p.y]))
     const copy = target.strokes.map(cloneStroke)
     copy[idx] = {
       ...copy[idx],

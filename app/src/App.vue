@@ -12,7 +12,7 @@ import { useCharacterList } from './composables/useCharacterList.ts'
 import { useLayerWorkspace } from './composables/useLayerWorkspace.ts'
 import { usePlayback } from './composables/usePlayback.ts'
 import { useTheme } from './composables/useTheme.ts'
-import { MISSING_FETCH_LIMIT } from './lib/constants.ts'
+import { MISSING_FETCH_LIMIT, LAYER_ID } from './lib/constants.ts'
 import { issueLabel } from './lib/labels.ts'
 import type { CharacterDetail, CharacterSummary } from './types.ts'
 
@@ -28,7 +28,7 @@ const { chars, query, statusFilter, filteredChars, statusCounts, loadList, clear
 const { themeMode, setTheme } = useTheme()
 
 const workStrokeCount = computed(() => {
-  const work = layers.value.find((l) => l.id === 'strokes')
+  const work = layers.value.find((l) => l.id === LAYER_ID.strokes)
   return work ? work.strokes.length : (selected.value?.strokes.length ?? 0)
 })
 
@@ -96,8 +96,8 @@ const {
 
 // 획 윤곽 자동 매핑에서 중심선 길잡이로 쓸 수 있는 레이어(획이 있는 레이어, 작업 획 우선)
 const outlineGuideLayers = computed(() => layers.value
-  .filter((l) => l.id !== 'outline' && l.strokes.length > 0)
-  .sort((a, b) => Number(b.id === 'strokes') - Number(a.id === 'strokes') || a.z_index - b.z_index))
+  .filter((l) => l.id !== LAYER_ID.outline && l.strokes.length > 0)
+  .sort((a, b) => Number(b.id === LAYER_ID.strokes) - Number(a.id === LAYER_ID.strokes) || a.z_index - b.z_index))
 
 function unlockActiveLayers() {
   if (activeLayer.value?.locked) toggleLayerLock(activeLayer.value.id)
@@ -302,7 +302,7 @@ async function pullReference() {
 
 async function approve() {
   if (!selected.value) return
-  if (dirtyIds.value.has('strokes')) {
+  if (dirtyIds.value.has(LAYER_ID.strokes)) {
     await saveAllDirtyLayers()
     if (error.value) return
   }
@@ -382,7 +382,7 @@ async function undo() {
 
 async function compileChar() {
   if (!selected.value) return
-  if (dirtyIds.value.has('strokes')) {
+  if (dirtyIds.value.has(LAYER_ID.strokes)) {
     await saveAllDirtyLayers()
     if (error.value) return
   }

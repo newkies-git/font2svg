@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
-import { DEFAULT_STROKE_WIDTH, MIN_STROKE_WIDTH, STROKE_WIDTH_CAP_RATIO } from '../src/lib/constants.ts'
+import { DEFAULT_STROKE_WIDTH, MIN_STROKE_WIDTH, OPACITY_STEPS, STROKE_WIDTH_CAP_RATIO, LAYER_ID } from '../src/lib/constants.ts'
 import { isValidSvgPath } from '../src/lib/paths.ts'
 import type { CapType, LayerColor, LayerKind, LayerMetaPatch, LayerRecord, Pt, StrokeRecord } from '../src/types.ts'
 import { transaction } from './db.ts'
@@ -21,14 +21,14 @@ type BuiltinLayerSpec = {
 
 // PhotoCraft 합성 순서: 배열 앞쪽(z_index 작은 값)이 아래쪽 레이어, 패널 UI는 역순(위→아래)으로 표시한다.
 export const BUILTIN_LAYERS: readonly BuiltinLayerSpec[] = [
-  { id: 'font', kind: 'FONT', name: '궁서체 (TTF)', z_index: 0, visible: true, opacity: 0.35, locked: true, label_color: 'slate' },
-  { id: 'outline', kind: 'OUTLINE', name: '획 윤곽 (매핑)', z_index: 1, visible: false, opacity: 0.7, locked: false, label_color: 'rose' },
-  { id: 'mmh', kind: 'MMH', name: 'Hanzi (MMH)', z_index: 2, visible: false, opacity: 0.6, locked: true, label_color: 'violet' },
-  { id: 'acjk', kind: 'ACJK', name: 'AnimCJK', z_index: 3, visible: false, opacity: 0.6, locked: true, label_color: 'blue' },
-  { id: 'naver', kind: 'NAVER', name: '네이버 획순', z_index: 4, visible: false, opacity: 0.65, locked: true, label_color: 'green' },
-  { id: 'strokes', kind: 'STROKES', name: '작업 획', z_index: 5, visible: true, opacity: 1.0, locked: false, label_color: 'ink' },
-  { id: 'medians', kind: 'MEDIANS', name: '중심선', z_index: 6, visible: true, opacity: 1.0, locked: false, label_color: 'amber' },
-  { id: 'numbers', kind: 'NUMBERS', name: '획순 번호', z_index: 7, visible: true, opacity: 1.0, locked: false, label_color: 'rose' },
+  { id: LAYER_ID.font, kind: 'FONT', name: '궁서체 (TTF)', z_index: 0, visible: true, opacity: 0.35, locked: true, label_color: 'slate' },
+  { id: LAYER_ID.outline, kind: 'OUTLINE', name: '획 윤곽 (매핑)', z_index: 1, visible: false, opacity: 0.7, locked: false, label_color: 'rose' },
+  { id: LAYER_ID.mmh, kind: 'MMH', name: 'Hanzi (MMH)', z_index: 2, visible: false, opacity: 0.6, locked: true, label_color: 'violet' },
+  { id: LAYER_ID.acjk, kind: 'ACJK', name: 'AnimCJK', z_index: 3, visible: false, opacity: 0.6, locked: true, label_color: 'blue' },
+  { id: LAYER_ID.naver, kind: 'NAVER', name: '네이버 획순', z_index: 4, visible: false, opacity: 0.65, locked: true, label_color: 'green' },
+  { id: LAYER_ID.strokes, kind: 'STROKES', name: '작업 획', z_index: 5, visible: true, opacity: 1.0, locked: false, label_color: 'ink' },
+  { id: LAYER_ID.medians, kind: 'MEDIANS', name: '중심선', z_index: 6, visible: true, opacity: 1.0, locked: false, label_color: 'amber' },
+  { id: LAYER_ID.numbers, kind: 'NUMBERS', name: '획순 번호', z_index: 7, visible: true, opacity: 1.0, locked: false, label_color: 'rose' },
 ]
 
 const VALID_COLORS = new Set<LayerColor>(['none', 'ink', 'slate', 'blue', 'violet', 'green', 'amber', 'rose'])
@@ -45,7 +45,7 @@ function clampStrokeWidth(value: number): number {
 function clampOpacity(value: unknown, fallback: number): number {
   const n = Number(value)
   if (!Number.isFinite(n)) return fallback
-  return Math.max(0, Math.min(1, Math.round(n * 100) / 100))
+  return Math.max(0, Math.min(1, Math.round(n * OPACITY_STEPS) / OPACITY_STEPS))
 }
 
 function normalizeColor(value: unknown, fallback: LayerColor): LayerColor {
@@ -143,7 +143,7 @@ export function buildCharacterLayers(
     const locked = saved ? Boolean(saved.locked) : spec.locked
     const zIndex = saved ? saved.z_index : spec.z_index
     const labelColor = saved ? normalizeColor(saved.label_color, spec.label_color) : spec.label_color
-    const defaultName = spec.id === 'strokes' && params.working ? '작업 획 (초안)' : spec.name
+    const defaultName = spec.id === LAYER_ID.strokes && params.working ? '작업 획 (초안)' : spec.name
     const name = saved?.name ? saved.name : defaultName
 
     if (spec.kind === 'FONT') {
