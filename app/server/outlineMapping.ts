@@ -44,6 +44,9 @@ export function createOutlineMapping(db: DatabaseSync, deps: { getCharacter: (un
 
     const previous = detail.layers.find((layer) => layer.id === OUTLINE_LAYER_ID)?.strokes ?? []
     const keepManual = previous.length === pieces.length
+    if (!keepManual && previous.some((stroke) => stroke.map_manual)) {
+      throw new Error('수동 매핑하거나 나이프로 나눈 획이 있어 획 수가 달라진 상태에서는 다시 만들 수 없습니다. 레이어를 원본으로 초기화한 뒤 다시 실행하세요.')
+    }
     const strokes = pieces.map((piece, index): StrokeRecord => {
       const kept = keepManual ? previous[index] : undefined
       if (kept?.map_manual) return kept

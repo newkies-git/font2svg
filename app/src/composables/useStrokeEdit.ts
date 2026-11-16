@@ -330,6 +330,8 @@ export function useStrokeEdit(
         outline_path: path,
         median_points: pts.length >= 2 ? pts : stroke.median_points,
         stroke_width: median.width,
+        // 획 윤곽(OUTLINE) 레이어에서 나이프로 가른 조각은 사람이 만든 매핑이라 자동 매핑이 덮어쓰지 않는다.
+        ...(target.kind === 'OUTLINE' ? { map_manual: 1 as const } : {}),
       }
     })
     const copy = target.strokes.map(cloneStroke)
