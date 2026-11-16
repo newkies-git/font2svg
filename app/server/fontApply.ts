@@ -5,6 +5,7 @@ import type { Pt, StrokeRecord } from '../shared/types.ts'
 import { transaction } from './db.ts'
 import { loadFont, type FontFile } from './font.ts'
 import { roundPoints, splitByContours, type ImportedStrokes } from './geometry.ts'
+import { charactersAfter } from './lookups.ts'
 import { ACTION_FONT, ACTOR_FONT, ACTOR_USER } from './model.ts'
 import { NO_FONT_SHA256 } from './schema.ts'
 import type { StrokeStore } from './strokeStore.ts'
@@ -84,7 +85,7 @@ export function createFontApply(
   // after 다음 유니코드부터 limit자를 처리한다. next가 null이면 끝.
   function applyFontBatch(after: string, limit = FONT_BATCH_LIMIT) {
     if (!getFont()) throw new Error(`폰트 파일이 없습니다: ${FONT_FILE}`)
-    const rows = db.prepare('SELECT unicode, char FROM characters WHERE unicode > ? ORDER BY unicode LIMIT ?').all(after, limit) as { unicode: string; char: string }[]
+    const rows = charactersAfter(db, after, limit)
     const counts: Record<FontResult, number> = { APPLIED: 0, EDITED: 0, ALREADY: 0, NO_STROKES: 0, NO_GLYPH: 0, REJECTED: 0 }
     const rejected: string[] = []
     const noGlyph: string[] = []

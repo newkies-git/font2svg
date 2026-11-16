@@ -40,6 +40,7 @@ import {
   ACTOR_NAVER,
   ACTOR_USER,
 } from './model.ts'
+import { charactersAfter, readReferenceRow } from './lookups.ts'
 import {
   ACJK_BLOB,
   ACJK_RAW,
@@ -86,8 +87,7 @@ export function createReferencePipeline(
   let acjkIndex: Map<string, { raw: string; url: string }> | undefined
 
   async function loadSource<T>(unicode: string, source: ReferenceKind, url: string, fetchFresh: () => Promise<Remote<T>>): Promise<Found<T> | null> {
-    const cached = db.prepare('SELECT found, raw_data, source_url FROM reference_data WHERE unicode = ? AND source = ?')
-      .get(unicode, source) as { found: number; raw_data: string | null; source_url: string | null } | undefined
+    const cached = readReferenceRow(db, unicode, source)
     if (cached) {
       if (!cached.source_url) db.prepare('UPDATE reference_data SET source_url = ? WHERE unicode = ? AND source = ?').run(url, unicode, source)
       if (!cached.found || !cached.raw_data) return null
@@ -328,7 +328,7 @@ export function createReferencePipeline(
 
   // after 다음 유니코드부터 limit자를 처리한다. next가 null이면 끝.
   async function applyAcjkBatch(after: string, limit = ACJK_BATCH_LIMIT) {
-    const rows = db.prepare('SELECT unicode, char FROM characters WHERE unicode > ? ORDER BY unicode LIMIT ?').all(after, limit) as { unicode: string; char: string }[]
+    const rows = charactersAfter(db, after, limit)
     const counts: Record<AcjkResult, number> = { REPLACED: 0, EDITED: 0, ALREADY: 0, NOT_IN_ACJK: 0 }
     const edited: string[] = []
     for (const row of rows) {

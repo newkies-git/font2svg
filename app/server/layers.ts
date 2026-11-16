@@ -6,6 +6,7 @@ import type { LayerColor, LayerKind, LayerMetaPatch, LayerRecord, StrokeRecord }
 import { transaction } from './db.ts'
 import { ribbonPath, roundPoints } from './geometry.ts'
 import { clampOpacity, normalizeColor, parseStoredPaths, parseStoredStrokes, sanitizeLayerPaths, sanitizeLayerStrokes } from './layerData.ts'
+import { readReferenceRow } from './lookups.ts'
 import { hanjaStrokes, parseHanja } from './references.ts'
 import type { CharacterLayerRow } from './schema.ts'
 
@@ -37,9 +38,7 @@ function readCachedRefStrokes(
   unicode: string,
   source: ReferenceKind,
 ): { strokes: StrokeRecord[]; url: string | null } {
-  const row = db
-    .prepare('SELECT found, raw_data, source_url FROM reference_data WHERE unicode = ? AND source = ?')
-    .get(unicode, source) as { found: number; raw_data: string | null; source_url: string | null } | undefined
+  const row = readReferenceRow(db, unicode, source)
   if (!row || !row.found || !row.raw_data) return { strokes: [], url: row?.source_url ?? null }
   const glyph = parseHanja(row.raw_data)
   const imported = glyph ? hanjaStrokes(glyph) : null
