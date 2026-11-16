@@ -7,27 +7,22 @@ import {
   ACJK_BATCH_LIMIT,
   ACJK_FILE_LIMIT,
   IDS_FILE_LIMIT,
-  IDS_MAX_DEPTH,
   MISSING_FETCH_LIMIT,
 } from '../shared/constants.ts'
 import { isReferenceKind, type ReferenceKind } from '../shared/layerKind.ts'
 import type { Pt } from '../shared/types.ts'
 import { transaction } from './db.ts'
 import type { FontFile } from './font.ts'
-import { fitMedians, roundPoints, splitByContours, type Box, type ImportedStrokes } from './geometry.ts'
+import { roundPoints, splitByContours, type ImportedStrokes } from './geometry.ts'
+import { composeFrom as composeFromIds, type IdsLookup } from './idsCompose.ts'
 import {
   askOllama,
   IDS_BOOK,
   IDS_FILE,
   IDS_HEADER,
-  IDS_LAYOUTS,
   IDS_ORIGINS,
   IDS_URL,
-  LEAF_FORMS,
-  parseIds,
   parseIdsFile,
-  WHOLE_BOX,
-  type IdsNode,
   type IdsSource,
 } from './ids.ts'
 import {
@@ -189,41 +184,15 @@ export function createReferencePipeline(
     return idsIndex
   }
 
-  // 글자의 획이 DB에 있으면 box에 맞춰 쓰고, 없으면 공개 IDS로 한 단계 더 쪼갠다.
-  function mediansOfChar(char: string, box: Box, depth: number): Pt[][] | null {
-    const row = db.prepare('SELECT unicode FROM characters WHERE char = ?').get(char) as { unicode: string } | undefined
-    const known = row ? strokes.readStrokes(row.unicode) : []
-    if (known.length > 0) return fitMedians(known.map((stroke) => stroke.median_points), box)
-    if (depth >= IDS_MAX_DEPTH) return null
-    for (const ids of idsIndex?.get(char) ?? []) {
-      const node = parseIds(ids)
-      const medians = node && composeNode(node, box, depth + 1)
-      if (medians?.length) return medians
-    }
-    return null
+  // 합성에 쓰는 조회. idsIndex는 loadIds가 끝난 뒤에만 채워지므로 매번 현재 값을 본다.
+  const idsLookup: IdsLookup = {
+    knownMedians(char) {
+      const row = db.prepare('SELECT unicode FROM characters WHERE char = ?').get(char) as { unicode: string } | undefined
+      return (row ? strokes.readStrokes(row.unicode) : []).map((stroke) => stroke.median_points)
+    },
+    decompositions: (char) => idsIndex?.get(char) ?? [],
   }
-
-  function composeNode(node: IdsNode, box: Box, depth: number): Pt[][] | null {
-    if ('leaf' in node) return mediansOfChar(LEAF_FORMS[node.leaf] ?? node.leaf, box, depth)
-    const layout = IDS_LAYOUTS[node.op]
-    const [left, bottom, right, top] = box
-    const medians: Pt[][] = []
-    for (let index = 0; index < layout.length; index++) {
-      const [x0, y0, x1, y1] = layout[index]
-      const sub: Box = [left + x0 * (right - left), bottom + y0 * (top - bottom), left + x1 * (right - left), bottom + y1 * (top - bottom)]
-      const part = composeNode(node.children[index], sub, depth)
-      if (!part) return null
-      medians.push(...part)
-    }
-    return medians
-  }
-
-  function composeFrom(ids: string): Pt[][] | null {
-    const node = parseIds(ids)
-    if (!node || 'leaf' in node) return null
-    const medians = composeNode(node, WHOLE_BOX, 0)
-    return medians?.length ? medians : null
-  }
+  const composeFrom = (ids: string) => composeFromIds(ids, idsLookup)
 
   // 사람이 적은 IDS → 공개 IDS(BabelStone) → Ollama 순서로 시도한다.
   async function composeIds(char: string): Promise<{ ids: string; source: IdsSource; medians: Pt[][] } | null> {
