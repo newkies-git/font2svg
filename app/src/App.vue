@@ -16,6 +16,7 @@ import { useStudioState } from './composables/useStudioState.ts'
 import { useTheme } from './composables/useTheme.ts'
 import { LAYER_ID } from '../shared/constants.ts'
 import { resolveKeyAction } from './lib/keymap.ts'
+import type { CapType } from '../shared/types.ts'
 
 const studio = useStudioState()
 const { selected, message, error, busy, shown, reveal } = studio
@@ -44,7 +45,8 @@ const {
   transformScope,
   transformMode,
   selectedStrokeIndex,
-  knifeFrom,
+  knifePoints,
+  knifeMode,
   connectPoints,
   dirtyIds,
   syncFromDetail,
@@ -107,6 +109,12 @@ const { uploadInitial, openChar, openFirst, undo, approve, compileChar, applyNav
 const outlineGuideLayers = computed(() => layers.value
   .filter((l) => l.id !== LAYER_ID.outline && l.strokes.length > 0)
   .sort((a, b) => Number(b.id === LAYER_ID.strokes) - Number(a.id === LAYER_ID.strokes) || a.z_index - b.z_index))
+
+// 기필/수필을 '직접 그리기'로 고르면 꼭짓점(베지어) 편집 도구로 넘어가 그 끝의 윤곽을 손으로 고친다.
+function onSetCap(index: number, end: 'start' | 'end', value: CapType) {
+  setStrokeCap(index, end, value)
+  if (value === 'MANUAL') selectTool('bezier')
+}
 
 function unlockActiveLayers() {
   if (activeLayer.value?.locked) toggleLayerLock(activeLayer.value.id)
@@ -173,7 +181,7 @@ function onGlobalKeyDown(event: KeyboardEvent) {
       else play()
       break
     case 'cancel':
-      if (knifeFrom.value) cancelKnife()
+      if (knifePoints.value.length > 0) cancelKnife()
       else if (connectPoints.value.length) cancelConnect()
       break
   }
@@ -236,7 +244,8 @@ onBeforeUnmount(() => {
         :editable-layer="editableLayer"
         :locked="isEditableLocked"
         :has-font="Boolean(fontLayer?.paths.length)"
-        :knife-from="knifeFrom"
+        :knife-points="knifePoints"
+        :knife-mode="knifeMode"
         :connect-points="connectPoints"
         :dirty-count="dirtyIds.size"
         :work-stroke-count="workStrokeCount"
@@ -247,6 +256,7 @@ onBeforeUnmount(() => {
         @auto-fit="autoFitToFont"
         @reverse-median="reverseActiveStrokeMedian()"
         @resegment="resegmentActiveByFont"
+        @change-knife-mode="knifeMode = $event"
         @cancel-knife="cancelKnife"
         @cancel-connect="cancelConnect"
         @undo-connect="undoConnectPoint"
@@ -279,7 +289,7 @@ onBeforeUnmount(() => {
               :selected-index="selectedStrokeIndex"
               :shown="shown"
               :reveal="reveal"
-              :knife-from="knifeFrom"
+              :knife-points="knifePoints"
               :connect-points="connectPoints"
               @select-item="selectStrokeItem"
               @knife-point="applyKnifePoint"
@@ -338,7 +348,7 @@ onBeforeUnmount(() => {
             :guide-layers="outlineGuideLayers"
             @select="selectStrokeItem"
             @set-radical="setStrokeRadical"
-            @set-cap="setStrokeCap"
+            @set-cap="onSetCap"
             @move="moveStrokeInActive"
             @reverse="reverseActiveStrokeMedian"
             @merge-next="mergeStrokeWithNext"

@@ -92,9 +92,9 @@ test('다음 획과 병합하면 한 획이 되고 선택이 유지된다', () =
 test('칼 분할: 두 점으로 획을 둘로 가르고 조각이 선택된다', () => {
   const { edit, work, state } = setup([bar(100)])
   edit.applyKnifePoint([300, 50])
-  assert.deepEqual(state.knifeFrom.value, [300, 50])
+  assert.deepEqual(state.knifePoints.value, [[300, 50]])
   edit.applyKnifePoint([300, 200])
-  assert.equal(state.knifeFrom.value, null)
+  assert.deepEqual(state.knifePoints.value, [])
   assert.equal(work().strokes.length, 2)
   assert.equal(state.selectedStrokeIndex.value, 1)
 })
@@ -243,7 +243,7 @@ test('칼 분할(획): 교차하지 않으면 오류, Esc 취소는 시작점을
   const { edit, work, error, state, message } = setupLayers([], [bar(100)], LAYER_ID.strokes)
   edit.applyKnifePoint([900, 0])
   edit.cancelKnife()
-  assert.equal(state.knifeFrom.value, null)
+  assert.deepEqual(state.knifePoints.value, [])
   assert.equal(message.value, '획 분할이 취소되었습니다.')
   edit.applyKnifePoint([900, 0])
   edit.applyKnifePoint([900, 500])
@@ -301,7 +301,7 @@ test('잠긴 윤곽 레이어에서는 연결·칼 점 지정이 무시된다', 
   edit.applyConnectPoint([1, 1])
   edit.applyKnifePoint([1, 1])
   assert.deepEqual(state.connectPoints.value, [])
-  assert.equal(state.knifeFrom.value, null)
+  assert.deepEqual(state.knifePoints.value, [])
 })
 
 test('궁서체 정렬: 기준 윤곽이 없으면 오류, 있으면 영역에 맞춘다', () => {
@@ -352,4 +352,66 @@ test('자동 맞춤: 단일 획 범위면 선택한 획만 맞춘다', () => {
   edit.autoFitToFont()
   assert.match(message.value, /^2획 자동 맞춤/)
   assert.equal(work().strokes[0].median_points[0][1], untouched)
+})
+
+test('기필·수필 모양: 모양을 고르면 그 끝의 윤곽이 바뀌고, 기본으로 돌아오면 복원하며, 도장·직접 그리기는 값만 기록한다', () => {
+  const { edit, work, error } = setup([bar(100)])
+  const original = work().strokes[0].outline_path
+  edit.setStrokeCap(0, 'start', 'AUTO_ROUND')
+  const rounded = work().strokes[0].outline_path
+  assert.notEqual(rounded, original)
+  assert.equal(work().strokes[0].start_cap_type, 'AUTO_ROUND')
+  edit.setStrokeCap(0, 'start', 'POINTED')
+  assert.notEqual(work().strokes[0].outline_path, rounded, '다른 모양으로 바꾸면 윤곽이 다시 그려진다')
+  edit.setStrokeCap(0, 'start', 'NONE')
+  assert.equal(work().strokes[0].start_cap_type, 'NONE')
+  const restored = work().strokes[0].outline_path
+  edit.setStrokeCap(0, 'end', 'REF_STAMP')
+  edit.setStrokeCap(0, 'end', 'MANUAL')
+  assert.equal(work().strokes[0].outline_path, restored, '도장·직접 그리기는 윤곽을 바꾸지 않는다')
+  assert.equal(work().strokes[0].end_cap_type, 'MANUAL')
+  assert.equal(error.value, '')
+})
+
+test('기필·수필 모양: 적용할 수 없는 획은 값도 윤곽도 바꾸지 않고 오류를 알린다', () => {
+  const broken = strokeOf('M 0 0 Z', [[0, 0], [1, 1]])
+  const { edit, work, error } = setup([broken])
+  edit.setStrokeCap(0, 'start', 'AUTO_ROUND')
+  assert.equal(work().strokes[0].start_cap_type, 'NONE')
+  assert.equal(work().strokes[0].outline_path, 'M 0 0 Z')
+  assert.match(error.value, /모양을 적용할 수 없습니다/)
+})
+
+test('칼 분할(획): 한쪽에서 떨어진 덩어리가 여럿이면 모두 획이 되고 선택은 두 번째 조각으로 간다', () => {
+  // 가로 획 둘과 그 사이의 다리 둘(ㅍ의 아래쪽): 아래 가로 획의 윗변(y=260)을 따라 자르면 가로 획과 다리 둘이 나온다
+  const legs = 'M200 540 L800 540 L800 460 L680 460 L680 20 L600 20 L600 460 L400 460 L400 20 L320 20 L320 460 L200 460 Z'
+  const { edit, work, state } = setup([strokeOf(legs, [[0, 0], [1, 1]], { stroke_width: 135 })])
+  edit.applyKnifePoint([0, 460])
+  edit.applyKnifePoint([1000, 460])
+  assert.equal(work().strokes.length, 3, '가로 획과 다리 둘')
+  assert.deepEqual(work().strokes.map((stroke) => stroke.stroke_order), [1, 2, 3])
+  assert.equal(state.selectedStrokeIndex.value, 1)
+})
+
+test('칼 분할(획): Shift+클릭으로 꺾는 점을 더하면 꺾인 칼로 ㄱ을 한 번에 가른다', () => {
+  const giyeok = 'M200 800 L800 800 L800 200 L720 200 L720 720 L540 720 L540 400 L460 400 L460 720 L200 720 Z'
+  const { edit, work, state } = setup([strokeOf(giyeok, [[0, 0], [1, 1]], { stroke_width: 135 })])
+  edit.applyKnifePoint([0, 720])
+  edit.applyKnifePoint([720, 720], true)
+  assert.deepEqual(state.knifePoints.value, [[0, 720], [720, 720]], '꺾는 점을 더해도 아직 자르지 않는다')
+  assert.equal(work().strokes.length, 1)
+  edit.applyKnifePoint([720, 0])
+  assert.deepEqual(state.knifePoints.value, [])
+  assert.equal(work().strokes.length, 2, 'ㄱ과 매달린 세로')
+})
+
+test('교차 분리 모드: 안내선을 따라 十를 ―와 ㅣ 두 획으로 나누고 교차부는 둘 다 가진다', () => {
+  const cross = 'M460 800 L540 800 L540 540 L800 540 L800 460 L540 460 L540 200 L460 200 L460 460 L200 460 L200 540 L460 540 Z'
+  const { edit, work, state, message } = setup([strokeOf(cross, [[0, 0], [1, 1]], { stroke_width: 80 })])
+  state.knifeMode.value = 'extract'
+  edit.applyKnifePoint([200, 500])
+  edit.applyKnifePoint([800, 500])
+  assert.equal(work().strokes.length, 2, '―와 ㅣ')
+  assert.deepEqual(state.knifePoints.value, [])
+  assert.match(message.value, /교차 분리/)
 })

@@ -10,12 +10,12 @@ const medians = () => layerOf(LAYER_ID.medians, 'MEDIANS', { name: '중심선' }
 test('서버 상세를 반영하면 dirty·단독 보기·진행 중 도구 상태를 초기화한다', () => {
   const { workspace } = setupWorkspace([fontLayer(), work(bar(100), bar(300))])
   workspace.dirtyIds.value = new Set([LAYER_ID.strokes])
-  workspace.knifeFrom.value = [1, 2]
+  workspace.knifePoints.value = [[1, 2]]
   workspace.connectPoints.value = [[1, 1]]
   workspace.selectedMedianPointIndex.value = 3
   workspace.syncFromDetail(detailOf([fontLayer(), work(bar(100), bar(300))]))
   assert.equal(workspace.dirtyIds.value.size, 0)
-  assert.equal(workspace.knifeFrom.value, null)
+  assert.deepEqual(workspace.knifePoints.value, [])
   assert.deepEqual(workspace.connectPoints.value, [])
   assert.equal(workspace.selectedMedianPointIndex.value, null)
 })
@@ -48,11 +48,11 @@ test('작업 획 레이어가 dirty가 되면 선택된 글자의 획도 즉시 
 
 test('도구 선택: 칼·연결 진행 상태를 지우고 연결 도구면 안내를 보인다', () => {
   const { workspace, studio } = setupWorkspace([fontLayer(), work(bar(100))])
-  workspace.knifeFrom.value = [1, 2]
+  workspace.knifePoints.value = [[1, 2]]
   workspace.connectPoints.value = [[1, 1]]
   workspace.selectTool('connect')
   assert.equal(workspace.activeTool.value, 'connect')
-  assert.equal(workspace.knifeFrom.value, null)
+  assert.deepEqual(workspace.knifePoints.value, [])
   assert.deepEqual(workspace.connectPoints.value, [])
   assert.match(studio.message.value, /윤곽 연결: 시작점/)
   studio.message.value = ''

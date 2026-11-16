@@ -21,13 +21,13 @@ const props = defineProps<{
   selectedIndex: number
   shown: number
   reveal: number
-  knifeFrom: Pt | null
+  knifePoints: Pt[]
   connectPoints: Pt[]
 }>()
 
 const emit = defineEmits<{
   selectItem: [index: number]
-  knifePoint: [point: Pt]
+  knifePoint: [point: Pt, extend: boolean]
   connectPoint: [point: Pt]
   commitConnect: []
   transformBy: [fn: (x: number, y: number) => Pt, scaleFactor: number]
@@ -149,7 +149,7 @@ function onCanvasPointerDown(event: PointerEvent) {
   const pt = eventToFont(event)
   if (!pt) return
   if (props.tool === 'knife') {
-    emit('knifePoint', pt)
+    emit('knifePoint', pt, event.shiftKey)
     return
   }
   if (props.tool === 'connect' && !props.locked) {
@@ -436,10 +436,13 @@ function onShapePointerDown(layerId: string, index: number, event: PointerEvent)
         </g>
       </g>
 
-      <!-- D. 칼 분할(knife) 시작점 표시 -->
-      <g v-if="knifeFrom" :transform="`translate(${knifeFrom[0]} ${knifeFrom[1]})`">
-        <circle r="14" class="knife-point-pulse" />
-        <circle r="5" class="knife-point" />
+      <!-- D. 칼 분할(knife) 점·꺾인 선 표시 -->
+      <g v-if="knifePoints.length > 0">
+        <polyline v-if="knifePoints.length > 1" :points="knifePoints.map(([x, y]) => `${x},${y}`).join(' ')" class="knife-path" />
+        <g v-for="(point, index) in knifePoints" :key="index" :transform="`translate(${point[0]} ${point[1]})`">
+          <circle v-if="index === 0" r="14" class="knife-point-pulse" />
+          <circle r="5" class="knife-point" />
+        </g>
       </g>
 
       <!-- E. 윤곽 연결(connect) 점·미리보기 -->

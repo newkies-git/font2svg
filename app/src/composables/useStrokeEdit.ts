@@ -2,8 +2,8 @@ import { isContourLayer } from '../../shared/layerKind.ts'
 import { LAYER_ID } from '../../shared/constants.ts'
 import type { Ref } from 'vue'
 import { autoFitLayer, autoFitStroke } from '../lib/autoFit.ts'
-import { splitStrokeByKnife } from '../../shared/strokeCut.ts'
-import { boxAlignTransform, moveItem, pointsToClosedPath, restrokeFromOutline, roundPt, withMedianPoints } from '../lib/strokeOps.ts'
+import { applyCapShape, extractStrokeAlongGuide, isCapShape, splitStrokeByKnife } from '../../shared/strokeCut.ts'
+import { boxAlignTransform, extractStrokeAtGuide, moveItem, pointsToClosedPath, restrokeFromOutline, roundPt, splitStrokeAtKnife, withMedianPoints } from '../lib/strokeOps.ts'
 import {
   insertMedianPoint,
   mergeTwoStrokes,
@@ -34,7 +34,8 @@ export function useStrokeEdit(
     transformScope,
     selectedStrokeIndex,
     selectedMedianPointIndex,
-    knifeFrom,
+    knifePoints,
+    knifeMode,
     connectPoints,
   } = state
 
@@ -99,11 +100,23 @@ export function useStrokeEdit(
     markDirty(target.id)
   }
 
+  // 기필/수필 모양을 고른다. 모양(둥글게 등)은 그 끝의 윤곽에 바로 반영하고, 모양에서 기본으로 돌아오면 끝을 되돌린다.
+  // 도장·직접 그리기는 값만 기록한다(직접 그리기는 화면에서 꼭짓점 편집 도구로 이어진다).
   function setStrokeCap(index: number, end: 'start' | 'end', value: CapType) {
     const target = guardUnlocked()
-    if (!target || !target.strokes[index]) return
-    if (end === 'start') target.strokes[index].start_cap_type = value
-    else target.strokes[index].end_cap_type = value
+    const stroke = target?.strokes[index]
+    if (!target || !stroke) return
+    const key = end === 'start' ? 'start_cap_type' : 'end_cap_type'
+    const restore = isCapShape(stroke[key])
+    if (isCapShape(value) || (value === 'NONE' && restore)) {
+      const outline = applyCapShape(stroke.outline_path, stroke.median_points, end, isCapShape(value) ? value : null, stroke.stroke_width, restore)
+      if (!outline) {
+        error.value = '이 획의 끝에는 모양을 적용할 수 없습니다. 중심선과 윤곽을 확인하세요.'
+        return
+      }
+      stroke.outline_path = outline
+    }
+    stroke[key] = value
     markDirty(target.id)
   }
 
@@ -280,57 +293,71 @@ export function useStrokeEdit(
 
   // 칼 분할 (모든 잠금 해제된 획 레이어 및 FONT 윤곽 레이어 지원)
   function cancelKnife() {
-    knifeFrom.value = null
+    knifePoints.value = []
     message.value = '획 분할이 취소되었습니다.'
   }
 
-  function applyKnifePoint(point: Pt) {
+  // 칼 점을 더한다. 일반 클릭은 끝점이라 바로 가르고, extend(Shift+클릭)는 꺾는 점을 더하고 계속한다.
+  // 칼 모드가 extract(교차 분리)면 점들은 칼이 아니라 분리할 획의 중심을 따르는 안내선이다.
+  function applyKnifePoint(point: Pt, extend = false) {
     const target = guardUnlocked()
     if (!target) return
 
-    if (!knifeFrom.value) {
-      knifeFrom.value = point
-      message.value = '칼 분할: 자를 끝점을 클릭하세요. (Esc 취소)'
+    if (knifePoints.value.length === 0) {
+      knifePoints.value = [point]
+      message.value = '칼 분할: 다음 점을 클릭하세요. 끝점은 클릭, 꺾는 점은 Shift+클릭 (Esc 취소)'
+      return
+    }
+    if (extend) {
+      knifePoints.value = [...knifePoints.value, point]
+      message.value = `칼 분할: 점 ${knifePoints.value.length}개 — 끝점은 클릭, 꺾는 점은 Shift+클릭 (Esc 취소)`
       return
     }
 
-    const from = { x: knifeFrom.value[0], y: knifeFrom.value[1] }
-    const to = { x: point[0], y: point[1] }
-    knifeFrom.value = null
+    const knife = [...knifePoints.value, point].map(([x, y]) => ({ x, y }))
+    const extract = knifeMode.value === 'extract'
+    knifePoints.value = []
 
     if (isContourLayer(target)) {
       const idx = selectedStrokeIndex.value
       const d = target.paths[idx]
       if (!d) return
-      const parts = splitStrokeByKnife(d, from, to)
-      if (!parts) {
-        error.value = '윤곽 분할 불가: 선택한 윤곽 외곽선과 교차하도록 두 점을 지정하세요.'
+      const extracted = extract ? extractStrokeAlongGuide(d, knife) : null
+      const paths = extract ? (extracted ? [...extracted.stroke, ...extracted.rest] : null) : splitStrokeByKnife(d, knife)?.map((part) => part.path) ?? null
+      if (!paths) {
+        error.value = extract
+          ? '교차 분리 불가: 분리할 획의 중심을 지나도록 안내선 점을 지정하세요.'
+          : '윤곽 분할 불가: 선택한 윤곽 외곽선과 교차하도록 칼 점을 지정하세요.'
         return
       }
       const copy = target.paths.slice()
-      copy.splice(idx, 1, parts[0], parts[1])
-      updateTargetPaths(copy, `윤곽을 2개로 분할했습니다. [레이어 저장]을 누르면 반영됩니다.`)
+      copy.splice(idx, 1, ...paths)
+      updateTargetPaths(copy, `윤곽을 ${paths.length}개로 ${extract ? '나눴습니다(교차 분리)' : '분할했습니다'}. [레이어 저장]을 누르면 반영됩니다.`)
       return
     }
 
     const idx = selectedStrokeIndex.value
     const stroke = target.strokes[idx]
     if (!stroke) return
-    const parts = splitStrokeByKnife(stroke.outline_path, from, to)
+    const parts = extract ? extractStrokeAtGuide(stroke, knife) : splitStrokeAtKnife(stroke, knife)
     if (!parts) {
-      error.value = '획 분할 불가: 선택된 획의 외곽선과 교차하도록 두 점을 지정하세요.'
+      error.value = extract
+        ? '교차 분리 불가: 분리할 획의 중심을 지나도록 안내선 점을 지정하세요.'
+        : '획 분할 불가: 선택된 획의 외곽선과 교차하도록 칼 점을 지정하세요.'
       return
     }
-    const [left, right] = parts.map((path): StrokeRecord => ({
-      ...restrokeFromOutline(stroke, path),
+    const pieces = parts.map((piece): StrokeRecord => ({
+      ...piece,
       // 획 윤곽(OUTLINE) 레이어에서 나이프로 가른 조각은 사람이 만든 매핑이라 자동 매핑이 덮어쓰지 않는다.
       ...(target.kind === 'OUTLINE' ? { map_manual: 1 as const } : {}),
     }))
     const copy = target.strokes.map(cloneStroke)
-    copy.splice(idx, 1, left, right)
-    updateTargetStrokes(copy, `${idx + 1}획을 2개로 분할했습니다. [레이어 저장]을 누르면 반영됩니다.`)
+    copy.splice(idx, 1, ...pieces)
+    updateTargetStrokes(copy, extract
+      ? `${idx + 1}획을 ${pieces.length}개로 나눴습니다(교차 분리). 교차부는 두 획이 함께 가집니다. [레이어 저장]을 누르면 반영됩니다.`
+      : `${idx + 1}획을 ${pieces.length}개로 분할했습니다. 단면이 획의 끝이면 기필·수필 모양이 붙습니다. [레이어 저장]을 누르면 반영됩니다.`)
     selectedStrokeIndex.value = idx + 1
-    if (target.id === LAYER_ID.strokes) shown.value = idx + 2
+    if (target.id === LAYER_ID.strokes) shown.value = idx + pieces.length
   }
 
   function cancelConnect() {

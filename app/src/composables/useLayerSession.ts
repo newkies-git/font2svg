@@ -19,7 +19,7 @@ export function useLayerSession(
     activeTool,
     selectedStrokeIndex,
     selectedMedianPointIndex,
-    knifeFrom,
+    knifePoints,
     connectPoints,
     dirtyIds,
     soloSnapshot,
@@ -33,7 +33,7 @@ export function useLayerSession(
     layers.value = detail.layers.map(cloneLayer)
     dirtyIds.value = new Set()
     soloSnapshot.value = null
-    knifeFrom.value = null
+    knifePoints.value = []
     connectPoints.value = []
     selectedMedianPointIndex.value = null
     if (!layers.value.some((l) => l.id === activeLayerId.value)) {
@@ -59,7 +59,7 @@ export function useLayerSession(
 
   function selectLayer(layerId: string) {
     activeLayerId.value = layerId
-    knifeFrom.value = null
+    knifePoints.value = []
     connectPoints.value = []
     selectedMedianPointIndex.value = null
     const picked = layers.value.find((l) => l.id === layerId)
@@ -78,7 +78,7 @@ export function useLayerSession(
 
   function selectTool(tool: EditorTool) {
     activeTool.value = tool
-    knifeFrom.value = null
+    knifePoints.value = []
     connectPoints.value = []
     selectedMedianPointIndex.value = null
     if (tool === 'connect') {

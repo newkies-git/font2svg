@@ -1,6 +1,6 @@
-import type { Pt, StrokeRecord } from '../../shared/types.ts'
+import type { CapType, Pt, StrokeRecord } from '../../shared/types.ts'
 import { round1 } from '../../shared/paths.ts'
-import { recoverMedian } from '../../shared/strokeCut.ts'
+import { applyCapAtFace, capLength, extractStrokeAlongGuide, KNIFE_OVERLAP, matchMedianEnd, recoverMedian, splitStrokeByKnife, type CapShape } from '../../shared/strokeCut.ts'
 import type { BBox } from './vectorEdit.ts'
 import { recomputeStrokeWidth } from './vectorEdit.ts'
 
@@ -43,6 +43,64 @@ export function restrokeFromOutline(stroke: StrokeRecord, path: string): StrokeR
     median_points: points.length >= 2 ? points : stroke.median_points,
     stroke_width: recovered.width,
   }
+}
+
+// 칼로 자른 단면 끝에 기본으로 붙이는 기필·수필 모양
+const KNIFE_CUT_CAP: CapShape = 'AUTO_ROUND'
+
+// 조각의 끝점이 원본 획의 시작·끝점 근처(조각 폭의 이 배수 이내)일 때만 그 끝의 캡을 물려받는다.
+const CAP_INHERIT_REACH_RATIO = 2
+
+// 가른 조각의 끝(point)이 원본의 어느 끝에서 왔는지 거리로 찾아 그 끝의 캡을 돌려준다. 어느 끝에서도 오지 않았으면 기본.
+function inheritedCap(original: StrokeRecord, point: Pt, reach: number): CapType {
+  const first = original.median_points[0]
+  const last = original.median_points[original.median_points.length - 1]
+  if (!first || !last) return 'NONE'
+  const fromStart = Math.hypot(point[0] - first[0], point[1] - first[1])
+  const fromEnd = Math.hypot(point[0] - last[0], point[1] - last[1])
+  if (Math.min(fromStart, fromEnd) > reach) return 'NONE'
+  return fromStart <= fromEnd ? original.start_cap_type : original.end_cap_type
+}
+
+// 새 윤곽으로 만든 조각 획: 중심선·폭을 다시 구하고, 캡은 원본의 시작·끝에서 온 끝만 원본 값을 물려받는다.
+// 조각은 원본의 캡을 통째로 물려받지 않는다(ㅍ의 가로 획이 다리의 캡을 갖지 않게).
+function pieceOf(stroke: StrokeRecord, path: string): StrokeRecord {
+  const base = restrokeFromOutline(stroke, path)
+  const reach = base.stroke_width * CAP_INHERIT_REACH_RATIO
+  return {
+    ...base,
+    start_cap_type: inheritedCap(stroke, base.median_points[0], reach),
+    end_cap_type: inheritedCap(stroke, base.median_points[base.median_points.length - 1], reach),
+  }
+}
+
+// 칼 선(점 둘 이상을 이은 꺾인 선)으로 획을 가른다. 선의 한쪽에서 떨어진 덩어리가 여럿이면 덩어리마다 획이 된다(ㅍ의 두 다리).
+// 가른 단면이 획의 끝(기필·수필)인 조각은 상대 조각 안쪽으로 모양 길이만큼 더 깊이 겹치게 하고, 그 끝에 기본 모양을 붙인다.
+// 예: ㅏ의 ㅡ는 기필, ㅓ의 ㅡ는 수필, ㅐ의 ㅡ는 양쪽 끝. 매끄러운 단면 대신 시작·끝 형태를 갖되 모양은 상대 조각 안에 숨는다.
+// 모양은 윤곽에 반영되고, 그 끝이 중심선의 시작·끝으로 확인될 때만 캡 값을 기록한다. 가를 수 없으면 null.
+export function splitStrokeAtKnife(stroke: StrokeRecord, knife: readonly { x: number; y: number }[]): StrokeRecord[] | null {
+  const pieces = splitStrokeByKnife(stroke.outline_path, knife, {
+    endOverlap: (width) => KNIFE_OVERLAP + capLength(KNIFE_CUT_CAP, width),
+  })
+  if (!pieces) return null
+  return pieces.map((piece) => {
+    let record = pieceOf(stroke, piece.path)
+    for (const face of piece.ends) {
+      const outline = applyCapAtFace(record.outline_path, face, KNIFE_CUT_CAP, false)
+      if (!outline) continue
+      const end = matchMedianEnd(record.median_points, face)
+      record = { ...record, outline_path: outline, ...(end ? { [end === 'start' ? 'start_cap_type' : 'end_cap_type']: KNIFE_CUT_CAP } : {}) }
+    }
+    return record
+  })
+}
+
+// 안내선을 따라 획을 뽑는다(교차 분리). 안내선에 닿은 획이 먼저, 나머지가 뒤에 온다. 교차부는 두 쪽이 함께 가진다.
+// 예: 十를 가로 안내선으로 뽑으면 ―와, 교차부를 포함한 ㅣ 둘이 된다. 뽑을 수 없으면 null.
+export function extractStrokeAtGuide(stroke: StrokeRecord, guide: readonly { x: number; y: number }[]): StrokeRecord[] | null {
+  const extracted = extractStrokeAlongGuide(stroke.outline_path, guide)
+  if (!extracted) return null
+  return [...extracted.stroke, ...extracted.rest].map((path) => pieceOf(stroke, path))
 }
 
 // 원본 상자를 대상 상자에 맞추는 좌표 변환과 평균 배율. 상자 크기가 0이어도 나눗셈이 깨지지 않게 최소 1로 본다.

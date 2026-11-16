@@ -1,7 +1,7 @@
 import { LAYER_ID } from '../../shared/constants.ts'
 import { computed, ref, type ComputedRef, type Ref } from 'vue'
 import type { TransformMode } from '../lib/transformMath.ts'
-import type { CharacterDetail, EditorTool, LayerRecord, Pt, StrokeRecord } from '../../shared/types.ts'
+import type { CharacterDetail, EditorTool, KnifeMode, LayerRecord, Pt, StrokeRecord } from '../../shared/types.ts'
 
 export type LayerEditorState = {
   selected: Ref<CharacterDetail | null>
@@ -14,7 +14,8 @@ export type LayerEditorState = {
   transformMode: Ref<TransformMode>
   selectedStrokeIndex: Ref<number>
   selectedMedianPointIndex: Ref<number | null>
-  knifeFrom: Ref<Pt | null>
+  knifePoints: Ref<Pt[]>
+  knifeMode: Ref<KnifeMode>
   connectPoints: Ref<Pt[]>
   dirtyIds: Ref<Set<string>>
   soloSnapshot: Ref<Record<string, boolean> | null>
@@ -42,7 +43,8 @@ export function createLayerEditorState(
   const transformMode = ref<TransformMode>('scale')
   const selectedStrokeIndex = ref<number>(0)
   const selectedMedianPointIndex = ref<number | null>(null)
-  const knifeFrom = ref<Pt | null>(null)
+  const knifePoints = ref<Pt[]>([])
+  const knifeMode = ref<KnifeMode>('cut')
   const connectPoints = ref<Pt[]>([])
   const dirtyIds = ref<Set<string>>(new Set())
   const soloSnapshot = ref<Record<string, boolean> | null>(null)
@@ -88,7 +90,8 @@ export function createLayerEditorState(
     transformMode,
     selectedStrokeIndex,
     selectedMedianPointIndex,
-    knifeFrom,
+    knifePoints,
+    knifeMode,
     connectPoints,
     dirtyIds,
     soloSnapshot,

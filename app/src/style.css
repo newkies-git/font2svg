@@ -1957,6 +1957,14 @@
     fill: #ef4444;
   }
 
+  .knife-path {
+    fill: none;
+    stroke: #ef4444;
+    stroke-width: 4;
+    stroke-dasharray: 10 6;
+    pointer-events: none;
+  }
+
   .knife-point-pulse {
     fill: rgba(239, 68, 68, 0.35);
     animation: pulse 1.5s infinite ease-out;

@@ -3,10 +3,14 @@
 //   skeleton Zhang-Suen 세선화, 가지치기, 골격 선분 분해
 //   contour  마스크의 바깥 윤곽 추적과 단순화
 //   median   중심선·획 폭 복원
-//   knife    칼 분할
+//   knife    칼 분할(겹침 포함)
+//   caps     기필·수필 모양
+//   extract  획 추출(교차 분리)
 //   segment  중심선 기준 윤곽 분할
 export { simplifyPolyline } from './strokeCut/contour.ts'
-export { splitStrokeByKnife } from './strokeCut/knife.ts'
+export { applyCapAtFace, applyCapShape, capLength, isCapShape, matchMedianEnd, type CapShape } from './strokeCut/caps.ts'
+export { extractStrokeAlongGuide } from './strokeCut/extract.ts'
+export { KNIFE_OVERLAP, splitStrokeByKnife } from './strokeCut/knife.ts'
 export { computeOptimalStrokeWidth, recoverMedian } from './strokeCut/median.ts'
 export { segmentOutlineByMedians } from './strokeCut/segment.ts'
 export { zhangSuen } from './strokeCut/skeleton.ts'
