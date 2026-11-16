@@ -35,14 +35,17 @@ import { createStrokeStore } from './strokeStore.ts'
 
 export type Workspace = ReturnType<typeof createWorkspace>
 
-let singleton: Workspace | null = null
+let singleton: { rootDir: string; workspace: Workspace } | null = null
 
+// 개발 서버가 쓰는 프로세스 전역 작업 공간. 다른 폴더로 다시 부르면 조용히 첫 작업 공간을 주는 대신 던진다.
 export function getWorkspace(rootDir: string): Workspace {
-  if (!singleton) singleton = createWorkspace(rootDir)
-  return singleton
+  if (!singleton) singleton = { rootDir, workspace: createWorkspace(rootDir) }
+  if (singleton.rootDir !== rootDir) throw new Error(`작업 공간이 이미 ${singleton.rootDir}에서 열려 있습니다(요청: ${rootDir}).`)
+  return singleton.workspace
 }
 
-function createWorkspace(rootDir: string) {
+// 독립된 작업 공간(DB 연결 포함)을 연다. 테스트는 이것으로 파일마다 자기 작업 공간을 쓰고 close()로 닫는다.
+export function createWorkspace(rootDir: string) {
   const dbPath = path.join(rootDir, 'database', 'chusa1817.db')
   fs.mkdirSync(path.dirname(dbPath), { recursive: true })
   const compiledDir = path.join(rootDir, 'output', 'compiled')
@@ -248,6 +251,7 @@ function createWorkspace(rootDir: string) {
   }
 
   return {
+    close: () => db.close(),
     listCharacters: catalog.listCharacters,
     getCharacter,
     updateStrokes,

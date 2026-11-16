@@ -54,6 +54,7 @@ import {
   medianOrRecovered,
   NAVER_VERSION,
   naverUrl,
+  parseAcjkLine,
   parseHanja,
   type Found,
   type HanjaGlyph,
@@ -137,7 +138,7 @@ export function createReferencePipeline(
       }
       return fs.readFileSync(file, 'utf-8')
     }
-    const lines = (text: string) => text.split('\n').filter(Boolean).map((line) => JSON.parse(line) as { character: string; strokes?: unknown; medians?: unknown; acjk?: string })
+    const lines = (text: string) => text.split('\n').filter(Boolean).map(parseAcjkLine)
     const index = new Map<string, { raw: string; url: string }>()
     for (const variant of ACJK_VARIANTS) {
       const graphics = `graphics${variant}.txt`

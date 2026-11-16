@@ -4,8 +4,8 @@ import type { ServerResponse } from 'node:http'
 import vue from '@vitejs/plugin-vue'
 import type { Plugin } from 'vite'
 import { defineConfig } from 'vite'
-import { isLoopbackAddress, readJsonBody } from './server/http.ts'
-import { HTTP_FORBIDDEN, handleApi } from './server/routes.ts'
+import { HTTP_FORBIDDEN, isLoopbackAddress, readJsonBody } from './server/http.ts'
+import { handleApi } from './server/routes.ts'
 import { getWorkspace } from './server/workspace.ts'
 
 const appDir = path.dirname(fileURLToPath(import.meta.url))

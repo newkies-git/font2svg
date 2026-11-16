@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { handleApi, HTTP_BAD_REQUEST, HTTP_NOT_FOUND, HTTP_OK } from '../server/routes.ts'
+import { HTTP_BAD_REQUEST, HTTP_NOT_FOUND, HTTP_OK } from '../server/http.ts'
+import { handleApi } from '../server/routes.ts'
 import type { Workspace } from '../server/workspace.ts'
 
 type Call = { name: string; args: unknown[] }

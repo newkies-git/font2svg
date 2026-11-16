@@ -4,14 +4,15 @@ import path from 'node:path'
 import test, { after, afterEach, beforeEach, mock } from 'node:test'
 import { DatabaseSync } from 'node:sqlite'
 import { ACJK_VARIANTS, hanjaUrl, naverUrl } from '../server/references.ts'
-import { getWorkspace } from '../server/workspace.ts'
+import { createWorkspace } from '../server/workspace.ts'
 import { rectPath, strokeOf, tempDir } from './helpers.ts'
 
 // 네트워크는 쓰지 않는다: 전역 fetch를 가짜로 바꿔 URL별 응답을 정한다. 정하지 않은 URL은 404(Ollama는 연결 실패).
 const root = tempDir()
-const ws = getWorkspace(root)
+const ws = createWorkspace(root)
 const sideDb = new DatabaseSync(path.join(root, 'database', 'chusa1817.db'))
 after(() => {
+  ws.close()
   sideDb.close()
   fs.rmSync(root, { recursive: true, force: true })
 })

@@ -77,6 +77,17 @@ export async function fetchNaver(char: string): Promise<Remote<HanjaGlyph>> {
   return { url, raw: response.text, value }
 }
 
+export type AcjkEntry = { character: string; strokes?: unknown; medians?: unknown; acjk?: string }
+
+// AnimCJK graphics·dictionary 파일의 한 줄(JSON). 글자가 문자열이 아니면 색인에 엉뚱한 키가 들어가므로 던진다.
+export function parseAcjkLine(line: string): AcjkEntry {
+  const value = JSON.parse(line) as Partial<AcjkEntry> | null
+  if (typeof value !== 'object' || value === null || typeof value.character !== 'string') {
+    throw new Error('AnimCJK 데이터의 형식이 올바르지 않습니다(character가 없는 줄).')
+  }
+  return { ...value, character: value.character, acjk: typeof value.acjk === 'string' ? value.acjk : undefined }
+}
+
 export function parseHanja(text: string): HanjaGlyph | null {
   try {
     if (text.trimStart().startsWith('<')) {

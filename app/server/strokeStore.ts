@@ -16,6 +16,7 @@ import {
   type StrokeOutline,
 } from './model.ts'
 import type { StrokeRow } from './schema.ts'
+import { parseMedianLines, parseStringArray, parseStrokeOutlines } from './storedJson.ts'
 
 function outlinesAndLines(items: StrokeItem[]): { outlines: StrokeOutline[]; lines: MedianLine[] } {
   return {
@@ -75,8 +76,8 @@ export function createStrokeStore(db: DatabaseSync) {
   }
 
   function itemsOf(row: { stroke_outlines: string; median_line: string }): StrokeItem[] {
-    const outlines = JSON.parse(row.stroke_outlines) as StrokeOutline[]
-    const lines = new Map((JSON.parse(row.median_line) as MedianLine[]).map((line) => [line.order, line]))
+    const outlines = parseStrokeOutlines(row.stroke_outlines)
+    const lines = new Map(parseMedianLines(row.median_line).map((line) => [line.order, line]))
     return outlines.map((outline): StrokeItem => {
       const line = lines.get(outline.order)
       if (!line) throw new Error(`${outline.order}획의 중심선 데이터가 없습니다.`)
@@ -188,7 +189,7 @@ export function createStrokeStore(db: DatabaseSync) {
         writeWorking(unicode, {
           source: keep ? prev.source : ORIGIN_MANUAL,
           url: keep ? prev.source_url : null,
-          fontOutline: prev ? JSON.parse(prev.font_outline) as string[] : [],
+          fontOutline: prev ? parseStringArray(prev.font_outline, '궁서체 윤곽') : [],
           items,
         }, ACTOR_USER)
         db.prepare(`
@@ -218,7 +219,7 @@ export function createStrokeStore(db: DatabaseSync) {
     const items = itemsOf(working)
     const problems = validate(character.char, items)
     if (problems.length) throw new Error(problems.join(' '))
-    const fontOutline = JSON.parse(working.font_outline) as string[]
+    const fontOutline = parseStringArray(working.font_outline, '궁서체 윤곽')
     transaction(db, () => {
       writeStrokes(unicode, items, ACTOR_USER, ACTION_APPROVE, { source: working.source, url: working.source_url }, fontOutline.length > 0 ? fontOutline : undefined)
       db.prepare('UPDATE characters SET stroke_count = ?, last_modified_by = ? WHERE unicode = ?').run(items.length, ACTOR_USER, unicode)
@@ -244,7 +245,7 @@ export function createStrokeStore(db: DatabaseSync) {
         WHERE char = ?
       `).run(target.radical, target.font_outline, target.stroke_outlines, target.median_line, target.origin, target.origin_url, ACTOR_USER, character.char)
       db.prepare('UPDATE characters SET stroke_count = ?, last_modified_by = ? WHERE unicode = ?')
-        .run((JSON.parse(target.stroke_outlines) as unknown[]).length, ACTOR_USER, unicode)
+        .run(parseStrokeOutlines(target.stroke_outlines).length, ACTOR_USER, unicode)
     })
   }
 

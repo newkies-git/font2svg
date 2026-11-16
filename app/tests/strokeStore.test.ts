@@ -3,14 +3,15 @@ import fs from 'node:fs'
 import path from 'node:path'
 import test, { after } from 'node:test'
 import { DatabaseSync } from 'node:sqlite'
-import { getWorkspace } from '../server/workspace.ts'
+import { createWorkspace } from '../server/workspace.ts'
 import { rectPath, strokeOf, tempDir } from './helpers.ts'
 
 const root = tempDir()
-const ws = getWorkspace(root)
+const ws = createWorkspace(root)
 // 작업 데이터는 외부 수신으로만 생기므로, 승인 테스트는 같은 DB 파일에 직접 넣는다.
 const sideDb = new DatabaseSync(path.join(root, 'database', 'chusa1817.db'))
 after(() => {
+  ws.close()
   sideDb.close()
   fs.rmSync(root, { recursive: true, force: true })
 })

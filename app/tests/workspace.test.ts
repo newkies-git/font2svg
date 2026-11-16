@@ -4,15 +4,16 @@ import path from 'node:path'
 import test, { after, afterEach, beforeEach, mock } from 'node:test'
 import { DatabaseSync } from 'node:sqlite'
 import { naverUrl } from '../server/references.ts'
-import { getWorkspace } from '../server/workspace.ts'
+import { createWorkspace } from '../server/workspace.ts'
 import { drawRect, rectPath, strokeOf, tempDir, writeTestFont } from './helpers.ts'
 
 const root = tempDir()
 // 궁서체 시험 폰트: 一만 있다(가로 막대). 작업 공간이 처음 폰트를 읽기 전에 둔다.
 writeTestFont(path.join(root, 'app', 'fonts', 'Gungseouche.ttf'), [{ char: '一', draw: (p) => drawRect(p, 100, 300, 900, 400) }])
-const ws = getWorkspace(root)
+const ws = createWorkspace(root)
 const sideDb = new DatabaseSync(path.join(root, 'database', 'chusa1817.db'))
 after(() => {
+  ws.close()
   sideDb.close()
   fs.rmSync(root, { recursive: true, force: true })
 })
@@ -117,4 +118,10 @@ test('사용자 레이어: 복제·적용(MANUAL)·삭제, 기본 레이어는 �
   const after = ws.deleteLayer(unicode, createdId)!
   assert.ok(!after.layers.some((layer) => layer.id === createdId))
   assert.throws(() => ws.duplicateLayer('U+9999'), /등록되지 않은/)
+})
+
+test('새 사용자 레이어의 기본 불투명도는 상수를 따른다', async () => {
+  const { DEFAULT_CUSTOM_LAYER_OPACITY } = await import('../shared/constants.ts')
+  const { createdId, detail } = ws.duplicateLayer('U+4E94', 'strokes')
+  assert.equal(detail!.layers.find((layer) => layer.id === createdId)!.opacity, DEFAULT_CUSTOM_LAYER_OPACITY)
 })

@@ -1,14 +1,17 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import test, { after } from 'node:test'
-import { getWorkspace } from '../server/workspace.ts'
+import { createWorkspace } from '../server/workspace.ts'
 import type { StrokeRecord } from '../shared/types.ts'
 import { rectPath, strokeOf, tempDir } from './helpers.ts'
 
 // 작업 공간은 프로세스당 하나(싱글턴)라 이 파일의 테스트가 같은 임시 DB를 공유한다. 각 테스트는 자기 글자를 쓴다.
 const root = tempDir()
-const ws = getWorkspace(root)
-after(() => fs.rmSync(root, { recursive: true, force: true }))
+const ws = createWorkspace(root)
+after(() => {
+  ws.close()
+  fs.rmSync(root, { recursive: true, force: true })
+})
 
 ws.importInitial([
   { 한자: '丁', 음: '정', 구분: '중등' },

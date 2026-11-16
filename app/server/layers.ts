@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
-import { DEFAULT_STROKE_WIDTH, FONT_FINGERPRINT_LENGTH, LAYER_ID } from '../shared/constants.ts'
+import { DEFAULT_CUSTOM_LAYER_OPACITY, DEFAULT_STROKE_WIDTH, FONT_FINGERPRINT_LENGTH, LAYER_ID } from '../shared/constants.ts'
 import { isReferenceKind, type ReferenceKind } from '../shared/layerKind.ts'
 import type { LayerColor, LayerKind, LayerMetaPatch, LayerRecord, StrokeRecord } from '../shared/types.ts'
 import { transaction } from './db.ts'
@@ -161,7 +161,7 @@ export function buildCharacterLayers(
       name: saved.name,
       z_index: saved.z_index,
       visible: Boolean(saved.visible),
-      opacity: clampOpacity(saved.opacity, 0.85),
+      opacity: clampOpacity(saved.opacity, DEFAULT_CUSTOM_LAYER_OPACITY),
       locked: Boolean(saved.locked),
       label_color: normalizeColor(saved.label_color, 'none'),
       available: strokes.length > 0 || paths.length > 0,
@@ -320,8 +320,8 @@ export function createCustomLayer(
 
   db.prepare(`
     INSERT INTO character_layers (char, layer_id, kind, name, z_index, visible, opacity, locked, label_color, strokes_json, paths_json, modified)
-    VALUES (?, ?, 'CUSTOM', ?, ?, 1, 0.85, 0, ?, ?, ?, 1)
-  `).run(char, id, name, maxZ + 1, color, strokesJson, pathsJson)
+    VALUES (?, ?, 'CUSTOM', ?, ?, 1, ?, 0, ?, ?, ?, 1)
+  `).run(char, id, name, maxZ + 1, DEFAULT_CUSTOM_LAYER_OPACITY, color, strokesJson, pathsJson)
   return id
 }
 

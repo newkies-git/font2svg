@@ -34,6 +34,8 @@ export const MEDIAN_BBOX_INSET = 20
 export const MEDIAN_SIMPLIFY_TOLERANCE = 3
 export const MIN_STROKE_AREA_RATIO = 0.005
 export const MIN_COVERED_AREA_RATIO = 0.85
+// 새 사용자(CUSTOM) 레이어의 기본 불투명도
+export const DEFAULT_CUSTOM_LAYER_OPACITY = 0.85
 export const MAX_COVERED_AREA_RATIO = 1.7
 export const FONT_BATCH_LIMIT = 10
 export const AREA_FLATNESS = 2

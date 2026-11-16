@@ -46,3 +46,12 @@ test('hanjaStrokes: 중심선이 없는 획은 복원하고 복원 불가면 nul
   assert.equal(hanjaStrokes({ medians: [], outlines: [], radical: [] })?.medians.length, 0)
   assert.equal(hanjaStrokes({ medians: [[[0, 0]]], outlines: [], radical: [] }), null)
 })
+
+test('parseAcjkLine: 글자가 있는 줄만 받고 acjk는 문자열일 때만 남긴다', async () => {
+  const { parseAcjkLine } = await import('../server/references.ts')
+  assert.deepEqual(parseAcjkLine('{"character":"一","strokes":["M 0 0 Z"],"acjk":"一"}'), { character: '一', strokes: ['M 0 0 Z'], acjk: '一' })
+  assert.equal(parseAcjkLine('{"character":"一","acjk":5}').acjk, undefined)
+  assert.throws(() => parseAcjkLine('{"strokes":[]}'), /형식이 올바르지 않습니다/)
+  assert.throws(() => parseAcjkLine('null'), /형식이 올바르지 않습니다/)
+  assert.throws(() => parseAcjkLine('{broken'))
+})

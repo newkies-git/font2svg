@@ -5,6 +5,7 @@ import { transaction } from './db.ts'
 import { buildCharacterLayers } from './layers.ts'
 import { ACTOR_USER } from './model.ts'
 import type { CharacterRow } from './schema.ts'
+import { parseStringArray } from './storedJson.ts'
 import { type StrokeStore } from './strokeStore.ts'
 
 function unicodeOf(char: string): string {
@@ -52,7 +53,7 @@ export function createCharacterCatalog(
     const history = db.prepare('SELECT COUNT(*) AS n FROM strokes_history WHERE char = ? AND undoable = 1').get(String(row.char)) as { n: number }
     const issue = db.prepare('SELECT reason, status, in_font FROM issues WHERE char = ?').get(String(row.char)) as
       { reason: string; status: string; in_font: number } | undefined
-    const fontOutline = shown ? JSON.parse(shown.font_outline) as string[] : []
+    const fontOutline = shown ? parseStringArray(shown.font_outline, '궁서체 윤곽') : []
     const originUrl = meta?.origin_url ?? working?.source_url ?? null
     const contours = fontContours(String(row.char)) ?? fontOutline
     const layers = buildCharacterLayers(db, {
@@ -70,8 +71,8 @@ export function createCharacterCatalog(
       issue_status: issue?.status ?? null,
       in_font: issue?.in_font ?? 0,
       working: Boolean(working),
-      variant_reading: JSON.parse(String(row.variant_reading)) as string[],
-      variant_meaning: JSON.parse(String(row.variant_meaning)) as string[],
+      variant_reading: parseStringArray(String(row.variant_reading), '다른 음'),
+      variant_meaning: parseStringArray(String(row.variant_meaning), '다른 뜻'),
       radical: meta?.radical ?? 0,
       font_outline: fontOutline,
       origin: meta?.origin ?? working?.source ?? null,
