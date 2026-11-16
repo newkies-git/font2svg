@@ -42,9 +42,9 @@ function loopsOf(paths: string[]): Loop[] {
   return paths.flatMap((d) => flattenContours(d, FIT_FLATNESS))
 }
 
-// 0이 아닌 감김수(nonzero winding) 규칙으로 윤곽 안쪽 칸을 채운다. 칸 중심이 안쪽이면 1.
-function fillMask(loops: Loop[]): Uint8Array {
-  const mask = new Uint8Array(FIT_GRID * FIT_GRID)
+// 0이 아닌 감김수(nonzero winding) 규칙으로 윤곽 안쪽을 행별 구간으로 구한다.
+// 구간은 [시작 칸, 끝 칸] 쌍을 이어 붙인 배열이고(칸 중심이 안쪽이면 포함), 한 행 안에서 서로 겹치지 않는다.
+export function spansOf(loops: Loop[]): number[][] {
   const crossings: { x: number; wind: number }[][] = Array.from({ length: FIT_GRID }, () => [])
   const toRow = (y: number) => (y + FIT_MARGIN) / CELL - 0.5
   for (const loop of loops) {
@@ -63,21 +63,67 @@ function fillMask(loops: Loop[]): Uint8Array {
       }
     }
   }
-  for (let r = 0; r < FIT_GRID; r++) {
-    const row = crossings[r].sort((p, q) => p.x - q.x)
+  return crossings.map((row) => {
+    const spans: number[] = []
+    row.sort((p, q) => p.x - q.x)
     let wind = 0
     for (let k = 0; k < row.length - 1; k++) {
       wind += row[k].wind
       if (wind === 0) continue
       const c0 = Math.max(0, Math.ceil((row[k].x + FIT_MARGIN) / CELL - 0.5))
       const c1 = Math.min(FIT_GRID - 1, Math.floor((row[k + 1].x + FIT_MARGIN) / CELL - 0.5))
-      for (let c = c0; c <= c1; c++) mask[r * FIT_GRID + c] = 1
+      if (c1 < c0) continue
+      const last = spans.length - 1
+      if (last >= 0 && c0 <= spans[last]) spans[last] = Math.max(spans[last], c1)
+      else spans.push(c0, c1)
     }
-  }
+    return spans
+  })
+}
+
+// 구간을 칸 마스크(안쪽 1)로 칠한다.
+export function fillMask(loops: Loop[]): Uint8Array {
+  const mask = new Uint8Array(FIT_GRID * FIT_GRID)
+  spansOf(loops).forEach((spans, r) => {
+    for (let k = 0; k < spans.length; k += 2) mask.fill(1, r * FIT_GRID + spans[k], r * FIT_GRID + spans[k + 1] + 1)
+  })
   return mask
 }
 
-function iou(a: Uint8Array, b: Uint8Array): number {
+// 목표 마스크를 구간으로 겹침을 셀 수 있게 한 것: 행마다 칸 누적합과 전체 칸 수.
+type Target = { prefix: Int32Array; count: number }
+
+export function targetOf(mask: Uint8Array): Target {
+  const stride = FIT_GRID + 1
+  const prefix = new Int32Array(FIT_GRID * stride)
+  let count = 0
+  for (let r = 0; r < FIT_GRID; r++) {
+    for (let c = 0; c < FIT_GRID; c++) {
+      const on = mask[r * FIT_GRID + c]
+      prefix[r * stride + c + 1] = prefix[r * stride + c] + on
+      count += on
+    }
+  }
+  return { prefix, count }
+}
+
+// 구간 집합과 목표의 IoU. 칸 마스크를 만들지 않고 구간 길이와 누적합만 쓴다.
+export function iouSpans(spans: number[][], target: Target): number {
+  const stride = FIT_GRID + 1
+  let area = 0
+  let inter = 0
+  for (let r = 0; r < FIT_GRID; r++) {
+    const row = spans[r]
+    for (let k = 0; k < row.length; k += 2) {
+      area += row[k + 1] - row[k] + 1
+      inter += target.prefix[r * stride + row[k + 1] + 1] - target.prefix[r * stride + row[k]]
+    }
+  }
+  const union = area + target.count - inter
+  return union === 0 ? 0 : inter / union
+}
+
+export function iou(a: Uint8Array, b: Uint8Array): number {
   let inter = 0
   let union = 0
   for (let i = 0; i < a.length; i++) {
@@ -128,8 +174,9 @@ function withinLimits(p: FitParams, start: FitParams): boolean {
 }
 
 // 좌표 하강법: 매개변수를 하나씩 ±보폭으로 흔들어 IoU가 오르면 받아들이고, 더 오르지 않으면 보폭을 줄인다.
-function optimize(loops: Loop[], center: Pt, target: Uint8Array, start: FitParams): { params: FitParams; score: number } {
-  const score = (p: FitParams) => iou(fillMask(applyToLoops(loops, mapFor(p, center))), target)
+function optimize(loops: Loop[], center: Pt, targetMask: Uint8Array, start: FitParams): { params: FitParams; score: number } {
+  const target = targetOf(targetMask)
+  const score = (p: FitParams) => iouSpans(spansOf(applyToLoops(loops, mapFor(p, center))), target)
   let best = { ...start }
   let bestScore = score(best)
   const baseSteps: Record<ParamKey, number> = {

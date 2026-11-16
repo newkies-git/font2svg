@@ -518,39 +518,52 @@ function parabola(f: Float32Array, q: number, p: number): number {
   return (f[q] + q * q - (f[p] + p * p)) / (2 * q - 2 * p)
 }
 
-function zhangSuen(src: Uint8Array, w: number, h: number): Uint8Array {
+// Zhang-Suen 세선화. 한 단계(step)의 삭제 후보는 전부 모은 뒤 한꺼번에 지운다(병렬 규칙).
+// 잉크 픽셀만 담은 목록(active)을 따라가고, 이웃 8칸은 배열을 만들지 않고 지역 변수로 읽는다.
+export function zhangSuen(src: Uint8Array, w: number, h: number): Uint8Array {
   const img = src.slice()
-  const offsets = [-w, -w + 1, 1, w + 1, w, w - 1, -1, -w - 1]
+  let active: number[] = []
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      const i = y * w + x
+      if (img[i]) active.push(i)
+    }
+  }
+  const drop: number[] = []
   let changed = true
   while (changed) {
     changed = false
     for (let step = 0; step < 2; step++) {
-      const drop: number[] = []
-      for (let y = 1; y < h - 1; y++) {
-        for (let x = 1; x < w - 1; x++) {
-          const i = y * w + x
-          if (!img[i]) continue
-          const p = offsets.map((offset) => img[i + offset])
-          let bp = 0
-          let ap = 0
-          for (let k = 0; k < 8; k++) {
-            bp += p[k]
-            if (!p[k] && p[(k + 1) % 8]) ap++
-          }
-          if (bp < 2 || bp > 6 || ap !== 1) continue
-          if (step === 0) {
-            if (p[0] && p[2] && p[4]) continue
-            if (p[2] && p[4] && p[6]) continue
-          } else {
-            if (p[0] && p[2] && p[6]) continue
-            if (p[0] && p[4] && p[6]) continue
-          }
-          drop.push(i)
+      drop.length = 0
+      for (const i of active) {
+        // 이웃: 위, 오른쪽 위, 오른쪽, 오른쪽 아래, 아래, 왼쪽 아래, 왼쪽, 왼쪽 위(시계 방향)
+        const p0 = img[i - w]
+        const p1 = img[i - w + 1]
+        const p2 = img[i + 1]
+        const p3 = img[i + w + 1]
+        const p4 = img[i + w]
+        const p5 = img[i + w - 1]
+        const p6 = img[i - 1]
+        const p7 = img[i - w - 1]
+        const bp = p0 + p1 + p2 + p3 + p4 + p5 + p6 + p7
+        if (bp < 2 || bp > 6) continue
+        // 0→1로 바뀌는 횟수(8방향 순환)
+        const ap = (!p0 && p1 ? 1 : 0) + (!p1 && p2 ? 1 : 0) + (!p2 && p3 ? 1 : 0) + (!p3 && p4 ? 1 : 0)
+          + (!p4 && p5 ? 1 : 0) + (!p5 && p6 ? 1 : 0) + (!p6 && p7 ? 1 : 0) + (!p7 && p0 ? 1 : 0)
+        if (ap !== 1) continue
+        if (step === 0) {
+          if (p0 && p2 && p4) continue
+          if (p2 && p4 && p6) continue
+        } else {
+          if (p0 && p2 && p6) continue
+          if (p0 && p4 && p6) continue
         }
+        drop.push(i)
       }
       if (drop.length) {
         changed = true
         for (const i of drop) img[i] = 0
+        active = active.filter((i) => img[i])
       }
     }
   }

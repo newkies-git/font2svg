@@ -46,3 +46,58 @@ test('원본 획 배열은 바꾸지 않는다(불변)', () => {
   autoFitLayer(shaken, fontPaths)
   assert.equal(JSON.stringify(shaken), snapshot)
 })
+
+// ---- 구간/누적합 IoU가 칸 마스크 IoU와 같은 값을 내는지(차분 테스트) ----
+import { fillMask, iou, iouSpans, spansOf, targetOf } from '../src/lib/autoFit.ts'
+
+function rng(seed: number) {
+  let a = seed
+  return () => {
+    a = (a + 0x6d2b79f5) | 0
+    let t = Math.imul(a ^ (a >>> 15), 1 | a)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+// 서로 겹치기도 하고 방향도 제각각인 무작위 다각형 몇 개
+function randomLoops(seed: number) {
+  const random = rng(seed)
+  return Array.from({ length: 1 + Math.floor(random() * 4) }, () => {
+    const cx = 100 + random() * 800
+    const cy = 100 + random() * 800
+    const radius = 30 + random() * 250
+    const count = 3 + Math.floor(random() * 9)
+    const direction = random() < 0.5 ? 1 : -1
+    return Array.from({ length: count }, (_, k) => {
+      const angle = (direction * 2 * Math.PI * k) / count + random() * 0.4
+      return { x: cx + Math.cos(angle) * radius * (0.5 + random()), y: cy + Math.sin(angle) * radius * (0.5 + random()) }
+    })
+  })
+}
+
+test('구간 IoU는 칸 마스크 IoU와 같다(무작위 다각형 60쌍)', () => {
+  for (let seed = 1; seed <= 60; seed++) {
+    const shape = randomLoops(seed)
+    const targetShape = randomLoops(seed + 1000)
+    const mask = fillMask(targetShape)
+    const expected = iou(fillMask(shape), mask)
+    const actual = iouSpans(spansOf(shape), targetOf(mask))
+    assert.ok(Math.abs(expected - actual) < 1e-12, `seed ${seed}: ${expected} vs ${actual}`)
+  }
+})
+
+test('구간은 행마다 겹치지 않고 정렬되어 있다', () => {
+  for (let seed = 1; seed <= 30; seed++) {
+    for (const row of spansOf(randomLoops(seed))) {
+      for (let k = 0; k < row.length; k += 2) {
+        assert.ok(row[k] <= row[k + 1])
+        if (k >= 2) assert.ok(row[k] > row[k - 1], '앞 구간과 겹침')
+      }
+    }
+  }
+})
+
+test('빈 도형·빈 목표의 IoU는 0', () => {
+  assert.equal(iouSpans(spansOf([]), targetOf(new Uint8Array(256 * 256))), 0)
+})
