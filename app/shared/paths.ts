@@ -4,7 +4,7 @@ export type Pt = { x: number; y: number }
 
 type Cmd = { op: 'M' | 'L' | 'Q' | 'C' | 'Z'; n: number[] }
 
-// 3차 베지어 평탄화: 재귀 깊이 한계와, 제어점 편차(제곱)를 허용 오차(제곱)와 비교하는 배율
+// 베지어 평탄화: 재귀 깊이 한계(2차·3차 공통)와, 3차에서 제어점 편차(제곱)를 허용 오차(제곱)와 비교하는 배율
 const FLATTEN_MAX_DEPTH = 8
 const FLATTEN_TOLERANCE_FACTOR = 16
 
@@ -24,6 +24,21 @@ export function isValidSvgPath(d: string): boolean {
   return /^[Mm]/.test(trimmed) && /[Zz]\s*$/.test(trimmed)
 }
 
+// 숫자 목록을 size개씩 묶는다. 모자란 끝 조각은 버린다.
+function chunksOf(nums: number[], size: number): number[][] {
+  const chunks: number[][] = []
+  for (let i = 0; i + size <= nums.length; i += size) chunks.push(nums.slice(i, i + size))
+  return chunks
+}
+
+// 명령 하나가 받는 좌표 쌍 묶음의 숫자 개수: 한 점(M·L)은 2, 2차 곡선은 4, 3차 곡선은 6
+const CURVE_ARITY: Record<'L' | 'Q' | 'C', number> = { L: 2, Q: 4, C: 6 }
+
+// 상대 명령(소문자)은 묶음의 시작에서의 현재 점을 기준으로 절대 좌표로 바꾼다. 홀수 번째가 x, 짝수 번째가 y이다.
+function toAbsolute(chunk: number[], relative: boolean, cx: number, cy: number): number[] {
+  return relative ? chunk.map((value, i) => value + (i % 2 === 0 ? cx : cy)) : chunk
+}
+
 export function parseCommands(d: string): Cmd[] {
   const out: Cmd[] = []
   const re = /([MLHVQCZ])([^MLHVQCZ]*)/gi
@@ -33,63 +48,39 @@ export function parseCommands(d: string): Cmd[] {
   let sx = 0
   let sy = 0
   while ((m = re.exec(d))) {
-    const rawOp = m[1]
-    const upper = rawOp.toUpperCase()
-    const rel = rawOp !== upper
+    const upper = m[1].toUpperCase()
+    const relative = m[1] !== upper
     const nums = (m[2].match(NUM) ?? []).map(Number)
     if (upper === 'Z') {
       out.push({ op: 'Z', n: [] })
       cx = sx
       cy = sy
-    } else if (upper === 'M') {
-      for (let i = 0; i + 1 < nums.length; i += 2) {
-        cx = rel ? cx + nums[i] : nums[i]
-        cy = rel ? cy + nums[i + 1] : nums[i + 1]
-        if (i === 0) {
+    } else if (upper === 'M' || upper === 'L') {
+      // M의 첫 점만 이동이고, 뒤따르는 점은 선으로 잇는다.
+      chunksOf(nums, CURVE_ARITY.L).forEach((chunk, i) => {
+        const [x, y] = toAbsolute(chunk, relative, cx, cy)
+        cx = x
+        cy = y
+        if (upper === 'M' && i === 0) {
           sx = cx
           sy = cy
           out.push({ op: 'M', n: [cx, cy] })
         } else {
           out.push({ op: 'L', n: [cx, cy] })
         }
-      }
-    } else if (upper === 'L') {
-      for (let i = 0; i + 1 < nums.length; i += 2) {
-        cx = rel ? cx + nums[i] : nums[i]
-        cy = rel ? cy + nums[i + 1] : nums[i + 1]
+      })
+    } else if (upper === 'H' || upper === 'V') {
+      for (const value of nums) {
+        if (upper === 'H') cx = relative ? cx + value : value
+        else cy = relative ? cy + value : value
         out.push({ op: 'L', n: [cx, cy] })
       }
-    } else if (upper === 'H') {
-      for (const v of nums) {
-        cx = rel ? cx + v : v
-        out.push({ op: 'L', n: [cx, cy] })
-      }
-    } else if (upper === 'V') {
-      for (const v of nums) {
-        cy = rel ? cy + v : v
-        out.push({ op: 'L', n: [cx, cy] })
-      }
-    } else if (upper === 'Q') {
-      for (let i = 0; i + 3 < nums.length; i += 4) {
-        const x1 = rel ? cx + nums[i] : nums[i]
-        const y1 = rel ? cy + nums[i + 1] : nums[i + 1]
-        const x = rel ? cx + nums[i + 2] : nums[i + 2]
-        const y = rel ? cy + nums[i + 3] : nums[i + 3]
-        out.push({ op: 'Q', n: [x1, y1, x, y] })
-        cx = x
-        cy = y
-      }
-    } else if (upper === 'C') {
-      for (let i = 0; i + 5 < nums.length; i += 6) {
-        const x1 = rel ? cx + nums[i] : nums[i]
-        const y1 = rel ? cy + nums[i + 1] : nums[i + 1]
-        const x2 = rel ? cx + nums[i + 2] : nums[i + 2]
-        const y2 = rel ? cy + nums[i + 3] : nums[i + 3]
-        const x = rel ? cx + nums[i + 4] : nums[i + 4]
-        const y = rel ? cy + nums[i + 5] : nums[i + 5]
-        out.push({ op: 'C', n: [x1, y1, x2, y2, x, y] })
-        cx = x
-        cy = y
+    } else if (upper === 'Q' || upper === 'C') {
+      for (const chunk of chunksOf(nums, CURVE_ARITY[upper])) {
+        const n = toAbsolute(chunk, relative, cx, cy)
+        out.push({ op: upper, n })
+        cx = n[n.length - 2]
+        cy = n[n.length - 1]
       }
     }
   }
@@ -180,7 +171,7 @@ export function flattenContours(d: string, flatness: number): Pt[][] {
 function flattenQuadratic(p0: Pt, p1: Pt, p2: Pt, flat: number, push: (p: Pt) => void, depth = 0) {
   const midPt = { x: (p0.x + 2 * p1.x + p2.x) / 4, y: (p0.y + 2 * p1.y + p2.y) / 4 }
   const chord = { x: (p0.x + p2.x) / 2, y: (p0.y + p2.y) / 2 }
-  if (depth > 8 || Math.hypot(midPt.x - chord.x, midPt.y - chord.y) <= flat) {
+  if (depth > FLATTEN_MAX_DEPTH || Math.hypot(midPt.x - chord.x, midPt.y - chord.y) <= flat) {
     push(p2)
     return
   }
