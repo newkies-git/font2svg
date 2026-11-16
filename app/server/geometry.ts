@@ -64,6 +64,11 @@ export type OutlinePiece = {
   contours: number[]
 }
 
+// 궁서체 윤곽(contours)을 꼭짓점 목록으로 펼친다. contourIndicesOfOutline에 넘긴다.
+export function contourLoopsOf(contours: string[]): Point[][][] {
+  return contours.map((d) => flattenContours(d, AREA_FLATNESS))
+}
+
 function distanceToSegment(p: Point, a: Point, b: Point): number {
   const dx = b.x - a.x
   const dy = b.y - a.y
@@ -73,7 +78,7 @@ function distanceToSegment(p: Point, a: Point, b: Point): number {
 }
 
 // 획 윤곽의 꼭짓점이 어느 궁서체 윤곽선 위에 놓였는지로 소속 윤곽을 구한다.
-function contourIndicesOfOutline(outline: string, contourLoops: Point[][][]): number[] {
+export function contourIndicesOfOutline(outline: string, contourLoops: Point[][][]): number[] {
   const vertices = flattenContours(outline, AREA_FLATNESS).flat()
   if (vertices.length === 0) return []
   const result: number[] = []
@@ -95,7 +100,7 @@ export function splitOutlinePieces(contours: string[], guide: Pt[][]): OutlinePi
   if (split.strokes.length !== fitted.length) return null
   const glyphArea = Math.abs(contours.reduce((sum, d) => sum + contourArea(d), 0))
   const whole = new Set(contours)
-  const contourLoops = contours.map((d) => flattenContours(d, AREA_FLATNESS))
+  const contourLoops = contourLoopsOf(contours)
   return fitted.map((line, index): OutlinePiece => {
     const outline = split.strokes[index]
     const usable = Boolean(outline) && !whole.has(outline) && Math.abs(contourArea(outline)) >= glyphArea * MIN_STROKE_AREA_RATIO

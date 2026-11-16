@@ -93,6 +93,7 @@ const {
   resegmentActiveByFont,
   generateOutlineLayer,
   mapOutlineContours,
+  refreshOutlineMapping,
   duplicateActiveLayer,
   deleteActiveCustomLayer,
 } = useLayerWorkspace(selected, shown, reveal, message, error, busy, loadList, stop)
@@ -531,6 +532,7 @@ onBeforeUnmount(() => {
             @copy-to-work="copyStrokeToWorkLayer"
             @generate-outline="generateOutlineLayer"
             @map-contours="mapOutlineContours"
+            @refresh-outline="refreshOutlineMapping"
           />
         </aside>
       </div>

@@ -45,6 +45,8 @@ export const ACJK_BATCH_LIMIT = 200
 export const OUTLINE_CONTOUR_TOLERANCE = 6
 // 획 윤곽 꼭짓점 중 이 비율 이상이 한 궁서체 윤곽 위에 있으면 그 윤곽에 매핑한다.
 export const OUTLINE_CONTOUR_MATCH_RATIO = 0.1
+// 궁서체 윤곽 지문(해시) 길이(16진수 글자 수). 매핑이 만들어진 뒤 윤곽이 바뀌었는지 알아보는 데 쓴다.
+export const FONT_FINGERPRINT_LENGTH = 12
 export const ANIM_PATH_LENGTH = 3333
 export const ANIM_STROKE_SECONDS = 0.8
 export const ANIM_STROKE_STEP_SECONDS = 1
@@ -73,3 +75,9 @@ export const FIT_LIMIT_ANGLE = 0.5
 export const FIT_LIMIT_SHEAR = 0.5
 // 획별 보정을 영역 재할당과 번갈아 반복하는 횟수
 export const FIT_REFINE_ROUNDS = 2
+// DB 백업 파일 이름 접두어(database/<DB 이름>.backup-<시각>.db). .gitignore가 이 패턴을 제외한다.
+export const BACKUP_TAG = 'backup'
+// 마이그레이션 직전 자동 백업 파일 이름 접두어(database/<DB 이름>.before-v<버전>-<시각>.db)
+export const PRE_MIGRATION_TAG = 'before'
+// API 요청 본문 상한(바이트). 레이어 저장·초기 글자 목록 업로드가 충분히 들어가는 크기
+export const API_BODY_LIMIT_BYTES = 8 * 1024 * 1024

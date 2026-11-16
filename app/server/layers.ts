@@ -1,6 +1,6 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
-import { DEFAULT_STROKE_WIDTH, MIN_STROKE_WIDTH, OPACITY_STEPS, STROKE_WIDTH_CAP_RATIO, LAYER_ID } from '../src/lib/constants.ts'
+import { DEFAULT_STROKE_WIDTH, FONT_FINGERPRINT_LENGTH, MIN_STROKE_WIDTH, OPACITY_STEPS, STROKE_WIDTH_CAP_RATIO, LAYER_ID } from '../src/lib/constants.ts'
 import { isValidSvgPath } from '../src/lib/paths.ts'
 import type { CapType, LayerColor, LayerKind, LayerMetaPatch, LayerRecord, Pt, StrokeRecord } from '../src/types.ts'
 import { transaction } from './db.ts'
@@ -31,6 +31,7 @@ export const BUILTIN_LAYERS: readonly BuiltinLayerSpec[] = [
   { id: LAYER_ID.numbers, kind: 'NUMBERS', name: '획순 번호', z_index: 7, visible: true, opacity: 1.0, locked: false, label_color: 'rose' },
 ]
 
+const FONT_HASH_RE = /^[0-9a-f]+$/
 const VALID_COLORS = new Set<LayerColor>(['none', 'ink', 'slate', 'blue', 'violet', 'green', 'amber', 'rose'])
 
 function normalizeCap(value: unknown): CapType {
@@ -78,6 +79,7 @@ export function sanitizeLayerStrokes(raw: unknown): StrokeRecord[] {
     if (Array.isArray(stroke.font_contours)) {
       record.font_contours = [...new Set(stroke.font_contours.filter((i) => Number.isInteger(i) && i >= 0))].sort((a, b) => a - b)
       record.map_manual = stroke.map_manual ? 1 : 0
+      if (typeof stroke.font_hash === 'string' && FONT_HASH_RE.test(stroke.font_hash)) record.font_hash = stroke.font_hash
     }
     return record
   })
@@ -117,6 +119,11 @@ function readCachedRefStrokes(
   return { strokes, url: row.source_url }
 }
 
+// 궁서체 윤곽 목록의 지문. 매핑을 만든 뒤 윤곽이 바뀌었는지 비교한다.
+export function fontFingerprint(contours: string[]): string {
+  return createHash('sha256').update(JSON.stringify(contours)).digest('hex').slice(0, FONT_FINGERPRINT_LENGTH)
+}
+
 // 작업에 쓸 궁서체 윤곽: 편집된 궁서체(font) 레이어가 있으면 그 윤곽, 없으면 글자에 저장된 궁서체 윤곽. 없으면 빈 배열.
 export function fontContoursOf(detail: { layers: LayerRecord[]; font_outline: string[] }): string[] {
   const fontLayer = detail.layers.find((layer) => layer.id === LAYER_ID.font)
@@ -141,6 +148,8 @@ export function buildCharacterLayers(
   const savedById = new Map(savedRows.map((row) => [row.layer_id, row]))
 
   const records: LayerRecord[] = []
+  // 화면에 보이는 궁서체 윤곽(편집됐으면 그 윤곽). OUTLINE 매핑이 가리키는 기준이다.
+  let fontPaths = params.fontContours
 
   for (const spec of BUILTIN_LAYERS) {
     const saved = savedById.get(spec.id)
@@ -156,6 +165,7 @@ export function buildCharacterLayers(
       const customPaths = saved?.modified && saved.paths_json ? (JSON.parse(saved.paths_json) as string[]) : null
       const customStrokes = saved?.modified && saved.strokes_json ? (JSON.parse(saved.strokes_json) as StrokeRecord[]) : []
       const paths = customPaths ?? params.fontContours
+      fontPaths = paths
       records.push({
         id: spec.id,
         kind: spec.kind,
@@ -176,6 +186,7 @@ export function buildCharacterLayers(
 
     if (spec.kind === 'OUTLINE') {
       const strokes = saved?.strokes_json ? (JSON.parse(saved.strokes_json) as StrokeRecord[]) : []
+      const currentHash = fontFingerprint(fontPaths)
       records.push({
         id: spec.id,
         kind: spec.kind,
@@ -190,6 +201,7 @@ export function buildCharacterLayers(
         source_url: null,
         strokes,
         paths: [],
+        stale: strokes.some((stroke) => stroke.font_hash !== undefined && stroke.font_hash !== currentHash),
       })
       continue
     }

@@ -49,7 +49,7 @@ function createWorkspace(rootDir: string) {
   db.exec('PRAGMA foreign_keys = ON')
   db.exec('PRAGMA journal_mode = WAL')
   db.exec(`PRAGMA busy_timeout = ${DB_BUSY_TIMEOUT_MS}`)
-  migrate(db)
+  migrate(db, { backupBasePath: dbPath })
   seed(db)
 
   const strokes = createStrokeStore(db)
@@ -228,6 +228,7 @@ function createWorkspace(rootDir: string) {
     resegmentLayer,
     generateOutline: outline.generate,
     mapOutlineStroke: outline.mapStroke,
+    refreshOutline: outline.refresh,
     duplicateLayer,
     deleteLayer,
     importSvg,

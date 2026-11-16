@@ -1,8 +1,8 @@
 import type { DatabaseSync } from 'node:sqlite'
 import { DEFAULT_STROKE_WIDTH, LAYER_ID } from '../src/lib/constants.ts'
 import type { LayerRecord, StrokeRecord } from '../src/types.ts'
-import { ribbonPath, splitOutlinePieces } from './geometry.ts'
-import { fontContoursOf, patchLayersMeta, saveNonStrokeLayerContent } from './layers.ts'
+import { contourIndicesOfOutline, contourLoopsOf, ribbonPath, splitOutlinePieces } from './geometry.ts'
+import { fontContoursOf, fontFingerprint, patchLayersMeta, saveNonStrokeLayerContent } from './layers.ts'
 
 export const OUTLINE_LAYER_ID = LAYER_ID.outline
 const SOURCE_FALLBACK_IDS = [LAYER_ID.naver, LAYER_ID.mmh, LAYER_ID.acjk] as const
@@ -25,6 +25,13 @@ function requireFontContours(detail: OutlineDetail): string[] {
   return contours
 }
 
+const STALE_MESSAGE = '궁서체 윤곽이 바뀌어 매핑이 어긋났을 수 있습니다. [매핑 갱신]을 먼저 실행하세요.'
+
+// 획 모양(outline_path)은 그대로 두고, 현재 궁서체 윤곽 기준으로 font_contours와 지문을 다시 정한다.
+function withCurrentMapping(stroke: StrokeRecord, contours: string[], hash: string, loops = contourLoopsOf(contours)): StrokeRecord {
+  return { ...stroke, font_contours: contourIndicesOfOutline(stroke.outline_path, loops), font_hash: hash }
+}
+
 export function createOutlineMapping(db: DatabaseSync, deps: { getCharacter: (unicode: string) => OutlineDetail | null }) {
   const requireDetail = (unicode: string): OutlineDetail => {
     const detail = deps.getCharacter(unicode)
@@ -41,6 +48,7 @@ export function createOutlineMapping(db: DatabaseSync, deps: { getCharacter: (un
     const pieces = splitOutlinePieces(contours, guide.strokes.map((stroke) => stroke.median_points))
     if (!pieces) throw new Error('궁서체 윤곽을 획으로 나누지 못했습니다. 길잡이 레이어를 바꿔 보세요.')
 
+    const hash = fontFingerprint(contours)
     const previous = detail.layers.find((layer) => layer.id === OUTLINE_LAYER_ID)?.strokes ?? []
     const keepManual = previous.length === pieces.length
     if (!keepManual && previous.some((stroke) => stroke.map_manual)) {
@@ -48,7 +56,8 @@ export function createOutlineMapping(db: DatabaseSync, deps: { getCharacter: (un
     }
     const strokes = pieces.map((piece, index): StrokeRecord => {
       const kept = keepManual ? previous[index] : undefined
-      if (kept?.map_manual) return kept
+      // 수동 획의 윤곽 모양은 그대로 두고, 궁서체 윤곽이 바뀌었으면 인덱스만 모양에서 다시 구한다.
+      if (kept?.map_manual) return kept.font_hash === hash ? kept : withCurrentMapping(kept, contours, hash)
       const source = guide.strokes[index]
       return {
         stroke_order: index + 1,
@@ -60,6 +69,7 @@ export function createOutlineMapping(db: DatabaseSync, deps: { getCharacter: (un
         end_cap_type: source?.end_cap_type ?? 'NONE',
         font_contours: piece.contours,
         map_manual: 0,
+        font_hash: hash,
       }
     })
     saveNonStrokeLayerContent(db, detail.char, OUTLINE_LAYER_ID, { strokes })
@@ -74,6 +84,7 @@ export function createOutlineMapping(db: DatabaseSync, deps: { getCharacter: (un
     const layer = detail.layers.find((item) => item.id === OUTLINE_LAYER_ID)
     const target = layer?.strokes[strokeIndex]
     if (!layer || !target) throw new Error('매핑할 획이 없습니다. 먼저 [자동 매핑]으로 획 윤곽을 만드세요.')
+    if (layer.stale) throw new Error(STALE_MESSAGE)
     if (!Array.isArray(contourIndicesRaw)) throw new Error('윤곽 인덱스 목록 형식이 올바르지 않습니다.')
     const indices = [...new Set(contourIndicesRaw.map(Number))].sort((a, b) => a - b)
     if (indices.some((i) => !Number.isInteger(i) || i < 0 || i >= contours.length)) {
@@ -85,12 +96,26 @@ export function createOutlineMapping(db: DatabaseSync, deps: { getCharacter: (un
         outline_path: ribbonPath(target.median_points, target.stroke_width || DEFAULT_STROKE_WIDTH),
         font_contours: [],
         map_manual: 0,
+        font_hash: fontFingerprint(contours),
       }
-      : { ...target, outline_path: indices.map((i) => contours[i]).join(' '), font_contours: indices, map_manual: 1 }
+      : { ...target, outline_path: indices.map((i) => contours[i]).join(' '), font_contours: indices, map_manual: 1, font_hash: fontFingerprint(contours) }
     const strokes = layer.strokes.map((stroke, index) => (index === strokeIndex ? next : stroke))
     saveNonStrokeLayerContent(db, detail.char, OUTLINE_LAYER_ID, { strokes })
     return deps.getCharacter(unicode)
   }
 
-  return { generate, mapStroke }
+  // 궁서체 윤곽이 바뀐 뒤, 모든 획의 윤곽 인덱스를 획 모양에서 다시 구한다(획 모양은 바꾸지 않는다).
+  function refresh(unicode: string) {
+    const detail = requireDetail(unicode)
+    const contours = requireFontContours(detail)
+    const layer = detail.layers.find((item) => item.id === OUTLINE_LAYER_ID)
+    if (!layer || layer.strokes.length === 0) throw new Error('갱신할 매핑이 없습니다. 먼저 [자동 매핑]으로 획 윤곽을 만드세요.')
+    const hash = fontFingerprint(contours)
+    const loops = contourLoopsOf(contours)
+    const strokes = layer.strokes.map((stroke) => withCurrentMapping(stroke, contours, hash, loops))
+    saveNonStrokeLayerContent(db, detail.char, OUTLINE_LAYER_ID, { strokes })
+    return deps.getCharacter(unicode)
+  }
+
+  return { generate, mapStroke, refresh }
 }

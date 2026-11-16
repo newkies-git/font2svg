@@ -37,6 +37,8 @@ export type StrokeRecord = {
   font_contours?: number[]
   // 1이면 사람이 직접 매핑한 획이라 자동 매핑이 덮어쓰지 않는다.
   map_manual?: 0 | 1
+  // 매핑을 만들 때의 궁서체 윤곽 지문. 현재 윤곽의 지문과 다르면 font_contours 인덱스가 어긋났을 수 있다.
+  font_hash?: string
 }
 
 export type LayerRecord = {
@@ -53,6 +55,8 @@ export type LayerRecord = {
   source_url: string | null
   strokes: StrokeRecord[]
   paths: string[]
+  // OUTLINE 전용: 궁서체 윤곽이 바뀌어 매핑 인덱스가 어긋났을 수 있음
+  stale?: boolean
 }
 
 export type LayerMetaPatch = {

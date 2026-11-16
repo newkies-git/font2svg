@@ -5,6 +5,7 @@ import type { Workspace } from './workspace.ts'
 
 export const HTTP_OK = 200
 export const HTTP_BAD_REQUEST = 400
+export const HTTP_FORBIDDEN = 403
 export const HTTP_NOT_FOUND = 404
 
 export type ApiResult = { status: number; body: unknown }
@@ -112,6 +113,7 @@ const ROUTES: Route[] = [
       return ws.mapOutlineStroke(params.unicode, Number(payload.strokeIndex), payload.contours)
     },
   },
+  { method: 'POST', pattern: 'characters/:unicode/outline/refresh', handler: ({ ws, params }) => ws.refreshOutline(params.unicode) },
   {
     method: 'POST',
     pattern: 'characters/:unicode/layers-meta',

@@ -102,6 +102,7 @@ export function useLayerWorkspace(
     resegmentActiveByFont: commands.resegmentActiveByFont,
     generateOutlineLayer: commands.generateOutlineLayer,
     mapOutlineContours: commands.mapOutlineContours,
+    refreshOutlineMapping: commands.refreshOutlineMapping,
     duplicateActiveLayer: commands.duplicateActiveLayer,
     deleteActiveCustomLayer: commands.deleteActiveCustomLayer,
   }

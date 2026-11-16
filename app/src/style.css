@@ -1579,6 +1579,19 @@
     border-block-end: 1px solid var(--color-border-strong);
   }
 
+  .outline-stale {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px 10px;
+    background-color: var(--color-danger-subtle);
+    color: var(--color-danger);
+    font-size: 0.68rem;
+    font-weight: 700;
+  }
+
   .map-summary {
     margin-inline-start: auto;
     font-size: 0.66rem;

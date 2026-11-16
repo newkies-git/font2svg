@@ -190,7 +190,7 @@ export function useLayerCommands(state: LayerEditorState, deps: LayerCommandsDep
   }
 
   // 획 윤곽(OUTLINE) 레이어 서버 작업. 미저장 편집이 있으면 먼저 저장해 서버 결과가 덮어쓰지 않게 한다.
-  async function postOutline(action: 'generate' | 'map', payload: Record<string, unknown>, doneMessage: string, failMessage: string) {
+  async function postOutline(action: 'generate' | 'map' | 'refresh', payload: Record<string, unknown>, doneMessage: string, failMessage: string) {
     const current = selected.value
     if (!current) return
     if (!(await prepareLayerForServer(LAYER_ID.outline))) return
@@ -220,6 +220,15 @@ export function useLayerCommands(state: LayerEditorState, deps: LayerCommandsDep
       { strokeIndex, contours },
       contours.length === 0 ? `${strokeIndex + 1}획 매핑을 해제했습니다.` : `${strokeIndex + 1}획을 궁서체 윤곽 ${contours.map((i) => i + 1).join(', ')}번에 매핑했습니다.`,
       '윤곽 매핑에 실패했습니다.',
+    )
+  }
+
+  function refreshOutlineMapping() {
+    return postOutline(
+      'refresh',
+      {},
+      '궁서체 윤곽 기준으로 매핑을 갱신했습니다. 어긋난 획이 없는지 확인하세요.',
+      '매핑 갱신에 실패했습니다.',
     )
   }
 
@@ -267,6 +276,7 @@ export function useLayerCommands(state: LayerEditorState, deps: LayerCommandsDep
     resegmentActiveByFont,
     generateOutlineLayer,
     mapOutlineContours,
+    refreshOutlineMapping,
     duplicateActiveLayer,
     deleteActiveCustomLayer,
   }

@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "typecheck": "vue-tsc --noEmit"
+    "typecheck": "vue-tsc --noEmit",
+    "backup": "node scripts/backupDb.ts",
+    "test": "node --test \"tests/**/*.test.ts\""
   },
   "dependencies": {
     "opentype.js": "^2.0.0",

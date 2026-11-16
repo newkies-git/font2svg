@@ -23,6 +23,7 @@ const emit = defineEmits<{
   copyToWork: [index: number]
   generateOutline: [sourceLayerId: string]
   mapContours: [index: number, contours: number[]]
+  refreshOutline: []
 }>()
 
 const isContourMode = computed(() => (props.layer ? isContourLayer(props.layer) : false))
@@ -76,6 +77,11 @@ function toggleContour(contour: number) {
       <span v-if="strokes.length > 0" class="map-summary" :class="{ 'has-unmapped': unmappedCount > 0 }">
         {{ unmappedCount > 0 ? `미매핑 ${unmappedCount}획` : '전체 매핑됨' }}
       </span>
+    </div>
+
+    <div v-if="isOutlineMode && layer?.stale" class="outline-stale" role="alert">
+      <span>궁서체 윤곽이 바뀌어 매핑 번호가 어긋났을 수 있습니다.</span>
+      <button type="button" :disabled="locked" @click="emit('refreshOutline')">매핑 갱신</button>
     </div>
 
     <!-- FONT 윤곽 목록 -->
