@@ -33,5 +33,8 @@ Thumbs.db
 # Node & SQLite workspace
 node_modules/
 app/dist/
+
+# 컴파일 산출물 (compiled_json/SVG)
+output/
 *.db-wal
 *.db-shm
