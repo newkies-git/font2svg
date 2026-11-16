@@ -119,7 +119,7 @@ const CHARACTER_LAYERS_DDL = `
   CREATE TABLE IF NOT EXISTS character_layers (
     char TEXT NOT NULL REFERENCES characters(char) ON DELETE CASCADE,
     layer_id TEXT NOT NULL,
-    kind TEXT NOT NULL CHECK (kind IN ('FONT', 'MMH', 'ACJK', 'NAVER', 'STROKES', 'MEDIANS', 'NUMBERS', 'CUSTOM')),
+    kind TEXT NOT NULL CHECK (kind IN ('FONT', 'OUTLINE', 'MMH', 'ACJK', 'NAVER', 'STROKES', 'MEDIANS', 'NUMBERS', 'CUSTOM')),
     name TEXT NOT NULL,
     z_index INTEGER NOT NULL,
     visible INTEGER NOT NULL DEFAULT 1 CHECK (visible IN (0, 1)),
@@ -220,6 +220,18 @@ function upgradeStrokeOrigins(db: DatabaseSync) {
   })
 }
 
+// kind CHECK에 'OUTLINE'이 없는 옛 character_layers면 새 테이블로 갈아끼운다.
+function upgradeLayerKinds(db: DatabaseSync) {
+  const row = db.prepare(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'character_layers'`).get() as { sql: string } | undefined
+  if (!row || row.sql.includes(`'OUTLINE'`)) return
+  transaction(db, () => {
+    db.exec('ALTER TABLE character_layers RENAME TO character_layers_previous')
+    db.exec(CHARACTER_LAYERS_DDL)
+    db.exec('INSERT INTO character_layers SELECT * FROM character_layers_previous')
+    db.exec('DROP TABLE character_layers_previous')
+  })
+}
+
 function dropStatusColumn(db: DatabaseSync) {
   const columns = db.prepare('PRAGMA table_info(characters)').all() as { name: string }[]
   if (!columns.some((column) => column.name === 'status')) return
@@ -278,6 +290,7 @@ export function migrate(db: DatabaseSync) {
   `)
   const version = db.prepare('PRAGMA user_version').get() as { user_version: number }
   if (!version.user_version) db.exec('PRAGMA user_version = 1')
+  upgradeLayerKinds(db)
   addColumn(db, 'reference_data', 'source_url', 'TEXT')
   splitRadicalNames(db)
   migrateEditHistory(db)

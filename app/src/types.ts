@@ -6,7 +6,7 @@ export type CapType = 'NONE' | 'AUTO_ROUND' | 'REF_STAMP'
 export type ThemeMode = 'system' | 'light' | 'dark'
 export type StatusFilter = 'ALL' | IssueStatus
 
-export type LayerKind = 'FONT' | 'MMH' | 'ACJK' | 'NAVER' | 'STROKES' | 'MEDIANS' | 'NUMBERS' | 'CUSTOM'
+export type LayerKind = 'FONT' | 'OUTLINE' | 'MMH' | 'ACJK' | 'NAVER' | 'STROKES' | 'MEDIANS' | 'NUMBERS' | 'CUSTOM'
 export type LayerColor = 'none' | 'ink' | 'slate' | 'blue' | 'violet' | 'green' | 'amber' | 'rose'
 export type EditorTool = 'select' | 'bezier' | 'median' | 'knife' | 'connect'
 
@@ -42,6 +42,10 @@ export type StrokeRecord = {
   is_radical: 0 | 1
   start_cap_type: CapType
   end_cap_type: CapType
+  // OUTLINE 레이어 전용: 이 획이 매핑된 궁서체(font) 레이어의 윤곽 인덱스. 비어 있으면 미매핑.
+  font_contours?: number[]
+  // 1이면 사람이 직접 매핑한 획이라 자동 매핑이 덮어쓰지 않는다.
+  map_manual?: 0 | 1
 }
 
 export type LayerRecord = {

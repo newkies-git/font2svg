@@ -100,6 +100,14 @@ function workspaceApi(): Plugin {
           if (req.method === 'POST' && parts[3] === 'compile') {
             return send(res, 200, ws.compile(unicode))
           }
+          if (req.method === 'POST' && parts[3] === 'outline' && parts[4] === 'generate') {
+            const body = await readBody(req)
+            return send(res, 200, ws.generateOutline(unicode, typeof body.sourceLayerId === 'string' ? body.sourceLayerId : undefined))
+          }
+          if (req.method === 'POST' && parts[3] === 'outline' && parts[4] === 'map') {
+            const body = await readBody(req)
+            return send(res, 200, ws.mapOutlineStroke(unicode, Number(body.strokeIndex), body.contours))
+          }
           if (req.method === 'POST' && parts[3] === 'layers-meta') {
             const body = await readBody(req)
             return send(res, 200, ws.updateLayersMeta(unicode, body.patches as never))

@@ -109,7 +109,7 @@ function canApplyToStrokes(layer: LayerRecord | null): boolean {
 
 function canReset(layer: LayerRecord | null): boolean {
   if (!layer) return false
-  if (layer.kind !== 'FONT' && layer.kind !== 'MMH' && layer.kind !== 'ACJK' && layer.kind !== 'NAVER') return false
+  if (layer.kind !== 'FONT' && layer.kind !== 'OUTLINE' && layer.kind !== 'MMH' && layer.kind !== 'ACJK' && layer.kind !== 'NAVER') return false
   return layer.modified || props.dirtyIds.has(layer.id)
 }
 
@@ -117,7 +117,7 @@ function layerCountText(layer: LayerRecord): string {
   if (layer.kind === 'MEDIANS' || layer.kind === 'NUMBERS') return ''
   if (layer.strokes.length > 0) return `${layer.strokes.length}획`
   if (layer.paths.length > 0) return `윤곽 ${layer.paths.length}`
-  return '미수신'
+  return layer.kind === 'OUTLINE' ? '미생성' : '미수신'
 }
 
 function thumbPaths(layer: LayerRecord): string[] {

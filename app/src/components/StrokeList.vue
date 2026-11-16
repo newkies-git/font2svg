@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import type { CapType, LayerRecord, StrokeRecord } from '../types.ts'
 
 const props = defineProps<{
   layer: LayerRecord | null
   selectedIndex: number
   locked: boolean
+  fontContourCount: number
+  guideLayers: LayerRecord[]
 }>()
 
 const emit = defineEmits<{
@@ -17,11 +19,32 @@ const emit = defineEmits<{
   mergeNext: [index: number]
   remove: [index: number]
   copyToWork: [index: number]
+  generateOutline: [sourceLayerId: string]
+  mapContours: [index: number, contours: number[]]
 }>()
 
 const isContourMode = computed(() => props.layer?.kind === 'FONT' && props.layer.strokes.length === 0)
 const strokes = computed<StrokeRecord[]>(() => props.layer?.strokes ?? [])
 const currentStroke = computed<StrokeRecord | null>(() => strokes.value[props.selectedIndex] ?? null)
+
+// 획 윤곽(OUTLINE) 레이어: 궁서체 윤곽 매핑
+const isOutlineMode = computed(() => props.layer?.kind === 'OUTLINE')
+const guideId = ref('')
+const effectiveGuideId = computed(() => (props.guideLayers.some((l) => l.id === guideId.value) ? guideId.value : (props.guideLayers[0]?.id ?? '')))
+const unmappedCount = computed(() => strokes.value.filter((s) => !s.font_contours?.length).length)
+const contourIndices = computed(() => Array.from({ length: props.fontContourCount }, (_, i) => i))
+
+function isMapped(stroke: StrokeRecord): boolean {
+  return (stroke.font_contours?.length ?? 0) > 0
+}
+
+function toggleContour(contour: number) {
+  const stroke = currentStroke.value
+  if (!stroke) return
+  const current = stroke.font_contours ?? []
+  const next = current.includes(contour) ? current.filter((i) => i !== contour) : [...current, contour]
+  emit('mapContours', props.selectedIndex, next.sort((a, b) => a - b))
+}
 </script>
 
 <template>
@@ -32,6 +55,24 @@ const currentStroke = computed<StrokeRecord | null>(() => strokes.value[props.se
       </h3>
       <span v-if="layer" class="pane-count">
         {{ isContourMode ? `${layer.paths.length}개` : `${strokes.length}획` }}
+      </span>
+    </div>
+
+    <!-- 획 윤곽: 자동 매핑 -->
+    <div v-if="isOutlineMode" class="outline-map-bar">
+      <select v-model="guideId" :disabled="locked || guideLayers.length === 0" aria-label="중심선 길잡이 레이어">
+        <option v-for="g in guideLayers" :key="g.id" :value="g.id">{{ g.name }} ({{ g.strokes.length }}획)</option>
+      </select>
+      <button
+        type="button"
+        :disabled="locked || !effectiveGuideId || fontContourCount === 0"
+        title="길잡이 레이어의 중심선으로 궁서체 윤곽을 획별로 나누고 자동 매핑합니다. 수동 매핑한 획은 유지됩니다."
+        @click="emit('generateOutline', effectiveGuideId)"
+      >
+        {{ strokes.length > 0 ? '자동 매핑 다시' : '자동 매핑' }}
+      </button>
+      <span v-if="strokes.length > 0" class="map-summary" :class="{ 'has-unmapped': unmappedCount > 0 }">
+        {{ unmappedCount > 0 ? `미매핑 ${unmappedCount}획` : '전체 매핑됨' }}
       </span>
     </div>
 
@@ -76,6 +117,9 @@ const currentStroke = computed<StrokeRecord | null>(() => strokes.value[props.se
           <span class="stroke-idx">{{ index + 1 }}</span>
           <span class="stroke-row-label">{{ index + 1 }}획</span>
           <span v-if="stroke.is_radical" class="rad-dot-badge">부수</span>
+          <span v-if="isOutlineMode" class="map-badge" :class="{ 'is-unmapped': !isMapped(stroke) }">
+            {{ isMapped(stroke) ? `윤곽 ${stroke.font_contours?.map((i) => i + 1).join(',')}${stroke.map_manual ? ' ✎' : ''}` : '미매핑' }}
+          </span>
           <span class="stroke-pts-meta">{{ stroke.median_points.length }}점 · 폭 {{ stroke.stroke_width }}</span>
         </li>
       </ul>
@@ -93,6 +137,34 @@ const currentStroke = computed<StrokeRecord | null>(() => strokes.value[props.se
             />
             <span>부수 획</span>
           </label>
+        </div>
+
+        <div v-if="isOutlineMode" class="contour-map" role="group" aria-label="궁서체 윤곽 매핑">
+          <span class="contour-map-label">궁서체 윤곽 {{ currentStroke.map_manual ? '(수동)' : '(자동)' }}</span>
+          <div class="contour-chips">
+            <label
+              v-for="contour in contourIndices"
+              :key="`map-${contour}`"
+              class="contour-chip"
+              :class="{ 'is-on': currentStroke.font_contours?.includes(contour), disabled: locked }"
+            >
+              <input
+                type="checkbox"
+                :disabled="locked"
+                :checked="currentStroke.font_contours?.includes(contour)"
+                @change="toggleContour(contour)"
+              />
+              <span>{{ contour + 1 }}</span>
+            </label>
+          </div>
+          <button
+            type="button"
+            :disabled="locked || !isMapped(currentStroke)"
+            title="매핑을 해제하고 중심선 띠 모양으로 되돌립니다"
+            @click="emit('mapContours', selectedIndex, [])"
+          >
+            매핑 해제
+          </button>
         </div>
 
         <div class="cap-pair">
@@ -181,6 +253,6 @@ const currentStroke = computed<StrokeRecord | null>(() => strokes.value[props.se
       </div>
     </template>
 
-    <div v-else class="pane-empty">표시할 획 데이터가 없습니다.</div>
+    <div v-else class="pane-empty">{{ isOutlineMode ? '[자동 매핑]으로 궁서체 윤곽을 획별로 나누세요.' : '표시할 획 데이터가 없습니다.' }}</div>
   </section>
 </template>

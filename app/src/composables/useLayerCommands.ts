@@ -232,6 +232,54 @@ export function useLayerCommands(state: LayerEditorState, deps: LayerCommandsDep
     }
   }
 
+  // 획 윤곽(OUTLINE) 레이어 서버 작업. 미저장 편집이 있으면 먼저 저장해 서버 결과가 덮어쓰지 않게 한다.
+  async function postOutline(action: 'generate' | 'map', payload: Record<string, unknown>, doneMessage: string, failMessage: string) {
+    if (!selected.value) return
+    if (dirtyIds.value.has('outline')) {
+      await saveAllDirtyLayers()
+      if (error.value) return
+    } else {
+      await flushMetaPatches()
+    }
+    busy.value = true
+    error.value = ''
+    try {
+      const response = await fetch(`/api/characters/${encodeURIComponent(selected.value.unicode)}/outline/${action}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const body = await response.json()
+      if (!response.ok) throw new Error(body.error ?? failMessage)
+      selected.value = body as CharacterDetail
+      syncFromDetail(body as CharacterDetail)
+      activeLayerId.value = 'outline'
+      message.value = doneMessage
+    } catch (cause) {
+      error.value = cause instanceof Error ? cause.message : failMessage
+    } finally {
+      busy.value = false
+    }
+  }
+
+  function generateOutlineLayer(sourceLayerId?: string) {
+    return postOutline(
+      'generate',
+      { sourceLayerId },
+      '궁서체 윤곽을 획별로 나눠 자동 매핑했습니다. 미매핑 획은 직접 매핑하세요.',
+      '자동 매핑에 실패했습니다.',
+    )
+  }
+
+  function mapOutlineContours(strokeIndex: number, contours: number[]) {
+    return postOutline(
+      'map',
+      { strokeIndex, contours },
+      contours.length === 0 ? `${strokeIndex + 1}획 매핑을 해제했습니다.` : `${strokeIndex + 1}획을 궁서체 윤곽 ${contours.map((i) => i + 1).join(', ')}번에 매핑했습니다.`,
+      '윤곽 매핑에 실패했습니다.',
+    )
+  }
+
   async function duplicateActiveLayer() {
     if (!selected.value) return
     const src = editableLayer.value ?? activeLayer.value
@@ -289,6 +337,8 @@ export function useLayerCommands(state: LayerEditorState, deps: LayerCommandsDep
     fetchReferenceForLayer,
     applyLayerToWorkStrokes,
     resegmentActiveByFont,
+    generateOutlineLayer,
+    mapOutlineContours,
     duplicateActiveLayer,
     deleteActiveCustomLayer,
   }

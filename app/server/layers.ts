@@ -22,12 +22,13 @@ type BuiltinLayerSpec = {
 // PhotoCraft 합성 순서: 배열 앞쪽(z_index 작은 값)이 아래쪽 레이어, 패널 UI는 역순(위→아래)으로 표시한다.
 export const BUILTIN_LAYERS: readonly BuiltinLayerSpec[] = [
   { id: 'font', kind: 'FONT', name: '궁서체 (TTF)', z_index: 0, visible: true, opacity: 0.35, locked: true, label_color: 'slate' },
-  { id: 'mmh', kind: 'MMH', name: 'Hanzi (MMH)', z_index: 1, visible: false, opacity: 0.6, locked: true, label_color: 'violet' },
-  { id: 'acjk', kind: 'ACJK', name: 'AnimCJK', z_index: 2, visible: false, opacity: 0.6, locked: true, label_color: 'blue' },
-  { id: 'naver', kind: 'NAVER', name: '네이버 획순', z_index: 3, visible: false, opacity: 0.65, locked: true, label_color: 'green' },
-  { id: 'strokes', kind: 'STROKES', name: '작업 획', z_index: 4, visible: true, opacity: 1.0, locked: false, label_color: 'ink' },
-  { id: 'medians', kind: 'MEDIANS', name: '중심선', z_index: 5, visible: true, opacity: 1.0, locked: false, label_color: 'amber' },
-  { id: 'numbers', kind: 'NUMBERS', name: '획순 번호', z_index: 6, visible: true, opacity: 1.0, locked: false, label_color: 'rose' },
+  { id: 'outline', kind: 'OUTLINE', name: '획 윤곽 (매핑)', z_index: 1, visible: false, opacity: 0.7, locked: false, label_color: 'rose' },
+  { id: 'mmh', kind: 'MMH', name: 'Hanzi (MMH)', z_index: 2, visible: false, opacity: 0.6, locked: true, label_color: 'violet' },
+  { id: 'acjk', kind: 'ACJK', name: 'AnimCJK', z_index: 3, visible: false, opacity: 0.6, locked: true, label_color: 'blue' },
+  { id: 'naver', kind: 'NAVER', name: '네이버 획순', z_index: 4, visible: false, opacity: 0.65, locked: true, label_color: 'green' },
+  { id: 'strokes', kind: 'STROKES', name: '작업 획', z_index: 5, visible: true, opacity: 1.0, locked: false, label_color: 'ink' },
+  { id: 'medians', kind: 'MEDIANS', name: '중심선', z_index: 6, visible: true, opacity: 1.0, locked: false, label_color: 'amber' },
+  { id: 'numbers', kind: 'NUMBERS', name: '획순 번호', z_index: 7, visible: true, opacity: 1.0, locked: false, label_color: 'rose' },
 ]
 
 const VALID_COLORS = new Set<LayerColor>(['none', 'ink', 'slate', 'blue', 'violet', 'green', 'amber', 'rose'])
@@ -65,7 +66,7 @@ export function sanitizeLayerStrokes(raw: unknown): StrokeRecord[] {
     if (!isValidSvgPath(outline)) {
       throw new Error(`${index + 1}획의 SVG 외곽선 경로가 올바르지 않습니다.`)
     }
-    return {
+    const record: StrokeRecord = {
       stroke_order: index + 1,
       outline_path: outline,
       median_points: median,
@@ -74,6 +75,11 @@ export function sanitizeLayerStrokes(raw: unknown): StrokeRecord[] {
       start_cap_type: normalizeCap(stroke.start_cap_type),
       end_cap_type: normalizeCap(stroke.end_cap_type),
     }
+    if (Array.isArray(stroke.font_contours)) {
+      record.font_contours = [...new Set(stroke.font_contours.filter((i) => Number.isInteger(i) && i >= 0))].sort((a, b) => a - b)
+      record.map_manual = stroke.map_manual ? 1 : 0
+    }
+    return record
   })
 }
 
@@ -158,6 +164,26 @@ export function buildCharacterLayers(
         source_url: null,
         strokes: customStrokes,
         paths,
+      })
+      continue
+    }
+
+    if (spec.kind === 'OUTLINE') {
+      const strokes = saved?.strokes_json ? (JSON.parse(saved.strokes_json) as StrokeRecord[]) : []
+      records.push({
+        id: spec.id,
+        kind: spec.kind,
+        name,
+        z_index: zIndex,
+        visible,
+        opacity,
+        locked,
+        label_color: labelColor,
+        available: strokes.length > 0,
+        modified: Boolean(saved?.modified),
+        source_url: null,
+        strokes,
+        paths: [],
       })
       continue
     }

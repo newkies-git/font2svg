@@ -73,6 +73,13 @@ function visibleStrokesOfWork(strokes: StrokeRecord[]): StrokeRecord[] {
   return visibleWorkStrokes(strokes, props.shown)
 }
 
+// 획 윤곽(OUTLINE) 레이어에서 선택한 획이 매핑된 궁서체 윤곽 인덱스. 궁서체 레이어에서 강조해 보여 준다.
+const mappedContours = computed<Set<number>>(() => {
+  const ed = props.editableLayer
+  if (!ed || ed.kind !== 'OUTLINE') return new Set()
+  return new Set(ed.strokes[props.selectedIndex]?.font_contours ?? [])
+})
+
 /** 중심선·번호 오버레이는 현재 편집 대상 레이어의 획만 쓴다. 표시 여부는 MEDIANS/NUMBERS 레이어 visible로만 제어한다. */
 const overlayStrokes = computed<StrokeRecord[]>(() => {
   const ed = props.editableLayer
@@ -288,7 +295,10 @@ function connectLabel(idx: number, total: number): string {
             v-for="(d, pIdx) in layer.paths"
             :key="`font-p-${pIdx}`"
             class="font-contour"
-            :class="{ 'is-picked': editableLayer?.id === layer.id && selectedIndex === pIdx }"
+            :class="{
+              'is-picked': editableLayer?.id === layer.id && selectedIndex === pIdx,
+              'is-mapped': mappedContours.has(pIdx),
+            }"
             :d="d"
             @pointerdown="onShapePointerDown(layer.id, pIdx, $event)"
           />
@@ -304,7 +314,7 @@ function connectLabel(idx: number, total: number): string {
 
         <!-- 2. 레퍼런스 및 커스텀 레이어 (MMH / ACJK / NAVER / CUSTOM) -->
         <g
-          v-else-if="layer.visible && (layer.kind === 'MMH' || layer.kind === 'ACJK' || layer.kind === 'NAVER' || layer.kind === 'CUSTOM')"
+          v-else-if="layer.visible && (layer.kind === 'OUTLINE' || layer.kind === 'MMH' || layer.kind === 'ACJK' || layer.kind === 'NAVER' || layer.kind === 'CUSTOM')"
           class="svg-layer layer-ref"
           :data-color="layer.label_color"
           :opacity="layer.opacity"
@@ -324,6 +334,7 @@ function connectLabel(idx: number, total: number): string {
             :class="{
               'is-picked': editableLayer?.id === layer.id && selectedIndex === sIdx,
               'is-radical': stroke.is_radical,
+              'is-unmapped': layer.kind === 'OUTLINE' && !stroke.font_contours?.length,
             }"
             :d="stroke.outline_path"
             @pointerdown="onShapePointerDown(layer.id, sIdx, $event)"

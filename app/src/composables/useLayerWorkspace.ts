@@ -98,6 +98,8 @@ export function useLayerWorkspace(
     fetchReferenceForLayer: commands.fetchReferenceForLayer,
     applyLayerToWorkStrokes: commands.applyLayerToWorkStrokes,
     resegmentActiveByFont: commands.resegmentActiveByFont,
+    generateOutlineLayer: commands.generateOutlineLayer,
+    mapOutlineContours: commands.mapOutlineContours,
     duplicateActiveLayer: commands.duplicateActiveLayer,
     deleteActiveCustomLayer: commands.deleteActiveCustomLayer,
   }

@@ -86,9 +86,16 @@ const {
   fetchReferenceForLayer,
   applyLayerToWorkStrokes,
   resegmentActiveByFont,
+  generateOutlineLayer,
+  mapOutlineContours,
   duplicateActiveLayer,
   deleteActiveCustomLayer,
 } = useLayerWorkspace(selected, shown, reveal, message, error, busy, loadList, stop)
+
+// 획 윤곽 자동 매핑에서 중심선 길잡이로 쓸 수 있는 레이어(획이 있는 레이어, 작업 획 우선)
+const outlineGuideLayers = computed(() => layers.value
+  .filter((l) => l.id !== 'outline' && l.strokes.length > 0)
+  .sort((a, b) => Number(b.id === 'strokes') - Number(a.id === 'strokes') || a.z_index - b.z_index))
 
 function unlockActiveLayers() {
   if (activeLayer.value?.locked) toggleLayerLock(activeLayer.value.id)
@@ -558,6 +565,8 @@ onBeforeUnmount(() => {
             :layer="editableLayer"
             :selected-index="selectedStrokeIndex"
             :locked="isEditableLocked"
+            :font-contour-count="fontLayer?.paths.length ?? 0"
+            :guide-layers="outlineGuideLayers"
             @select="selectStrokeItem"
             @set-radical="setStrokeRadical"
             @set-cap="setStrokeCap"
@@ -566,6 +575,8 @@ onBeforeUnmount(() => {
             @merge-next="mergeStrokeWithNext"
             @remove="deleteStrokeAt"
             @copy-to-work="copyStrokeToWorkLayer"
+            @generate-outline="generateOutlineLayer"
+            @map-contours="mapOutlineContours"
           />
         </aside>
       </div>

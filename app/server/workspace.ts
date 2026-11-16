@@ -17,6 +17,7 @@ import {
   saveNonStrokeLayerContent,
 } from './layers.ts'
 import { ORIGIN_MANUAL, type StrokeItem } from './model.ts'
+import { createOutlineMapping } from './outlineMapping.ts'
 import { createReferencePipeline } from './referencePipeline.ts'
 import {
   ACJK_BLOB,
@@ -208,6 +209,8 @@ function createWorkspace(rootDir: string) {
     return { createdId, detail: getCharacter(unicode) }
   }
 
+  const outline = createOutlineMapping(db, { getCharacter })
+
   function deleteLayer(unicode: string, layerId: string) {
     const character = strokes.requireCharacter(unicode)
     deleteCustomLayer(db, character.char, layerId)
@@ -224,6 +227,8 @@ function createWorkspace(rootDir: string) {
     fetchLayer,
     applyLayerToStrokes,
     resegmentLayer,
+    generateOutline: outline.generate,
+    mapOutlineStroke: outline.mapStroke,
     duplicateLayer,
     deleteLayer,
     importSvg,

@@ -1,4 +1,4 @@
-import { AREA_FLATNESS, CANVAS, COORD_ROUND, MAX_COVERED_AREA_RATIO, MEDIAN_BBOX_INSET, MEDIAN_MIN_POINTS, MEDIAN_SIMPLIFY_TOLERANCE, MIN_COVERED_AREA_RATIO, MIN_STROKE_AREA_RATIO } from '../src/lib/constants.ts'
+import { AREA_FLATNESS, CANVAS, COORD_ROUND, DEFAULT_STROKE_WIDTH, OUTLINE_CONTOUR_MATCH_RATIO, OUTLINE_CONTOUR_TOLERANCE, MAX_COVERED_AREA_RATIO, MEDIAN_BBOX_INSET, MEDIAN_MIN_POINTS, MEDIAN_SIMPLIFY_TOLERANCE, MIN_COVERED_AREA_RATIO, MIN_STROKE_AREA_RATIO } from '../src/lib/constants.ts'
 import { flattenContours, type Pt as Point } from '../src/lib/paths.ts'
 import { computeOptimalStrokeWidth, recoverMedian, segmentOutlineByMedians, simplifyPolyline } from '../src/lib/strokeCut.ts'
 import type { Pt } from '../src/types.ts'
@@ -54,6 +54,63 @@ export function splitByContours(contours: string[], guide: Pt[][]): ImportedStro
   }
   if (covered < glyphArea * MIN_COVERED_AREA_RATIO || covered > glyphArea * MAX_COVERED_AREA_RATIO) return null
   return { medians, outlines: split.strokes, widths, fontOutline: contours }
+}
+
+export type OutlinePiece = {
+  outline: string
+  median: Pt[]
+  width: number
+  // 이 획 윤곽이 놓인 궁서체 윤곽(contours)의 인덱스. 비어 있으면 자동 매핑 실패(미매핑)이다.
+  contours: number[]
+}
+
+function distanceToSegment(p: Point, a: Point, b: Point): number {
+  const dx = b.x - a.x
+  const dy = b.y - a.y
+  const lengthSq = dx * dx + dy * dy
+  const t = lengthSq === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / lengthSq))
+  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy))
+}
+
+// 획 윤곽의 꼭짓점이 어느 궁서체 윤곽선 위에 놓였는지로 소속 윤곽을 구한다.
+function contourIndicesOfOutline(outline: string, contourLoops: Point[][][]): number[] {
+  const vertices = flattenContours(outline, AREA_FLATNESS).flat()
+  if (vertices.length === 0) return []
+  const result: number[] = []
+  contourLoops.forEach((loops, index) => {
+    const hits = vertices.filter((vertex) => loops.some((loop) => loop.some((from, i) => (
+      distanceToSegment(vertex, from, loop[(i + 1) % loop.length]) <= OUTLINE_CONTOUR_TOLERANCE
+    )))).length
+    if (hits / vertices.length >= OUTLINE_CONTOUR_MATCH_RATIO) result.push(index)
+  })
+  return result
+}
+
+// splitByContours와 달리 품질 검사에 실패해도 전체를 버리지 않고, 윤곽을 못 찾은 획만 contours를 비워(미매핑) 돌려준다.
+// 미매핑 획의 윤곽은 길잡이 중심선을 따라 띠 모양으로 만든다. 사람이 나중에 윤곽을 직접 매핑한다.
+export function splitOutlinePieces(contours: string[], guide: Pt[][]): OutlinePiece[] | null {
+  if (contours.length === 0 || guide.length === 0) return null
+  const fitted = fitMediansToOutline(guide, contours)
+  const split = segmentOutlineByMedians(contours, fitted.map(toPoints))
+  if (split.strokes.length !== fitted.length) return null
+  const glyphArea = Math.abs(contours.reduce((sum, d) => sum + contourArea(d), 0))
+  const whole = new Set(contours)
+  const contourLoops = contours.map((d) => flattenContours(d, AREA_FLATNESS))
+  return fitted.map((line, index): OutlinePiece => {
+    const outline = split.strokes[index]
+    const usable = Boolean(outline) && !whole.has(outline) && Math.abs(contourArea(outline)) >= glyphArea * MIN_STROKE_AREA_RATIO
+    const recovered = usable ? recoverMedian(outline).median : []
+    if (recovered.length < MEDIAN_MIN_POINTS) {
+      return { outline: ribbonPath(line, DEFAULT_STROKE_WIDTH), median: line, width: DEFAULT_STROKE_WIDTH, contours: [] }
+    }
+    const median = simplifyPolyline(orientLike(recovered, line), MEDIAN_SIMPLIFY_TOLERANCE)
+    return {
+      outline,
+      median: median.map((point): Pt => [round1(point.x), round1(point.y)]),
+      width: computeOptimalStrokeWidth(outline, median),
+      contours: contourIndicesOfOutline(outline, contourLoops),
+    }
+  })
 }
 
 // 합성한 중심선 묶음의 bbox를 글자 윤곽의 bbox(중심선이 윤곽 안쪽에 있으므로 INSET만큼 줄인 것)에 맞춰 늘이고 옮긴다.
