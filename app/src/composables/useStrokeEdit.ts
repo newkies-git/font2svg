@@ -2,12 +2,10 @@ import { isContourLayer } from '../../shared/layerKind.ts'
 import { LAYER_ID } from '../../shared/constants.ts'
 import type { Ref } from 'vue'
 import { autoFitLayer, autoFitStroke } from '../lib/autoFit.ts'
-import { boxAlignTransform, moveItem, pointsToClosedPath, restrokeFromOutline, roundPt, withCap, withMedianPoints } from '../lib/strokeOps.ts'
+import { boxAlignTransform, moveItem, withCap, withMedianPoints } from '../lib/strokeOps.ts'
 import {
-  insertMedianPoint,
   mergeTwoStrokes,
   pathsBBox,
-  removeMedianPoint,
   reverseMedian,
   strokesBBox,
   transformPath,
@@ -16,7 +14,9 @@ import {
 import type { CapType, LayerRecord, Pt, StrokeRecord } from '../../shared/types.ts'
 import { cloneStroke } from './layerClone.ts'
 import type { LayerEditorState } from './layerEditorState.ts'
+import { useConnectTool } from './useConnectTool.ts'
 import { useKnifeTool } from './useKnifeTool.ts'
+import { useMedianEdit } from './useMedianEdit.ts'
 
 export function useStrokeEdit(
   state: LayerEditorState,
@@ -33,8 +33,6 @@ export function useStrokeEdit(
     fontLayer,
     transformScope,
     selectedStrokeIndex,
-    selectedMedianPointIndex,
-    connectPoints,
   } = state
 
   function updateTargetStrokes(nextStrokes: StrokeRecord[], statusMsg?: string) {
@@ -253,87 +251,9 @@ export function useStrokeEdit(
   }
 
   // 중심선 정점 이동 / 추가 / 삭제
-  function moveMedianVertex(strokeIdx: number, ptIdx: number, to: Pt) {
-    editStroke(strokeIdx, (stroke) => {
-      if (!stroke.median_points[ptIdx]) return null
-      const points = stroke.median_points.slice()
-      points[ptIdx] = roundPt(to)
-      return withMedianPoints(stroke, points)
-    })
-  }
-
-  function addMedianVertex(strokeIdx: number, at: Pt) {
-    let insertedAt = 0
-    const done = editStroke(strokeIdx, (stroke) => {
-      const { points, insertedIndex } = insertMedianPoint(stroke.median_points, at)
-      insertedAt = insertedIndex
-      return withMedianPoints(stroke, points)
-    }, `${strokeIdx + 1}획 중심선에 정점을 추가했습니다.`)
-    if (done) selectedMedianPointIndex.value = insertedAt
-  }
-
-  function deleteMedianVertex(strokeIdx: number, ptIdx: number) {
-    const done = editStroke(strokeIdx, (stroke) => {
-      if (stroke.median_points.length <= 2) {
-        error.value = '중심선은 최소 2개의 정점이 필요합니다.'
-        return null
-      }
-      return withMedianPoints(stroke, removeMedianPoint(stroke.median_points, ptIdx))
-    }, `${strokeIdx + 1}획 중심선 정점을 삭제했습니다.`)
-    if (done) selectedMedianPointIndex.value = null
-  }
-
-  function cancelConnect() {
-    if (connectPoints.value.length === 0) return
-    connectPoints.value = []
-    message.value = '윤곽 연결이 취소되었습니다.'
-  }
-
-  function undoConnectPoint() {
-    if (connectPoints.value.length === 0) return
-    connectPoints.value = connectPoints.value.slice(0, -1)
-    message.value =
-      connectPoints.value.length === 0
-        ? '윤곽 연결: 시작점을 클릭하세요.'
-        : `윤곽 연결: ${connectPoints.value.length}점 지정됨 (Enter 연결 · ⌫ 되돌리기 · Esc 취소)`
-  }
-
-  function applyConnectPoint(point: Pt) {
-    const target = guardUnlocked()
-    if (!target) return
-    const next = roundPt(point)
-    const prev = connectPoints.value[connectPoints.value.length - 1]
-    if (prev && Math.hypot(prev[0] - next[0], prev[1] - next[1]) < 1.5) return
-    connectPoints.value = [...connectPoints.value, next]
-    const n = connectPoints.value.length
-    if (n === 1) message.value = '윤곽 연결: 중간점 또는 끝점을 클릭하세요.'
-    else if (n === 2) message.value = '윤곽 연결: 끝점(또는 추가 중간점)을 클릭하세요. 3점 이상이면 Enter로 연결.'
-    else message.value = `윤곽 연결: ${n}점 지정됨 — Enter/더블클릭으로 닫힌 윤곽 연결 (⌫ 되돌리기 · Esc 취소)`
-  }
-
-  function commitConnectOutline() {
-    const target = guardUnlocked()
-    if (!target) return
-    if (connectPoints.value.length < 3) {
-      error.value = '윤곽 연결에는 시작·중간·끝 포함 최소 3점이 필요합니다.'
-      return
-    }
-    const path = pointsToClosedPath(connectPoints.value)
-    connectPoints.value = []
-    const idx = selectedStrokeIndex.value
-
-    if (isContourLayer(target)) {
-      if (!target.paths[idx]) return
-      const copy = target.paths.slice()
-      copy[idx] = path
-      updateTargetPaths(copy, '윤곽을 지정한 점으로 다시 연결했습니다. [레이어 저장]을 누르면 반영됩니다.')
-      return
-    }
-
-    editStroke(idx, (stroke) => restrokeFromOutline(stroke, path), `${idx + 1}획 윤곽을 지정한 점으로 다시 연결했습니다. [레이어 저장]을 누르면 반영됩니다.`)
-  }
-
   const { cancelKnife, applyKnifePoint } = useKnifeTool(state, message, error, guardUnlocked, updateTargetStrokes, updateTargetPaths)
+  const { cancelConnect, undoConnectPoint, applyConnectPoint, commitConnectOutline } = useConnectTool(state, message, error, guardUnlocked, updateTargetPaths, editStroke)
+  const { moveMedianVertex, addMedianVertex, deleteMedianVertex } = useMedianEdit(state, error, editStroke)
 
   return {
     updateTargetStrokes,

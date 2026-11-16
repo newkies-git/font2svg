@@ -415,3 +415,14 @@ test('교차 분리 모드: 안내선을 따라 十를 ―와 ㅣ 두 획으로 
   assert.deepEqual(state.knifePoints.value, [])
   assert.match(message.value, /교차 분리/)
 })
+
+test('윤곽 연결 도구: 바로 앞 점과 거의 같은 곳을 다시 찍으면 점을 더하지 않는다', () => {
+  const { edit, state } = setup([bar(100)])
+  const FAR = 50
+  const NEAR = 1
+  edit.applyConnectPoint([100, 100])
+  edit.applyConnectPoint([100 + NEAR, 100])
+  assert.equal(state.connectPoints.value.length, 1, '1 이하로 떨어진 점은 같은 점으로 본다')
+  edit.applyConnectPoint([100 + FAR, 100])
+  assert.equal(state.connectPoints.value.length, 2)
+})
