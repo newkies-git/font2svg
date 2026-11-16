@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { fontContoursOf, fontFingerprint, sanitizeLayerPaths, sanitizeLayerStrokes } from '../server/layers.ts'
+import { sanitizeLayerPaths, sanitizeLayerStrokes } from '../server/layerData.ts'
+import { fontContoursOf, fontFingerprint } from '../server/layers.ts'
 import type { LayerRecord } from '../src/types.ts'
 import { rectPath, strokeOf } from './helpers.ts'
 
@@ -54,7 +55,7 @@ test('궁서체 윤곽 해석: 편집된 font 레이어 → 저장된 윤곽', (
 })
 
 test('저장된 레이어 JSON: 형식이 맞으면 그대로, 어긋나면 빈 값', async () => {
-  const { parseStoredPaths, parseStoredStrokes } = await import('../server/layers.ts')
+  const { parseStoredPaths, parseStoredStrokes } = await import('../server/layerData.ts')
   const stroke = { outline_path: 'M 0 0 Z', median_points: [[0, 0], [1, 1]], stroke_width: 70, is_radical: 0 }
   assert.deepEqual(parseStoredStrokes(JSON.stringify([stroke])), [stroke])
   assert.deepEqual(parseStoredStrokes('[{"outline_path":1}]'), [])

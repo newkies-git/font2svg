@@ -1,6 +1,6 @@
 import { ACJK_BATCH_LIMIT, FONT_BATCH_LIMIT, MISSING_FETCH_LIMIT } from '../src/lib/constants.ts'
 import type { LayerMetaPatch } from '../src/types.ts'
-import { sanitizeLayerStrokes } from './layers.ts'
+import { sanitizeLayerStrokes } from './layerData.ts'
 import type { Workspace } from './workspace.ts'
 
 export const HTTP_OK = 200

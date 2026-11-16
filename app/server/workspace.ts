@@ -17,9 +17,9 @@ import {
   fontContoursOf,
   patchLayersMeta,
   resetNonStrokeLayer,
-  sanitizeLayerStrokes,
   saveNonStrokeLayerContent,
 } from './layers.ts'
+import { sanitizeLayerStrokes } from './layerData.ts'
 import { ORIGIN_MANUAL, type StrokeItem } from './model.ts'
 import { createOutlineMapping } from './outlineMapping.ts'
 import { createReferencePipeline } from './referencePipeline.ts'

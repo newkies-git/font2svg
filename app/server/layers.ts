@@ -1,13 +1,11 @@
 import { createHash, randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
-import { DEFAULT_STROKE_WIDTH, FONT_FINGERPRINT_LENGTH, MIN_STROKE_WIDTH, OPACITY_STEPS, STROKE_WIDTH_CAP_RATIO, LAYER_ID } from '../src/lib/constants.ts'
-import { warnOnce } from '../src/lib/log.ts'
+import { DEFAULT_STROKE_WIDTH, FONT_FINGERPRINT_LENGTH, LAYER_ID } from '../src/lib/constants.ts'
 import { isReferenceKind, type ReferenceKind } from '../src/lib/layerKind.ts'
-import { isValidSvgPath } from '../src/lib/paths.ts'
-import type { LayerColor, LayerKind, LayerMetaPatch, LayerRecord, Pt, StrokeRecord } from '../src/types.ts'
+import type { LayerColor, LayerKind, LayerMetaPatch, LayerRecord, StrokeRecord } from '../src/types.ts'
 import { transaction } from './db.ts'
 import { ribbonPath, roundPoints } from './geometry.ts'
-import { normalizeCap } from './model.ts'
+import { clampOpacity, normalizeColor, parseStoredPaths, parseStoredStrokes, sanitizeLayerPaths, sanitizeLayerStrokes } from './layerData.ts'
 import { hanjaStrokes, parseHanja } from './references.ts'
 import type { CharacterLayerRow } from './schema.ts'
 
@@ -33,96 +31,6 @@ export const BUILTIN_LAYERS: readonly BuiltinLayerSpec[] = [
   { id: LAYER_ID.medians, kind: 'MEDIANS', name: '중심선', z_index: 6, visible: true, opacity: 1.0, locked: false, label_color: 'amber' },
   { id: LAYER_ID.numbers, kind: 'NUMBERS', name: '획순 번호', z_index: 7, visible: true, opacity: 1.0, locked: false, label_color: 'rose' },
 ]
-
-const FONT_HASH_RE = /^[0-9a-f]+$/
-const VALID_COLORS = new Set<LayerColor>(['none', 'ink', 'slate', 'blue', 'violet', 'green', 'amber', 'rose'])
-
-function clampStrokeWidth(value: number): number {
-  const max = Math.round(DEFAULT_STROKE_WIDTH * STROKE_WIDTH_CAP_RATIO)
-  return Math.max(MIN_STROKE_WIDTH, Math.min(max, Math.round(value) || DEFAULT_STROKE_WIDTH))
-}
-
-function clampOpacity(value: unknown, fallback: number): number {
-  const n = Number(value)
-  if (!Number.isFinite(n)) return fallback
-  return Math.max(0, Math.min(1, Math.round(n * OPACITY_STEPS) / OPACITY_STEPS))
-}
-
-function normalizeColor(value: unknown, fallback: LayerColor): LayerColor {
-  return typeof value === 'string' && VALID_COLORS.has(value as LayerColor) ? (value as LayerColor) : fallback
-}
-
-export function sanitizeLayerStrokes(raw: unknown): StrokeRecord[] {
-  if (!Array.isArray(raw)) throw new Error('획 목록 형식이 올바르지 않습니다.')
-  return raw.map((item, index) => {
-    const stroke = item as Partial<StrokeRecord>
-    if (!Array.isArray(stroke.median_points) || stroke.median_points.length < 2) {
-      throw new Error(`${index + 1}획의 중심선은 2점 이상이어야 합니다.`)
-    }
-    const median = roundPoints(stroke.median_points as Pt[])
-    const outline = typeof stroke.outline_path === 'string' && stroke.outline_path.trim()
-      ? stroke.outline_path.trim()
-      : ribbonPath(median, stroke.stroke_width ?? DEFAULT_STROKE_WIDTH)
-    if (!isValidSvgPath(outline)) {
-      throw new Error(`${index + 1}획의 SVG 외곽선 경로가 올바르지 않습니다.`)
-    }
-    const record: StrokeRecord = {
-      stroke_order: index + 1,
-      outline_path: outline,
-      median_points: median,
-      stroke_width: clampStrokeWidth(Number(stroke.stroke_width ?? DEFAULT_STROKE_WIDTH)),
-      is_radical: stroke.is_radical ? 1 : 0,
-      start_cap_type: normalizeCap(stroke.start_cap_type),
-      end_cap_type: normalizeCap(stroke.end_cap_type),
-    }
-    if (Array.isArray(stroke.font_contours)) {
-      record.font_contours = [...new Set(stroke.font_contours.filter((i) => Number.isInteger(i) && i >= 0))].sort((a, b) => a - b)
-      record.map_manual = stroke.map_manual ? 1 : 0
-      if (typeof stroke.font_hash === 'string' && FONT_HASH_RE.test(stroke.font_hash)) record.font_hash = stroke.font_hash
-    }
-    return record
-  })
-}
-
-export function sanitizeLayerPaths(raw: unknown): string[] {
-  if (!Array.isArray(raw)) throw new Error('윤곽 경로 목록 형식이 올바르지 않습니다.')
-  return raw.map((entry, index) => {
-    const path = String(entry ?? '').trim()
-    if (!isValidSvgPath(path)) throw new Error(`${index + 1}번째 윤곽 경로가 올바르지 않습니다.`)
-    return path
-  })
-}
-
-// character_layers에 저장된 JSON을 읽는 유일한 지점. 형식이 어긋난 값(손상·이전 버전)은 화면 전체를 깨뜨리지 않도록
-// 경고만 남기고 해당 레이어를 비운다. 획은 최소한 윤곽 문자열과 중심선 배열이 있어야 한다.
-function parseStoredJson(text: string, label: string): unknown {
-  try {
-    return JSON.parse(text)
-  } catch (error) {
-    warnOnce(`layers-${label}`, error)
-    return null
-  }
-}
-
-function isStoredStroke(value: unknown): value is StrokeRecord {
-  if (typeof value !== 'object' || value === null) return false
-  const stroke = value as Partial<StrokeRecord>
-  return typeof stroke.outline_path === 'string' && Array.isArray(stroke.median_points)
-}
-
-export function parseStoredStrokes(text: string): StrokeRecord[] {
-  const value = parseStoredJson(text, 'strokes')
-  if (Array.isArray(value) && value.every(isStoredStroke)) return value
-  if (value !== null) warnOnce('layers-strokes', new Error('저장된 레이어 획 형식이 올바르지 않습니다.'))
-  return []
-}
-
-export function parseStoredPaths(text: string): string[] {
-  const value = parseStoredJson(text, 'paths')
-  if (Array.isArray(value) && value.every((item) => typeof item === 'string')) return value
-  if (value !== null) warnOnce('layers-paths', new Error('저장된 레이어 윤곽 형식이 올바르지 않습니다.'))
-  return []
-}
 
 function readCachedRefStrokes(
   db: DatabaseSync,
@@ -191,26 +99,16 @@ export function buildCharacterLayers(
     const defaultName = spec.id === LAYER_ID.strokes && params.working ? '작업 획 (초안)' : spec.name
     const name = saved?.name ? saved.name : defaultName
 
+    // 모든 레이어가 공통으로 갖는 표시 속성. 종류마다 달라지는 내용(획·윤곽·가용 여부 등)만 아래에서 채운다.
+    const base = { id: spec.id, kind: spec.kind, name, z_index: zIndex, visible, opacity, locked, label_color: labelColor }
+    const modified = Boolean(saved?.modified)
+
     if (spec.kind === 'FONT') {
       const customPaths = saved?.modified && saved.paths_json ? parseStoredPaths(saved.paths_json) : null
       const customStrokes = saved?.modified && saved.strokes_json ? parseStoredStrokes(saved.strokes_json) : []
       const paths = customPaths ?? params.fontContours
       fontPaths = paths
-      records.push({
-        id: spec.id,
-        kind: spec.kind,
-        name,
-        z_index: zIndex,
-        visible,
-        opacity,
-        locked,
-        label_color: labelColor,
-        available: paths.length > 0 || customStrokes.length > 0,
-        modified: Boolean(saved?.modified),
-        source_url: null,
-        strokes: customStrokes,
-        paths,
-      })
+      records.push({ ...base, available: paths.length > 0 || customStrokes.length > 0, modified, source_url: null, strokes: customStrokes, paths })
       continue
     }
 
@@ -218,16 +116,9 @@ export function buildCharacterLayers(
       const strokes = saved?.strokes_json ? parseStoredStrokes(saved.strokes_json) : []
       const currentHash = fontFingerprint(fontPaths)
       records.push({
-        id: spec.id,
-        kind: spec.kind,
-        name,
-        z_index: zIndex,
-        visible,
-        opacity,
-        locked,
-        label_color: labelColor,
+        ...base,
         available: strokes.length > 0,
-        modified: Boolean(saved?.modified),
+        modified,
         source_url: null,
         strokes,
         paths: [],
@@ -240,34 +131,13 @@ export function buildCharacterLayers(
       const ref = readCachedRefStrokes(db, params.unicode, spec.kind)
       const customStrokes = saved?.modified && saved.strokes_json ? parseStoredStrokes(saved.strokes_json) : null
       const strokes = customStrokes ?? ref.strokes
-      records.push({
-        id: spec.id,
-        kind: spec.kind,
-        name,
-        z_index: zIndex,
-        visible,
-        opacity,
-        locked,
-        label_color: labelColor,
-        available: strokes.length > 0,
-        modified: Boolean(saved?.modified),
-        source_url: ref.url,
-        strokes,
-        paths: [],
-      })
+      records.push({ ...base, available: strokes.length > 0, modified, source_url: ref.url, strokes, paths: [] })
       continue
     }
 
     if (spec.kind === 'STROKES') {
       records.push({
-        id: spec.id,
-        kind: spec.kind,
-        name,
-        z_index: zIndex,
-        visible,
-        opacity,
-        locked,
-        label_color: labelColor,
+        ...base,
         available: params.strokes.length > 0,
         modified: params.historyCount > 0 || params.working,
         source_url: params.originUrl,
@@ -278,21 +148,7 @@ export function buildCharacterLayers(
     }
 
     // MEDIANS / NUMBERS 오버레이 레이어
-    records.push({
-      id: spec.id,
-      kind: spec.kind,
-      name,
-      z_index: zIndex,
-      visible,
-      opacity,
-      locked,
-      label_color: labelColor,
-      available: true,
-      modified: false,
-      source_url: null,
-      strokes: [],
-      paths: [],
-    })
+    records.push({ ...base, available: true, modified: false, source_url: null, strokes: [], paths: [] })
   }
 
   for (const saved of savedRows) {
