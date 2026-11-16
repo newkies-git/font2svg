@@ -14,7 +14,7 @@ import { useLayerWorkspace } from './composables/useLayerWorkspace.ts'
 import { usePlayback } from './composables/usePlayback.ts'
 import { useTheme } from './composables/useTheme.ts'
 import { apiRequest, apiUrl, characterUrl } from './lib/api.ts'
-import { MISSING_FETCH_LIMIT, LAYER_ID } from './lib/constants.ts'
+import { MISSING_FETCH_LIMIT, LAYER_ID, NUDGE_STEP } from './lib/constants.ts'
 import { issueLabel } from './lib/labels.ts'
 import type { CharacterDetail, CharacterSummary } from './types.ts'
 
@@ -173,7 +173,7 @@ function onGlobalKeyDown(event: KeyboardEvent) {
   }
 
   if (event.shiftKey && activeTool.value === 'select' && !isEditableLocked.value) {
-    const step = 2
+    const step = NUDGE_STEP
     if (event.key === 'ArrowLeft') {
       event.preventDefault()
       applyAffineToActive((x, y) => [x - step, y], 1)

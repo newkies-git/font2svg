@@ -52,6 +52,8 @@ export const ANIM_STROKE_SECONDS = 0.8
 export const ANIM_STROKE_STEP_SECONDS = 1
 // AnimCJK SVG의 y는 아래로 늘어난다: graphics 좌표 y = ACJK_SVG_Y_ORIGIN - SVG y (makeGraphicsFromSvgs.php와 같다).
 export const ACJK_SVG_Y_ORIGIN = 900
+// Shift+방향키로 선택한 획을 옮기는 거리(저장 좌표 단위)
+export const NUDGE_STEP = 2
 export const BADGE_RADIUS = 28
 export const REVEAL_STEP = 0.04
 // 자동 맞춤: 래스터 격자(칸 수), 격자가 덮는 좌표 범위의 여백, 윤곽 평탄화 허용 오차
