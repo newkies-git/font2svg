@@ -1,8 +1,8 @@
 import type { CapType, Pt } from '../types.ts'
-import { flattenContours, type Pt as Point } from '../paths.ts'
+import type { Pt as Point } from '../paths.ts'
 import { outlineOfMask } from './contour.ts'
-import { KNIFE_FLATNESS, type KnifeFace } from './knife.ts'
-import { GeometryError, pixelToFont, rasterize } from './raster.ts'
+import type { KnifeFace } from './knife.ts'
+import { pixelToFont, rasterizeOutline, type Raster } from './raster.ts'
 
 // 획의 기필(시작)·수필(끝) 모양을 윤곽에 반영한다. 끝에서 안쪽으로 길이 length(획 폭 배수)만큼의 구간을
 // 끝점으로부터의 거리 s(0~1)에 따른 반폭 비율 radius(s)로 다듬는다. 1보다 크면 부풀고, 작으면 깎인다.
@@ -99,58 +99,59 @@ export function applyCapAtFace(outline: string, face: KnifeFace, shape: CapShape
   return applyCapAtFrame(outline, { origin: face.origin, along: face.along, normal, chainLength: face.depth }, shape, face.width, restore)
 }
 
-function applyCapAtFrame(outline: string, frame: EndFrame, shape: CapShape | null, width: number, restore: boolean): string | null {
-  if (!shape && !restore) return null
-  const contours = flattenContours(outline, KNIFE_FLATNESS)
-  if (contours.length === 0) return null
-  let raster
-  try {
-    raster = rasterize(contours)
-  } catch (error) {
-    if (error instanceof GeometryError) return null
-    throw error
-  }
-  const { ink } = raster
-  const { origin, along, normal } = frame
-  const near = width * NEAR_RATIO
+// 끝점 기준으로 잰 격자 좌표: along은 바깥쪽으로 잰 거리, side는 옆으로 잰 거리
+type EndGrid = { along: Float32Array; side: Float32Array }
 
-  // 끝점 기준 좌표: a는 바깥쪽으로 잰 거리, v는 옆으로 잰 거리
-  const coords = new Float32Array(ink.length * 2)
-  let tip = -Infinity
-  for (let i = 0; i < ink.length; i++) {
+function gridOf(raster: Raster, frame: EndFrame): EndGrid {
+  const { origin, along, normal } = frame
+  const grid = { along: new Float32Array(raster.ink.length), side: new Float32Array(raster.ink.length) }
+  for (let i = 0; i < raster.ink.length; i++) {
     const pt = pixelToFont(raster, i)
     const px = pt.x - origin.x
     const py = pt.y - origin.y
-    const a = px * along.x + py * along.y
-    const v = px * normal.x + py * normal.y
-    coords[i * 2] = a
-    coords[i * 2 + 1] = v
-    if (ink[i] && Math.abs(v) <= near && a >= -near && a > tip) tip = a
+    grid.along[i] = px * along.x + py * along.y
+    grid.side[i] = px * normal.x + py * normal.y
+  }
+  return grid
+}
+
+// 끝의 위치와 폭: tip은 끝점이 놓인 바깥쪽 거리의 최댓값, zone은 모양을 다듬는 구간의 최대 길이,
+// halfWidth·center는 구간 안쪽 가장자리에서 잰 반폭과 옆 중심이다.
+type EndMeasure = { tip: number; zone: number; halfWidth: number; center: number }
+
+function measureEnd(raster: Raster, grid: EndGrid, frame: EndFrame, width: number): EndMeasure | null {
+  const { ink } = raster
+  const near = width * NEAR_RATIO
+  let tip = -Infinity
+  for (let i = 0; i < ink.length; i++) {
+    if (ink[i] && Math.abs(grid.side[i]) <= near && grid.along[i] >= -near && grid.along[i] > tip) tip = grid.along[i]
   }
   if (tip === -Infinity) return null
-
-  const maxZone = Math.min(MAX_CAP_LENGTH * width, MAX_ZONE_CHAIN_RATIO * frame.chainLength)
-  const length = shape ? Math.min(CAP_PROFILES[shape].length * width, maxZone) : 0
-  let minV = Infinity
-  let maxV = -Infinity
+  const zone = Math.min(MAX_CAP_LENGTH * width, MAX_ZONE_CHAIN_RATIO * frame.chainLength)
   const band = EDGE_BAND_PX / raster.scale
+  let minSide = Infinity
+  let maxSide = -Infinity
   for (let i = 0; i < ink.length; i++) {
     if (!ink[i]) continue
-    const t = tip - coords[i * 2]
-    const v = coords[i * 2 + 1]
-    if (t < maxZone || t > maxZone + band || Math.abs(v) > near) continue
-    if (v < minV) minV = v
-    if (v > maxV) maxV = v
+    const t = tip - grid.along[i]
+    if (t < zone || t > zone + band || Math.abs(grid.side[i]) > near) continue
+    if (grid.side[i] < minSide) minSide = grid.side[i]
+    if (grid.side[i] > maxSide) maxSide = grid.side[i]
   }
-  if (minV === Infinity) return null
-  const halfWidth = (maxV - minV) / 2
-  const center = (maxV + minV) / 2
+  if (minSide === Infinity) return null
+  return { tip, zone, halfWidth: (maxSide - minSide) / 2, center: (maxSide + minSide) / 2 }
+}
 
+// 끝 구간(끝점에서 zone까지)을 다시 그린 마스크. restore면 구간을 기본 폭으로 채운 뒤 shape의 반폭 곡선으로 깎거나 부풀린다.
+function shapedMask(raster: Raster, grid: EndGrid, measure: EndMeasure, width: number, shape: CapShape | null, restore: boolean): Uint8Array {
+  const { ink } = raster
+  const { tip, zone, halfWidth, center } = measure
+  const length = shape ? Math.min(CAP_PROFILES[shape].length * width, zone) : 0
   const result = ink.slice()
   for (let i = 0; i < ink.length; i++) {
-    const t = tip - coords[i * 2]
-    if (t < 0 || t > maxZone) continue
-    const side = Math.abs(coords[i * 2 + 1] - center)
+    const t = tip - grid.along[i]
+    if (t < 0 || t > zone) continue
+    const side = Math.abs(grid.side[i] - center)
     if (side > halfWidth * ZONE_SIDE_RATIO) continue
     const base = ink[i] || (restore && side <= halfWidth) ? 1 : 0
     if (!shape || t > length) {
@@ -160,5 +161,14 @@ function applyCapAtFrame(outline: string, frame: EndFrame, shape: CapShape | nul
     const ratio = CAP_PROFILES[shape].radius(t / length)
     result[i] = side <= ratio * halfWidth && (base || ratio > 1) ? 1 : 0
   }
-  return outlineOfMask(result, raster)
+  return result
+}
+
+function applyCapAtFrame(outline: string, frame: EndFrame, shape: CapShape | null, width: number, restore: boolean): string | null {
+  if (!shape && !restore) return null
+  const raster = rasterizeOutline(outline)
+  if (!raster) return null
+  const grid = gridOf(raster, frame)
+  const measure = measureEnd(raster, grid, frame, width)
+  return measure ? outlineOfMask(shapedMask(raster, grid, measure, width, shape, restore), raster) : null
 }

@@ -144,6 +144,11 @@ test('점이 하나뿐이거나 모두 같은 점이면 칼이 아니다', () =>
   assert.equal(splitStrokeByKnife(GIYEOK, [{ x: 500, y: 500 }, { x: 500, y: 500 }]), null)
 })
 
+test('면적이 거의 없는 윤곽은 예외 없이 null이다', () => {
+  const flat = 'M 0 0 L 100 0 L 50 0 Z'
+  assert.equal(splitStrokeByKnife(flat, [{ x: 50, y: -5 }, { x: 50, y: 5 }]), null)
+})
+
 test('너무 짧은 칼이나 한쪽이 빈 칼은 null', () => {
   assert.equal(splitStrokeByKnife(AH, [{ x: 500, y: 500 }, { x: 501, y: 501 }]), null)
   assert.equal(splitStrokeByKnife(AH, [{ x: 0, y: 0 }, { x: 0, y: KNIFE_BOTTOM }]), null)

@@ -48,6 +48,30 @@ test('둥글게: 끝의 모서리만 깎이고 끝점 위치와 다른 쪽 끝�
   assert.ok(Math.abs(barArea - areaOf(path) - lost) <= lost * AREA_TOLERANCE, `깎인 면적 ${barArea - areaOf(path)} (기대 ${lost})`)
 })
 
+// 모양을 붙인 끝(end)의 끝점 가까이에서 이어진 두 꼭짓점이 획 폭만큼 위아래로 벌어진 선분
+// (다듬다 만 평평한 단면이 얇게 남은 흔적)이 있는지
+function hasTipSpike(path: string, end: 'start' | 'end'): boolean {
+  const points = flattenContours(path, 1.4)[0]
+  const sign = end === 'end' ? 1 : -1
+  const tip = Math.max(...points.map((point) => sign * point.x))
+  const nearTip = 2
+  const spikeHeight = WIDTH * 0.9
+  return points.some((point, i) => {
+    const next = points[(i + 1) % points.length]
+    return sign * point.x >= tip - nearTip && sign * next.x >= tip - nearTip && Math.abs(next.y - point.y) >= spikeHeight
+  })
+}
+
+test('모양을 붙인 끝에 평평한 단면이 얇은 선으로 남지 않는다(시작·끝, 모든 모양)', () => {
+  for (const shape of ['AUTO_ROUND', 'POINTED', 'BULGE', 'TAPER'] as const) {
+    for (const end of ['start', 'end'] as const) {
+      const path = applyCapShape(BAR_PATH, MEDIAN, end, shape, WIDTH, false)
+      assert.ok(path)
+      assert.equal(hasTipSpike(path, end), false, `${shape} ${end}`)
+    }
+  }
+})
+
 test('끝(end)을 고르면 반대쪽 끝이 다듬어진다', () => {
   const start = applyCapShape(BAR_PATH, MEDIAN, 'start', 'POINTED', WIDTH, false)
   const end = applyCapShape(BAR_PATH, MEDIAN, 'end', 'POINTED', WIDTH, false)

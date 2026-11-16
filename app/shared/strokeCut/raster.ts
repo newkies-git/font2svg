@@ -1,6 +1,8 @@
-import type { Pt } from '../paths.ts'
+import { flattenContours, type Pt } from '../paths.ts'
 
 // 윤곽을 격자(래스터)로 옮기고 격자 좌표와 글꼴 좌표를 오가는 기반 코드.
+// 획 윤곽을 격자로 옮기기 전에 곡선을 펴는 허용 오차(글꼴 좌표)
+export const OUTLINE_FLATNESS = 1.4
 const PAD = 16
 const TARGET = 560
 
@@ -73,6 +75,18 @@ export function rasterize(contours: Pt[][]): Raster {
   }
   if (count(ink) < 8) throw new GeometryError('윤곽을 채우지 못했습니다.')
   return { w, h, ink, minX, maxY, scale, pad: PAD }
+}
+
+// 획 윤곽 경로 하나를 격자로 옮긴다. 윤곽이 없거나 너무 작아 채울 수 없으면 null이다(예상된 실패라 던지지 않는다).
+export function rasterizeOutline(path: string): Raster | null {
+  const contours = flattenContours(path, OUTLINE_FLATNESS)
+  if (contours.length === 0) return null
+  try {
+    return rasterize(contours)
+  } catch (error) {
+    if (error instanceof GeometryError) return null
+    throw error
+  }
 }
 
 export function pixelPointToFont(raster: Raster, point: Pt): Pt {

@@ -1,11 +1,10 @@
 import { DEFAULT_STROKE_WIDTH, MIN_STROKE_WIDTH } from '../constants.ts'
-import { flattenContours, type Pt } from '../paths.ts'
+import type { Pt } from '../paths.ts'
 import { outlineOfMask } from './contour.ts'
+import { connectedComponents } from './mask.ts'
 import { knifeSegments, locate, segmentAt, type KnifeSegment } from './polyline.ts'
-import { pixelToFont, rasterize } from './raster.ts'
+import { pixelToFont, rasterizeOutline } from './raster.ts'
 
-// 칼 분할과 중심선 기준 분할이 윤곽을 평탄화할 때 쓰는 허용 오차
-export const KNIFE_FLATNESS = 1.4
 // 칼 선 전체 길이의 최소값(글꼴 좌표)
 export const KNIFE_MIN_LENGTH = 4
 // 칼로 나눈 조각이 상대 조각의 접합부로 넘어가 겹치는 기본 깊이: 기본 획 폭 대비 비율.
@@ -51,6 +50,9 @@ type CutField = {
   alongPx: Float32Array
 }
 
+// 칼을 따라 잰 위치를 한 칸 단위로 묶은 번호
+const alongBin = (field: CutField, index: number) => Math.round(field.alongPx[index])
+
 type Span = { min: number; max: number }
 
 // 칼을 따라 잰 위치마다, 칼 선에 닿은 잉크가 수직으로 이어진 두께(픽셀). 닿지 않은 위치는 담기지 않는다.
@@ -58,7 +60,7 @@ type Span = { min: number; max: number }
 function touchDepths(pixels: Iterable<number>, field: CutField): Map<number, number> {
   const distancesAt = new Map<number, number[]>()
   for (const index of pixels) {
-    const position = Math.round(field.alongPx[index])
+    const position = alongBin(field, index)
     const list = distancesAt.get(position)
     if (list) list.push(Math.abs(field.distancePx[index]))
     else distancesAt.set(position, [Math.abs(field.distancePx[index])])
@@ -85,51 +87,37 @@ function withoutSlivers(source: Uint8Array, field: CutField, minDepthPx: number)
   for (let i = 0; i < mask.length; i++) if (mask[i]) pixels.push(i)
   const depths = touchDepths(pixels, field)
   for (const index of pixels) {
-    const depth = depths.get(Math.round(field.alongPx[index]))
+    const depth = depths.get(alongBin(field, index))
     if (depth !== undefined && depth < minDepthPx && Math.abs(field.distancePx[index]) <= depth) mask[index] = 0
   }
   return mask
 }
 
-// 마스크를 8방향으로 이어진 덩어리로 나눈다(윤곽 추적과 같은 연결). 큰 덩어리부터.
-export function connectedComponents(mask: Uint8Array, w: number, h: number): number[][] {
-  const seen = new Uint8Array(mask.length)
-  const components: number[][] = []
-  for (let start = 0; start < mask.length; start++) {
-    if (!mask[start] || seen[start]) continue
-    const pixels: number[] = []
-    const stack = [start]
-    seen[start] = 1
-    while (stack.length > 0) {
-      const index = stack.pop() as number
-      pixels.push(index)
-      const x = index % w
-      const y = (index / w) | 0
-      for (let dy = -1; dy <= 1; dy++) {
-        for (let dx = -1; dx <= 1; dx++) {
-          const nx = x + dx
-          const ny = y + dy
-          if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue
-          const next = ny * w + nx
-          if (mask[next] && !seen[next]) {
-            seen[next] = 1
-            stack.push(next)
-          }
-        }
-      }
-    }
-    components.push(pixels)
+// 덩어리가 칼 주변에 놓인 모양을 칼을 따라 잰 위치별로 한 번에 요약한다.
+type ComponentProfile = {
+  // 칼에 닿은 잉크가 있는 위치
+  contact: Set<number>
+  // 칼에서 KNIFE_FLANK_DISTANCE_PX 이내에 잉크가 있는 위치
+  nearLine: Set<number>
+  // 위치마다 칼에서 가장 먼 잉크까지의 거리(조각 깊이)
+  maxDistance: Map<number, number>
+}
+
+function profileOf(pixels: number[], field: CutField): ComponentProfile {
+  const profile: ComponentProfile = { contact: new Set(), nearLine: new Set(), maxDistance: new Map() }
+  for (const index of pixels) {
+    const bin = alongBin(field, index)
+    const distance = Math.abs(field.distancePx[index])
+    if (distance <= KNIFE_CONTACT_PX) profile.contact.add(bin)
+    if (distance <= KNIFE_FLANK_DISTANCE_PX) profile.nearLine.add(bin)
+    profile.maxDistance.set(bin, Math.max(profile.maxDistance.get(bin) ?? 0, distance))
   }
-  return components.sort((a, b) => b.length - a.length)
+  return profile
 }
 
 // 덩어리가 칼 선에 닿은 구간들(칼을 따라 잰 위치의 연속 범위)
-function contactSpans(pixels: number[], field: CutField): Span[] {
-  const positions = new Set<number>()
-  for (const index of pixels) {
-    if (Math.abs(field.distancePx[index]) <= KNIFE_CONTACT_PX) positions.add(Math.round(field.alongPx[index]))
-  }
-  const sorted = [...positions].sort((a, b) => a - b)
+function contactSpans(profile: ComponentProfile): Span[] {
+  const sorted = [...profile.contact].sort((a, b) => a - b)
   const spans: Span[] = []
   for (const position of sorted) {
     const last = spans[spans.length - 1]
@@ -139,27 +127,14 @@ function contactSpans(pixels: number[], field: CutField): Span[] {
   return spans
 }
 
-// 덩어리의 잉크가 칼에서 KNIFE_FLANK_DISTANCE_PX 이내에 있는, 칼을 따라 잰 위치들
-function positionsNearLine(pixels: number[], field: CutField): Set<number> {
-  const positions = new Set<number>()
-  for (const index of pixels) {
-    if (Math.abs(field.distancePx[index]) <= KNIFE_FLANK_DISTANCE_PX) positions.add(Math.round(field.alongPx[index]))
-  }
-  return positions
-}
-
 // 구간이 획의 끝 단면이면 그 면을, 아니면 null. facing은 이 조각에서 상대 조각 쪽 법선 방향의 부호(왼쪽 조각 -1, 오른쪽 조각 +1).
-function faceOfSpan(span: Span, field: CutField, pixels: number[], scale: number, segments: KnifeSegment[], facing: number): KnifeFace | null {
-  const nearLine = positionsNearLine(pixels, field)
+function faceOfSpan(span: Span, profile: ComponentProfile, scale: number, segments: KnifeSegment[], facing: number): KnifeFace | null {
   for (let reach = 1; reach <= KNIFE_FLANK_REACH_PX; reach++) {
-    if (nearLine.has(span.min - reach) || nearLine.has(span.max + reach)) return null
+    if (profile.nearLine.has(span.min - reach) || profile.nearLine.has(span.max + reach)) return null
   }
   const width = (span.max - span.min + 1) / scale
   let depthPx = 0
-  for (const index of pixels) {
-    const position = Math.round(field.alongPx[index])
-    if (position >= span.min && position <= span.max) depthPx = Math.max(depthPx, Math.abs(field.distancePx[index]))
-  }
+  for (let position = span.min; position <= span.max; position++) depthPx = Math.max(depthPx, profile.maxDistance.get(position) ?? 0)
   const depth = depthPx / scale
   if (width < KNIFE_END_MIN_WIDTH || width > KNIFE_END_MAX_WIDTH || width > depth * KNIFE_END_MAX_WIDTH_TO_DEPTH) return null
   const center = (span.min + span.max) / 2 / scale
@@ -179,7 +154,7 @@ function extendComponent(pixels: number[], other: Uint8Array, field: CutField, d
   for (const index of pixels) extended[index] = 1
   for (let i = 0; i < other.length; i++) {
     if (!other[i]) continue
-    const position = Math.round(field.alongPx[i])
+    const position = alongBin(field, i)
     const depth = Math.max(depthByPosition.get(position) ?? 0, depthByPosition.get(position - 1) ?? 0, depthByPosition.get(position + 1) ?? 0)
     if (depth > 0 && Math.abs(field.distancePx[i]) <= depth) extended[i] = 1
   }
@@ -195,9 +170,8 @@ export function splitStrokeByKnife(strokePath: string, knife: readonly Pt[], opt
   if (segments.length === 0) return null
   const last = segments[segments.length - 1]
   if (last.start + last.length < KNIFE_MIN_LENGTH) return null
-  const contours = flattenContours(strokePath, KNIFE_FLATNESS)
-  if (contours.length === 0) return null
-  const raster = rasterize(contours)
+  const raster = rasterizeOutline(strokePath)
+  if (!raster) return null
   const { w, h, ink } = raster
   const leftMask = new Uint8Array(w * h)
   const rightMask = new Uint8Array(w * h)
@@ -229,8 +203,9 @@ export function splitStrokeByKnife(strokePath: string, knife: readonly Pt[], opt
       if (pixels.length < minPieceSize) continue
       const ends: KnifeFace[] = []
       const depthByPosition = new Map<number, number>()
-      for (const span of contactSpans(pixels, field)) {
-        const face = faceOfSpan(span, field, pixels, raster.scale, segments, side.facing)
+      const profile = profileOf(pixels, field)
+      for (const span of contactSpans(profile)) {
+        const face = faceOfSpan(span, profile, raster.scale, segments, side.facing)
         if (face) ends.push(face)
         const depth = toPx(face && options.endOverlap ? options.endOverlap(face.width) : KNIFE_OVERLAP)
         for (let position = span.min; position <= span.max; position++) depthByPosition.set(position, depth)

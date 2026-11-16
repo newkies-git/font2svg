@@ -74,6 +74,10 @@ test('교차하지 않은 곳은 한쪽에만 속한다(가로 팔 끝은 ―에
   assert.equal(covers(result.stroke[0], stemTip), false)
 })
 
+test('면적이 거의 없는 윤곽은 예외 없이 null이다', () => {
+  assert.equal(extractStrokeAlongGuide('M 0 0 L 100 0 L 50 0 Z', [{ x: 0, y: 0 }, { x: 100, y: 0 }]), null)
+})
+
 test('꺾인 안내선도 쓸 수 있고, 윤곽과 만나지 않거나 점이 모자라면 null', () => {
   assert.ok(extractStrokeAlongGuide(CROSS, [{ x: 200, y: 500 }, { x: 500, y: 500 }, { x: 800, y: 500 }]))
   assert.equal(extractStrokeAlongGuide(CROSS, [{ x: 0, y: 900 }, { x: 1000, y: 900 }]), null)

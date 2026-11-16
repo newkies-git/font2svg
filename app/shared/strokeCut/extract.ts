@@ -1,8 +1,9 @@
-import { flattenContours, type Pt } from '../paths.ts'
+import type { Pt } from '../paths.ts'
 import { outlineOfMask } from './contour.ts'
-import { connectedComponents, KNIFE_FLATNESS, KNIFE_MIN_LENGTH, KNIFE_MIN_PIECE_RATIO } from './knife.ts'
+import { KNIFE_MIN_LENGTH, KNIFE_MIN_PIECE_RATIO } from './knife.ts'
+import { connectedComponents } from './mask.ts'
 import { knifeSegments, locate } from './polyline.ts'
-import { rasterize, pixelToFont } from './raster.ts'
+import { pixelToFont, rasterizeOutline } from './raster.ts'
 
 // 획 추출(교차 분리): 분리하려는 획의 중심을 따라 안내선을 긋고, 그 획과 나머지로 나눈다.
 // 교차해서 겹친 곳(十의 가운데처럼 안내선을 따라 단면이 획 두께보다 훨씬 긴 곳)은 두 쪽 모두에 넣어, 두 획이 교차부를 함께 가진다.
@@ -44,9 +45,8 @@ export function extractStrokeAlongGuide(strokePath: string, guide: readonly Pt[]
   if (segments.length === 0) return null
   const last = segments[segments.length - 1]
   if (last.start + last.length < KNIFE_MIN_LENGTH) return null
-  const contours = flattenContours(strokePath, KNIFE_FLATNESS)
-  if (contours.length === 0) return null
-  const raster = rasterize(contours)
+  const raster = rasterizeOutline(strokePath)
+  if (!raster) return null
   const { w, h, ink } = raster
 
   const signed = new Float32Array(ink.length)

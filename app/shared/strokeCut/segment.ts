@@ -1,9 +1,8 @@
 import { DEFAULT_STROKE_WIDTH } from '../constants.ts'
 import { flattenContours, type Pt } from '../paths.ts'
 import { outlineOfLoop, pointSegmentDistance, traceLoops } from './contour.ts'
-import { KNIFE_FLATNESS } from './knife.ts'
 import { computeOptimalStrokeWidth } from './median.ts'
-import { pixelToFont, rasterize } from './raster.ts'
+import { OUTLINE_FLATNESS, pixelToFont, rasterize } from './raster.ts'
 
 // 교차부 공유 확장 반경: 기본 획 폭 대비 비율, 최소 픽셀
 const COVER_RADIUS_RATIO = 0.42
@@ -14,7 +13,7 @@ export function segmentOutlineByMedians(fullOutlinePaths: string[], medians: Pt[
   widths: number[]
   coverage: number
 } {
-  const contours = fullOutlinePaths.flatMap((d) => flattenContours(d, KNIFE_FLATNESS))
+  const contours = fullOutlinePaths.flatMap((d) => flattenContours(d, OUTLINE_FLATNESS))
   if (contours.length === 0 || medians.length === 0) {
     return { strokes: [], widths: [], coverage: 0 }
   }
