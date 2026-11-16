@@ -1,6 +1,6 @@
 export type Pt = [number, number]
 
-export type RefSource = 'MMH' | 'ACJK' | 'NAVER' | 'IDS' | 'OLLAMA_IDS' | 'MANUAL' | 'FONT' | 'NONE'
+type RefSource = 'MMH' | 'ACJK' | 'NAVER' | 'IDS' | 'OLLAMA_IDS' | 'MANUAL' | 'FONT' | 'NONE'
 export type IssueStatus = 'OPEN' | 'DRAFT' | 'APPROVED'
 export type CapType = 'NONE' | 'AUTO_ROUND' | 'REF_STAMP'
 export type ThemeMode = 'system' | 'light' | 'dark'
@@ -69,7 +69,7 @@ export type LayerMetaPatch = {
   label_color?: LayerColor
 }
 
-export type CompiledRadical = {
+type CompiledRadical = {
   id: number
   char: string
   origin: string | null

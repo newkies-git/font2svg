@@ -50,7 +50,7 @@ export function loadFont(file: string): FontFile | null {
     hideMacRomanCmap(copy)
     font = opentype.parse(copy)
   } catch (error) {
-    throw new Error(`TTF 파일을 읽을 수 없습니다: ${error instanceof Error ? error.message : String(error)}`)
+    throw new Error(`TTF 파일을 읽을 수 없습니다: ${error instanceof Error ? error.message : String(error)}`, { cause: error })
   }
   const unitsPerEm = font.unitsPerEm
   const scale = CANVAS / unitsPerEm

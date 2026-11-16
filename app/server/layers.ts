@@ -21,7 +21,7 @@ type BuiltinLayerSpec = {
 }
 
 // PhotoCraft 합성 순서: 배열 앞쪽(z_index 작은 값)이 아래쪽 레이어, 패널 UI는 역순(위→아래)으로 표시한다.
-export const BUILTIN_LAYERS: readonly BuiltinLayerSpec[] = [
+const BUILTIN_LAYERS: readonly BuiltinLayerSpec[] = [
   { id: LAYER_ID.font, kind: 'FONT', name: '궁서체 (TTF)', z_index: 0, visible: true, opacity: 0.35, locked: true, label_color: 'slate' },
   { id: LAYER_ID.outline, kind: 'OUTLINE', name: '획 윤곽 (매핑)', z_index: 1, visible: false, opacity: 0.7, locked: false, label_color: 'rose' },
   { id: LAYER_ID.mmh, kind: 'MMH', name: 'Hanzi (MMH)', z_index: 2, visible: false, opacity: 0.6, locked: true, label_color: 'violet' },

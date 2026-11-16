@@ -7,14 +7,14 @@ export type HandleDir = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
 export type PointMap = (x: number, y: number) => Pt
 
 // 회전 각도를 이 값(도)의 배수로 맞춘다(Shift).
-export const ROTATE_SNAP_DEG = 15
+const ROTATE_SNAP_DEG = 15
 // 기울임·왜곡에서 박스 변이 이 길이보다 짧으면 0으로 나누지 않도록 최소값으로 본다.
 export const MIN_BOX_SIDE = 4
 
 const RAD_PER_DEG = Math.PI / 180
 
-export const CORNER_DIRS: readonly HandleDir[] = ['nw', 'ne', 'se', 'sw']
-export const EDGE_DIRS: readonly HandleDir[] = ['n', 'e', 's', 'w']
+const CORNER_DIRS: readonly HandleDir[] = ['nw', 'ne', 'se', 'sw']
+const EDGE_DIRS: readonly HandleDir[] = ['n', 'e', 's', 'w']
 
 // 방식별로 보여 줄 핸들. 크기는 8방향, 회전·왜곡은 모서리, 기울임은 변의 중앙.
 export function handleDirsFor(mode: TransformMode): readonly HandleDir[] {

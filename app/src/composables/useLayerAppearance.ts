@@ -107,7 +107,7 @@ export function useLayerAppearance(
   function setPresetVisibility(preset: 'all' | 'work' | 'none') {
     soloSnapshot.value = null
     for (const l of layers.value) {
-      let next = false
+      let next: boolean
       if (preset === 'all') {
         next = l.available || l.kind === 'MEDIANS' || l.kind === 'NUMBERS' || l.kind === 'STROKES'
       } else if (preset === 'work') {

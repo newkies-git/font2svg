@@ -4,7 +4,7 @@ import type { LayerRecord, StrokeRecord } from '../shared/types.ts'
 import { contourIndicesOfOutline, contourLoopsOf, ribbonPath, splitOutlinePieces } from './geometry.ts'
 import { fontContoursOf, fontFingerprint, patchLayersMeta, saveNonStrokeLayerContent } from './layers.ts'
 
-export const OUTLINE_LAYER_ID = LAYER_ID.outline
+const OUTLINE_LAYER_ID = LAYER_ID.outline
 const SOURCE_FALLBACK_IDS = [LAYER_ID.naver, LAYER_ID.mmh, LAYER_ID.acjk] as const
 
 // 중심선 길잡이로 쓸 레이어: 지정한 레이어 → 작업 획 → 네이버 → MMH → ACJK 순으로 획이 있는 첫 레이어.

@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
 import { CANVAS } from '../shared/constants.ts'
-import type { Pt } from '../shared/types.ts'
+import type { CompiledGlyphJson, Pt } from '../shared/types.ts'
 import { animatedSvg } from './animSvg.ts'
 import { ACTOR_USER } from './model.ts'
 import { KANGXI_RADICALS } from './radicals.ts'
@@ -61,7 +61,7 @@ export function createCompileOutput(
 ) {
   const { getCharacter, setIssue, clearIssue } = deps
 
-  function compile(unicode: string) {
+  function compile(unicode: string): CompiledGlyphJson {
     const detail = getCharacter(unicode)
     if (!detail) throw new Error('등록되지 않은 글자입니다.')
     if (detail.working) throw new Error('승인 전 작업 데이터는 컴파일할 수 없습니다. 먼저 승인하세요.')
@@ -72,13 +72,13 @@ export function createCompileOutput(
       throw new Error(problems.join(' '))
     }
     const radical = radicalOf(detail.radical, strokes)
-    const compiled = {
-      schemaVersion: 1 as const,
+    const compiled: CompiledGlyphJson = {
+      schemaVersion: 1,
       character: detail.char,
       unicode,
       reading: detail.reading ?? '',
       strokeCount: strokes.length,
-      coordinateSystem: { size: CANVAS, yAxis: 'up' as const },
+      coordinateSystem: { size: CANVAS, yAxis: 'up' },
       radical,
       fullOutline: detail.font_outline.join(' '),
       strokes: strokes.map((stroke) => stroke.outline_path),

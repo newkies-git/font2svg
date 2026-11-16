@@ -22,9 +22,9 @@ type Segment = {
 }
 
 // 윤곽이 너무 작거나 골격을 못 만드는 등, 입력 모양 때문에 예상되는 실패. 호출한 쪽이 대체값으로 넘어가며 경고하지 않는다.
-export class GeometryError extends Error {}
+class GeometryError extends Error {}
 
-export type GlyphModel = {
+type GlyphModel = {
   raster: Raster
   skeleton: Uint8Array
   dt: Float32Array
@@ -57,7 +57,7 @@ const CHAIKIN_FAR = 0.25
 const N8 = [1, -1, 0, 0, 1, 1, -1, -1]
 const N8Y = [0, 0, 1, -1, 1, -1, 1, -1]
 
-export function prepareGlyph(contourPaths: string[]): GlyphModel {
+function prepareGlyph(contourPaths: string[]): GlyphModel {
   const contours = contourPaths.flatMap((d) => flattenContours(d, PREPARE_FLATNESS))
   if (contours.length === 0) throw new GeometryError('윤곽이 없습니다.')
   const raster = rasterize(contours)
@@ -375,7 +375,7 @@ function shortestSegments(model: GlyphModel, startId: number, endId: number): nu
   return found
 }
 
-export function coverRadii(path: string, median: Pt[]): number[] {
+function coverRadii(path: string, median: Pt[]): number[] {
   if (median.length === 0) return []
   const samples = samplePath(path, COVER_SAMPLE_FLATNESS)
   const best = median.map(() => 1)

@@ -17,7 +17,7 @@ import {
 } from './model.ts'
 import type { StrokeRow } from './schema.ts'
 
-export function outlinesAndLines(items: StrokeItem[]): { outlines: StrokeOutline[]; lines: MedianLine[] } {
+function outlinesAndLines(items: StrokeItem[]): { outlines: StrokeOutline[]; lines: MedianLine[] } {
   return {
     outlines: items.map((item, index) => ({ order: index + 1, path: item.outline_path, radical: item.is_radical ? 1 : 0 })),
     lines: items.map((item, index) => ({
@@ -42,7 +42,7 @@ export function toItems(strokes: ImportedStrokes, radical: Set<number>): StrokeI
   }))
 }
 
-export function clampWidth(value: number): number {
+function clampWidth(value: number): number {
   return Math.max(MIN_STROKE_WIDTH, Math.min(Math.round(DEFAULT_STROKE_WIDTH * STROKE_WIDTH_CAP_RATIO), Math.round(value) || DEFAULT_STROKE_WIDTH))
 }
 

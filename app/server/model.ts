@@ -1,7 +1,5 @@
 import type { CapType, Pt, StrokeRecord } from '../shared/types.ts'
 
-export type { Pt }
-
 export const ACTOR_USER = 'user'
 export const ACTOR_HANJA = 'system:hanja'
 export const ACTOR_MIGRATION = 'system:migration'
