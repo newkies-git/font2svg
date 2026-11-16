@@ -11,6 +11,8 @@ export const LAYER_ID = {
   numbers: 'numbers',
 } as const
 export const DEFAULT_STROKE_WIDTH = 135
+// 획의 기필(시작)·수필(끝) 모양. 앞의 NONE은 모양을 붙이지 않은 기본, REF_STAMP는 레퍼런스 도장, MANUAL은 사람이 직접 그린 모양이다.
+export const CAP_TYPES = ['NONE', 'AUTO_ROUND', 'POINTED', 'BULGE', 'TAPER', 'REF_STAMP', 'MANUAL'] as const
 export const MIN_STROKE_WIDTH = 40
 export const STROKE_WIDTH_CAP_RATIO = 2.5
 export const STROKE_WIDTH_MARGIN = 14

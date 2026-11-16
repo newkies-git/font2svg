@@ -3,6 +3,7 @@ import { isContourLayer } from '../../shared/layerKind.ts'
 import { LAYER_ID } from '../../shared/constants.ts'
 import { computed, ref } from 'vue'
 import type { CapType, LayerRecord, StrokeRecord } from '../../shared/types.ts'
+import { CAP_OPTIONS } from '../lib/capLabels.ts'
 
 const props = defineProps<{
   layer: LayerRecord | null
@@ -184,9 +185,7 @@ function toggleContour(contour: number) {
               aria-label="선택 획 기필 캡"
               @change="emit('setCap', selectedIndex, 'start', ($event.target as HTMLSelectElement).value as CapType)"
             >
-              <option value="NONE">기본</option>
-              <option value="AUTO_ROUND">둥글게</option>
-              <option value="REF_STAMP">도장</option>
+              <option v-for="option in CAP_OPTIONS" :key="option.value" :value="option.value">{{ option.label }}</option>
             </select>
           </label>
           <label class="cap-field">
@@ -197,9 +196,7 @@ function toggleContour(contour: number) {
               aria-label="선택 획 수필 캡"
               @change="emit('setCap', selectedIndex, 'end', ($event.target as HTMLSelectElement).value as CapType)"
             >
-              <option value="NONE">기본</option>
-              <option value="AUTO_ROUND">둥글게</option>
-              <option value="REF_STAMP">도장</option>
+              <option v-for="option in CAP_OPTIONS" :key="option.value" :value="option.value">{{ option.label }}</option>
             </select>
           </label>
         </div>

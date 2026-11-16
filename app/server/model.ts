@@ -1,3 +1,4 @@
+import { CAP_TYPES } from '../shared/constants.ts'
 import type { CapType, Pt, StrokeRecord } from '../shared/types.ts'
 
 export const ACTOR_USER = 'user'
@@ -15,7 +16,7 @@ export const ACTION_APPROVE = '작업 데이터 승인'
 export const ACTION_SVG = 'SVG 가져오기'
 // 저장된 값이나 외부에서 온 값을 캡 종류로 정규화한다(모르는 값은 기본).
 export function normalizeCap(value: unknown): CapType {
-  return value === 'AUTO_ROUND' || value === 'REF_STAMP' ? value : 'NONE'
+  return CAP_TYPES.find((type) => type === value) ?? 'NONE'
 }
 
 export const ORIGIN_MANUAL = 'MANUAL'
