@@ -131,3 +131,225 @@ test('전체 맞춤 정렬: 궁서체 윤곽 영역으로 획을 옮긴다', () 
   const xs = work().strokes[0].median_points.map((p) => p[0])
   assert.ok(Math.min(...xs) >= 0 && Math.max(...xs) <= 200)
 })
+
+// 궁서체(윤곽만 있는 레이어)와 작업 획을 함께 둔 편집 환경. active로 편집 대상을 고른다.
+function setupLayers(fontPaths: string[], strokes: StrokeRecord[], active: string, options: { fontLocked?: boolean } = {}) {
+  const state = createLayerEditorState(ref(null), ref(0), ref(1))
+  state.layers.value = [
+    layerOf(LAYER_ID.font, 'FONT', [], { paths: fontPaths, locked: options.fontLocked ?? false }),
+    { ...layerOf(LAYER_ID.strokes, 'STROKES', strokes), z_index: 1 },
+  ]
+  state.activeLayerId.value = active
+  const message = ref('')
+  const error = ref('')
+  const dirty: string[] = []
+  const guardUnlocked = () => (state.isEditableLocked.value ? null : state.editableLayer.value)
+  const edit = useStrokeEdit(state, message, error, guardUnlocked, (id) => { dirty.push(id) })
+  const font = () => state.layers.value[0]
+  const work = () => state.layers.value[1]
+  return { state, edit, message, error, dirty, font, work }
+}
+
+const rect = (x0: number, y0: number, x1: number, y1: number) => rectPath(x0, y0, x1, y1)
+
+test('윤곽 레이어: 윤곽 순서 이동과 삭제(마지막 하나는 보호)', () => {
+  const { edit, font, state, error } = setupLayers([rect(0, 0, 10, 10), rect(20, 0, 30, 10), rect(40, 0, 50, 10)], [], LAYER_ID.font)
+  edit.moveStrokeInActive(0, 2)
+  assert.deepEqual(font().paths.map((d) => d.split(' ')[1]), ['20', '40', '0'])
+  assert.equal(state.selectedStrokeIndex.value, 2)
+  edit.moveStrokeInActive(0, -1) // 범위 밖은 무시
+  assert.equal(font().paths.length, 3)
+  edit.deleteStrokeAt(0)
+  edit.deleteStrokeAt(0)
+  assert.equal(font().paths.length, 1)
+  edit.deleteStrokeAt(0)
+  assert.equal(font().paths.length, 1)
+  assert.match(error.value, /마지막 남은 윤곽/)
+})
+
+test('윤곽 레이어 변환: 선택한 윤곽 하나만, 또는 전체를 옮긴다', () => {
+  const { edit, font, state } = setupLayers([rect(0, 0, 10, 10), rect(20, 0, 30, 10)], [], LAYER_ID.font)
+  const shift = (x: number, y: number): [number, number] => [x + 5, y]
+  state.transformScope.value = 'stroke'
+  state.selectedStrokeIndex.value = 1
+  edit.applyAffineToActive(shift)
+  assert.deepEqual([font().paths[0], font().paths[1]], [rect(0, 0, 10, 10), rect(25, 0, 35, 10)])
+  state.transformScope.value = 'layer'
+  edit.applyAffineToActive(shift)
+  assert.equal(font().paths[0], rect(5, 0, 15, 10))
+})
+
+test('획 변환: 단일 획 범위와 레이어 전체 범위', () => {
+  const { edit, work, state } = setupLayers([], [bar(100), bar(300)], LAYER_ID.strokes)
+  const down = (x: number, y: number): [number, number] => [x, y - 10]
+  state.transformScope.value = 'stroke'
+  state.selectedStrokeIndex.value = 1
+  edit.applyAffineToActive(down)
+  assert.equal(work().strokes[0].median_points[0][1], 130)
+  assert.equal(work().strokes[1].median_points[0][1], 320)
+  state.transformScope.value = 'layer'
+  edit.applyAffineToActive(down)
+  assert.equal(work().strokes[0].median_points[0][1], 120)
+})
+
+test('윤곽 하나의 베지어 편집 결과를 반영한다(획이면 폭도 다시 계산)', () => {
+  const contour = setupLayers([rect(0, 0, 10, 10)], [], LAYER_ID.font)
+  contour.edit.updateSinglePathInActive(0, rect(0, 0, 20, 20))
+  contour.edit.updateSinglePathInActive(5, rect(1, 1, 2, 2)) // 없는 윤곽 번호는 무시
+  assert.deepEqual(contour.font().paths, [rect(0, 0, 20, 20)])
+  const stroked = setupLayers([], [bar(100)], LAYER_ID.strokes)
+  stroked.edit.updateSinglePathInActive(0, rect(100, 100, 500, 220))
+  assert.equal(stroked.work().strokes[0].outline_path, rect(100, 100, 500, 220))
+  assert.notEqual(stroked.work().strokes[0].stroke_width, bar(100).stroke_width, '새 윤곽에 맞춰 폭이 바뀐다')
+  stroked.edit.updateSinglePathInActive(9, rect(0, 0, 1, 1))
+  assert.equal(stroked.work().strokes.length, 1)
+})
+
+test('부수·캡 설정은 해당 획만 바꾸고 dirty로 표시한다', () => {
+  const { edit, work, dirty } = setupLayers([], [bar(100), bar(300)], LAYER_ID.strokes)
+  edit.setStrokeRadical(1, 1)
+  edit.setStrokeCap(0, 'start', 'AUTO_ROUND')
+  edit.setStrokeCap(0, 'end', 'REF_STAMP')
+  edit.setStrokeRadical(9, 1) // 없는 획은 무시
+  assert.deepEqual(work().strokes.map((s) => s.is_radical), [0, 1])
+  assert.equal(work().strokes[0].start_cap_type, 'AUTO_ROUND')
+  assert.equal(work().strokes[0].end_cap_type, 'REF_STAMP')
+  assert.equal(dirty.length, 3)
+})
+
+test('스냅샷 복원: 편집 가능할 때만 되돌린다', () => {
+  const { edit, work, state } = setupLayers([], [bar(100)], LAYER_ID.strokes)
+  edit.restoreActiveSnapshot([bar(300), bar(500)], ['M 0 0 Z'])
+  assert.equal(work().strokes.length, 2)
+  assert.deepEqual(work().paths, ['M 0 0 Z'])
+  state.layers.value[1].locked = true
+  edit.restoreActiveSnapshot([], [])
+  assert.equal(work().strokes.length, 2, '잠기면 복원하지 않는다')
+})
+
+test('칼 분할(윤곽 레이어): 윤곽을 둘로 가르고, 교차하지 않으면 오류', () => {
+  const { edit, font } = setupLayers([rect(0, 0, 400, 100)], [], LAYER_ID.font)
+  edit.applyKnifePoint([200, -20])
+  edit.applyKnifePoint([200, 120])
+  assert.equal(font().paths.length, 2)
+  const miss = setupLayers([rect(0, 0, 400, 100)], [], LAYER_ID.font)
+  miss.edit.applyKnifePoint([900, 0])
+  miss.edit.applyKnifePoint([900, 1000])
+  assert.equal(miss.font().paths.length, 1)
+  assert.match(miss.error.value, /윤곽 분할 불가/)
+})
+
+test('칼 분할(획): 교차하지 않으면 오류, Esc 취소는 시작점을 지운다', () => {
+  const { edit, work, error, state, message } = setupLayers([], [bar(100)], LAYER_ID.strokes)
+  edit.applyKnifePoint([900, 0])
+  edit.cancelKnife()
+  assert.equal(state.knifeFrom.value, null)
+  assert.equal(message.value, '획 분할이 취소되었습니다.')
+  edit.applyKnifePoint([900, 0])
+  edit.applyKnifePoint([900, 500])
+  assert.equal(work().strokes.length, 1)
+  assert.match(error.value, /획 분할 불가/)
+  edit.applyKnifePoint([300, 90])
+  edit.applyKnifePoint([300.5, 90.5]) // 4 미만의 짧은 칼은 자를 수 없다
+  assert.equal(work().strokes.length, 1)
+})
+
+test('칼 분할(획 윤곽 OUTLINE 레이어): 가른 조각은 수동 매핑으로 표시한다', () => {
+  const state = createLayerEditorState(ref(null), ref(0), ref(1))
+  state.layers.value = [layerOf(LAYER_ID.outline, 'OUTLINE', [strokeOf(rect(100, 100, 500, 160), [[110, 130], [490, 130]])])]
+  state.activeLayerId.value = LAYER_ID.outline
+  const guard = () => (state.isEditableLocked.value ? null : state.editableLayer.value)
+  const edit = useStrokeEdit(state, ref(''), ref(''), guard, () => {})
+  edit.applyKnifePoint([300, 50])
+  edit.applyKnifePoint([300, 200])
+  const strokes = state.layers.value[0].strokes
+  assert.equal(strokes.length, 2)
+  assert.ok(strokes.every((stroke) => stroke.map_manual === 1))
+})
+
+test('윤곽 연결 도구: 점 지정·되돌리기·취소와 안내 메시지', () => {
+  const { edit, state, message } = setupLayers([rect(0, 0, 10, 10)], [], LAYER_ID.font)
+  edit.undoConnectPoint() // 점이 없으면 아무 일도 없다
+  edit.cancelConnect()
+  assert.equal(message.value, '')
+  edit.applyConnectPoint([0, 0])
+  assert.equal(message.value, '윤곽 연결: 중간점 또는 끝점을 클릭하세요.')
+  edit.applyConnectPoint([10, 0])
+  assert.match(message.value, /끝점\(또는 추가 중간점\)/)
+  edit.applyConnectPoint([10, 10])
+  assert.match(message.value, /3점 지정됨/)
+  edit.applyConnectPoint([10.5, 10.5]) // 1.5 미만 거리의 중복 점은 무시
+  assert.equal(state.connectPoints.value.length, 3)
+  edit.undoConnectPoint()
+  assert.equal(state.connectPoints.value.length, 2)
+  assert.match(message.value, /2점 지정됨/)
+  edit.cancelConnect()
+  assert.deepEqual(state.connectPoints.value, [])
+  assert.equal(message.value, '윤곽 연결이 취소되었습니다.')
+  edit.undoConnectPoint()
+})
+
+test('윤곽 연결(윤곽 레이어): 지정한 점으로 선택한 윤곽을 다시 만든다', () => {
+  const { edit, font } = setupLayers([rect(0, 0, 10, 10)], [], LAYER_ID.font)
+  for (const point of [[0, 0], [30, 0], [30, 30]] as [number, number][]) edit.applyConnectPoint(point)
+  edit.commitConnectOutline()
+  assert.deepEqual(font().paths, ['M 0 0 L 30 0 L 30 30 Z'])
+})
+
+test('잠긴 윤곽 레이어에서는 연결·칼 점 지정이 무시된다', () => {
+  const { edit, state } = setupLayers([rect(0, 0, 10, 10)], [], LAYER_ID.font, { fontLocked: true })
+  edit.applyConnectPoint([1, 1])
+  edit.applyKnifePoint([1, 1])
+  assert.deepEqual(state.connectPoints.value, [])
+  assert.equal(state.knifeFrom.value, null)
+})
+
+test('궁서체 정렬: 기준 윤곽이 없으면 오류, 있으면 영역에 맞춘다', () => {
+  const none = setupLayers([], [bar(100)], LAYER_ID.strokes)
+  none.edit.alignActiveToFont()
+  assert.match(none.error.value, /정렬 기준이 될 궁서체/)
+  const aligned = setupLayers([rect(0, 0, 200, 100)], [bar(100)], LAYER_ID.strokes)
+  aligned.edit.alignActiveToFont()
+  assert.match(aligned.message.value, /위치·크기를 궁서체 윤곽 영역에 맞췄습니다/)
+})
+
+test('자동 맞춤: 기준 윤곽·획이 없으면 오류', () => {
+  const noFont = setupLayers([], [bar(100)], LAYER_ID.strokes)
+  noFont.edit.autoFitToFont()
+  assert.match(noFont.error.value, /맞춤 기준이 될 궁서체/)
+  const noStrokes = setupLayers([rect(0, 0, 10, 10)], [], LAYER_ID.strokes)
+  noStrokes.edit.autoFitToFont()
+  assert.match(noStrokes.error.value, /자동으로 맞출 획 데이터가 없습니다/)
+})
+
+test('자동 맞춤: 어긋난 획을 궁서체에 겹치게 옮기고 개선 비율을 알린다', () => {
+  const target = rect(100, 300, 900, 400)
+  const shifted = strokeOf(rect(100, 380, 900, 480), [[110, 430], [890, 430]], { stroke_width: 100 })
+  const { edit, work, message, dirty } = setupLayers([target], [shifted], LAYER_ID.strokes)
+  edit.autoFitToFont()
+  assert.match(message.value, /자동 맞춤: 궁서체 겹침 \d+% → \d+%/)
+  assert.ok(work().strokes[0].median_points[0][1] < 430, '아래로 옮겨졌다')
+  assert.equal(dirty.length, 1)
+})
+
+test('자동 맞춤: 이미 겹치면 더 나은 위치를 못 찾았다고 알리고 바꾸지 않는다', () => {
+  const target = rect(100, 300, 900, 400)
+  const exact = strokeOf(target, [[110, 350], [890, 350]], { stroke_width: 100 })
+  const { edit, work, message, dirty } = setupLayers([target], [exact], LAYER_ID.strokes)
+  edit.autoFitToFont()
+  assert.match(message.value, /더 나은 위치를 찾지 못했습니다/)
+  assert.equal(work().strokes[0].outline_path, target)
+  assert.equal(dirty.length, 0)
+})
+
+test('자동 맞춤: 단일 획 범위면 선택한 획만 맞춘다', () => {
+  const target = rect(100, 300, 900, 400)
+  const shifted = strokeOf(rect(100, 380, 900, 480), [[110, 430], [890, 430]], { stroke_width: 100 })
+  const { edit, work, message, state } = setupLayers([target], [bar(700), shifted], LAYER_ID.strokes)
+  state.transformScope.value = 'stroke'
+  state.selectedStrokeIndex.value = 1
+  const untouched = work().strokes[0].median_points[0][1]
+  edit.autoFitToFont()
+  assert.match(message.value, /^2획 자동 맞춤/)
+  assert.equal(work().strokes[0].median_points[0][1], untouched)
+})
