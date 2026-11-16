@@ -83,18 +83,19 @@ export function useLayerCommands(state: LayerEditorState, deps: LayerCommandsDep
       return
     }
     await flushMetaPatches()
+    // 한 요청·한 트랜잭션으로 보낸다: 하나라도 실패하면 서버가 전부 되돌려 일부만 저장되지 않는다.
+    const batch = ids.flatMap((id) => {
+      const layer = layers.value.find((l) => l.id === id)
+      return layer ? [{ id, ...layerSavePayload(layer, `${layer.name} 편집`) }] : []
+    })
     await run(async () => {
-      let latest: CharacterDetail | null = null
-      for (const id of ids) {
-        const layer = layers.value.find((l) => l.id === id)
-        if (!layer) continue
-        latest = await apiRequest<CharacterDetail>(
-          characterUrl(current.unicode, 'layers', id, 'save'),
-          `'${layer.name}' 저장 실패`,
-          { method: 'POST', body: layerSavePayload(layer, `${layer.name} 편집`) },
-        )
+      if (batch.length > 0) {
+        adopt(await apiRequest<CharacterDetail>(
+          characterUrl(current.unicode, 'layers', 'batch'),
+          '레이어 저장에 실패했습니다. 변경한 레이어는 하나도 저장되지 않았습니다.',
+          { method: 'POST', body: { layers: batch } },
+        ))
       }
-      if (latest) adopt(latest)
       message.value = `변경된 레이어 ${ids.length}개를 모두 저장했습니다.`
       await onReloadList()
     }, '레이어 저장 중 오류가 발생했습니다.')

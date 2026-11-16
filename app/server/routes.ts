@@ -145,6 +145,7 @@ const ROUTES: Route[] = [
       })
     },
   },
+  { method: 'POST', pattern: 'characters/:unicode/layers/batch', handler: async ({ ws, params, body }) => ws.saveLayers(params.unicode, (await body()).layers) },
   { method: 'POST', pattern: 'characters/:unicode/layers/:layerId/reset', handler: ({ ws, params }) => ws.resetLayer(params.unicode, params.layerId) },
   { method: 'POST', pattern: 'characters/:unicode/layers/:layerId/fetch', handler: ({ ws, params }) => ws.fetchLayer(params.unicode, params.layerId) },
   {

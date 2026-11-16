@@ -79,5 +79,7 @@ export const FIT_REFINE_ROUNDS = 2
 export const BACKUP_TAG = 'backup'
 // 마이그레이션 직전 자동 백업 파일 이름 접두어(database/<DB 이름>.before-v<버전>-<시각>.db)
 export const PRE_MIGRATION_TAG = 'before'
+// 한 번에 저장할 수 있는 레이어 수 상한(기본 8개 + 사용자 복제 레이어를 넉넉히 덮는 값)
+export const LAYER_BATCH_LIMIT = 64
 // API 요청 본문 상한(바이트). 레이어 저장·초기 글자 목록 업로드가 충분히 들어가는 크기
 export const API_BODY_LIMIT_BYTES = 8 * 1024 * 1024

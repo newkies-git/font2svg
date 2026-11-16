@@ -69,6 +69,16 @@ test('레이어 경로: 저장·초기화·수신·적용·삭제', async () => 
   assert.deepEqual(calls[4].args, ['U+4E01', 'mmh', 'direct'])
 })
 
+test('레이어 일괄 저장 경로', async () => {
+  const { ws, calls } = fakeWorkspace()
+  await handleApi(ws, request('POST', '/api/characters/U%2B4E01/layers/batch', { layers: [{ id: 'strokes' }, { id: 'mmh' }] }))
+  assert.deepEqual(calls[0], { name: 'saveLayers', args: ['U+4E01', [{ id: 'strokes' }, { id: 'mmh' }]] })
+  // 'batch'는 레이어 id 구간으로 오해되지 않는다(삭제는 DELETE 전용)
+  const deleted = fakeWorkspace()
+  await handleApi(deleted.ws, request('DELETE', '/api/characters/U%2B4E01/layers/batch'))
+  assert.equal(deleted.calls[0].name, 'deleteLayer')
+})
+
 test('outline 경로: generate·map·refresh', async () => {
   const { ws, calls } = fakeWorkspace()
   await handleApi(ws, request('POST', '/api/characters/U%2B4E01/outline/generate', { sourceLayerId: 'mmh' }))

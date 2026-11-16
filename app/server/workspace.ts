@@ -1,10 +1,11 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { DB_BUSY_TIMEOUT_MS, DEFAULT_STROKE_WIDTH, LAYER_ID } from '../src/lib/constants.ts'
+import { DB_BUSY_TIMEOUT_MS, DEFAULT_STROKE_WIDTH, LAYER_BATCH_LIMIT, LAYER_ID } from '../src/lib/constants.ts'
 import type { LayerMetaPatch, Pt } from '../src/types.ts'
 import { createCharacterCatalog } from './characterCatalog.ts'
 import { createCompileOutput } from './compileOutput.ts'
+import { transaction } from './db.ts'
 import { createFontApply } from './fontApply.ts'
 import { roundPoints, splitByContours } from './geometry.ts'
 import { createIssues } from './issues.ts'
@@ -109,12 +110,39 @@ function createWorkspace(rootDir: string) {
     return getCharacter(unicode)
   }
 
-  function saveLayer(unicode: string, layerId: string, payload: { strokes?: unknown; paths?: unknown; action?: string }) {
-    const character = strokes.requireCharacter(unicode)
+  type LayerSavePayload = { strokes?: unknown; paths?: unknown; action?: string }
+
+  // 레이어 하나를 저장한다(응답은 만들지 않는다). 작업 획 레이어는 이력이 남는 획 저장을 쓴다.
+  function writeLayer(unicode: string, char: string, layerId: string, payload: LayerSavePayload) {
     if (layerId === LAYER_ID.strokes) {
-      return updateStrokes(unicode, sanitizeLayerStrokes(payload.strokes), payload.action ?? '획 편집')
+      strokes.updateStrokes(unicode, sanitizeLayerStrokes(payload.strokes) as StrokeItem[], payload.action ?? '획 편집')
+      return
     }
-    saveNonStrokeLayerContent(db, character.char, layerId, payload)
+    saveNonStrokeLayerContent(db, char, layerId, payload)
+  }
+
+  function saveLayer(unicode: string, layerId: string, payload: LayerSavePayload) {
+    const character = strokes.requireCharacter(unicode)
+    writeLayer(unicode, String(character.char), layerId, payload)
+    return getCharacter(unicode)
+  }
+
+  // 여러 레이어를 한 트랜잭션으로 저장한다. 하나라도 실패하면 전부 되돌려 일부만 저장되지 않는다.
+  function saveLayers(unicode: string, items: unknown) {
+    const character = strokes.requireCharacter(unicode)
+    if (!Array.isArray(items) || items.length === 0) throw new Error('저장할 레이어 목록이 비어 있습니다.')
+    if (items.length > LAYER_BATCH_LIMIT) throw new Error(`한 번에 저장할 수 있는 레이어는 ${LAYER_BATCH_LIMIT}개까지입니다.`)
+    const ids = new Set<string>()
+    const batch = items.map((item, index) => {
+      const entry = (item ?? {}) as { id?: unknown } & LayerSavePayload
+      if (typeof entry.id !== 'string' || !entry.id) throw new Error(`${index + 1}번째 레이어에 id가 없습니다.`)
+      if (ids.has(entry.id)) throw new Error(`레이어 '${entry.id}'가 중복되었습니다.`)
+      ids.add(entry.id)
+      return { id: entry.id, payload: { strokes: entry.strokes, paths: entry.paths, action: typeof entry.action === 'string' ? entry.action : undefined } }
+    })
+    transaction(db, () => {
+      for (const { id, payload } of batch) writeLayer(unicode, String(character.char), id, payload)
+    })
     return getCharacter(unicode)
   }
 
@@ -222,6 +250,7 @@ function createWorkspace(rootDir: string) {
     updateStrokes,
     updateLayersMeta,
     saveLayer,
+    saveLayers,
     resetLayer,
     fetchLayer,
     applyLayerToStrokes,
