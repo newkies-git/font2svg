@@ -1,8 +1,8 @@
-import { isContourLayer } from '../lib/layerKind.ts'
-import { LAYER_ID } from '../lib/constants.ts'
+import { isContourLayer } from '../../shared/layerKind.ts'
+import { LAYER_ID } from '../../shared/constants.ts'
 import type { Ref } from 'vue'
 import { autoFitLayer, autoFitStroke } from '../lib/autoFit.ts'
-import { splitStrokeByKnife } from '../lib/strokeCut.ts'
+import { splitStrokeByKnife } from '../../shared/strokeCut.ts'
 import { boxAlignTransform, moveItem, pointsToClosedPath, restrokeFromOutline, roundPt, withMedianPoints } from '../lib/strokeOps.ts'
 import {
   insertMedianPoint,
@@ -14,7 +14,7 @@ import {
   transformPath,
   transformStroke,
 } from '../lib/vectorEdit.ts'
-import type { CapType, LayerRecord, Pt, StrokeRecord } from '../types.ts'
+import type { CapType, LayerRecord, Pt, StrokeRecord } from '../../shared/types.ts'
 import { cloneStroke } from './layerClone.ts'
 import type { LayerEditorState } from './layerEditorState.ts'
 

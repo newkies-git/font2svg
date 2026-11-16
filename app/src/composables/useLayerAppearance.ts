@@ -1,9 +1,9 @@
-import { warnOnce } from '../lib/log.ts'
+import { warnOnce } from '../../shared/log.ts'
 import { apiRequest, characterUrl } from '../lib/api.ts'
 import type { Ref } from 'vue'
-import { META_PATCH_DEBOUNCE_MS, OPACITY_STEPS } from '../lib/constants.ts'
-import { isReferenceKind } from '../lib/layerKind.ts'
-import type { LayerColor, LayerMetaPatch, LayerRecord } from '../types.ts'
+import { META_PATCH_DEBOUNCE_MS, OPACITY_STEPS } from '../../shared/constants.ts'
+import { isReferenceKind } from '../../shared/layerKind.ts'
+import type { LayerColor, LayerMetaPatch, LayerRecord } from '../../shared/types.ts'
 import type { LayerEditorState } from './layerEditorState.ts'
 
 export function useLayerAppearance(

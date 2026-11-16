@@ -1,7 +1,7 @@
-import { LAYER_ID } from '../lib/constants.ts'
+import { LAYER_ID } from '../../shared/constants.ts'
 import { computed, ref, type ComputedRef, type Ref } from 'vue'
 import type { TransformMode } from '../lib/transformMath.ts'
-import type { CharacterDetail, EditorTool, LayerRecord, Pt, StrokeRecord } from '../types.ts'
+import type { CharacterDetail, EditorTool, LayerRecord, Pt, StrokeRecord } from '../../shared/types.ts'
 
 export type LayerEditorState = {
   selected: Ref<CharacterDetail | null>

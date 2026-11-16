@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
-import { CANVAS, LAYER_ID } from '../lib/constants.ts'
-import { isReferenceKind } from '../lib/layerKind.ts'
-import type { LayerColor, LayerRecord } from '../types.ts'
+import { CANVAS, LAYER_ID } from '../../shared/constants.ts'
+import { isReferenceKind } from '../../shared/layerKind.ts'
+import type { LayerColor, LayerRecord } from '../../shared/types.ts'
 
 const props = defineProps<{
   layers: LayerRecord[]

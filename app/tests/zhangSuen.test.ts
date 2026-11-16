@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { zhangSuen } from '../src/lib/strokeCut.ts'
+import { zhangSuen } from '../shared/strokeCut.ts'
 
 // 기준 구현(느리지만 정의 그대로): 모든 픽셀을 훑고 이웃 배열을 만든다. 최적화 구현이 이와 같은 결과를 내는지 비교한다.
 function referenceZhangSuen(src: Uint8Array, w: number, h: number): Uint8Array {

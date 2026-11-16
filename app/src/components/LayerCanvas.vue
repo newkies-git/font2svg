@@ -1,13 +1,14 @@
 <script setup lang="ts">
-import { isContourLayer, isReferenceKind } from '../lib/layerKind.ts'
+import { isContourLayer, isReferenceKind } from '../../shared/layerKind.ts'
 import { computed, ref } from 'vue'
 import { useCanvasDrag, type ResizeDir } from '../composables/useCanvasDrag.ts'
 import { useCanvasFit, visibleWorkStrokes } from '../composables/useCanvasFit.ts'
 import { useCanvasLoupe } from '../composables/useCanvasLoupe.ts'
-import { BADGE_RADIUS, CANVAS } from '../lib/constants.ts'
+import { BADGE_RADIUS, CANVAS } from '../../shared/constants.ts'
 import { handleDirsFor, handlePoint, type TransformMode } from '../lib/transformMath.ts'
-import { parseEditablePath, pathsBBox, strokesBBox, type BBox } from '../lib/vectorEdit.ts'
-import type { CharacterDetail, EditorTool, LayerRecord, Pt, StrokeRecord } from '../types.ts'
+import { pathsBBox, strokesBBox, type BBox } from '../lib/vectorEdit.ts'
+import { bezierNodesOf, connectLabel, polylinePoints, strokeDash } from '../lib/canvasGeometry.ts'
+import type { CharacterDetail, EditorTool, LayerRecord, Pt, StrokeRecord } from '../../shared/types.ts'
 
 const props = defineProps<{
   selected: CharacterDetail | null
@@ -52,25 +53,6 @@ const {
   onCanvasPointerMove,
   onCanvasPointerLeave,
 } = useCanvasLoupe(() => props.tool, fontToScreen, eventToFont)
-
-function lengthOf(points: Pt[]): number {
-  let length = 0
-  for (let i = 1; i < points.length; i++) {
-    length += Math.hypot(points[i][0] - points[i - 1][0], points[i][1] - points[i - 1][1])
-  }
-  return length
-}
-
-function dashOf(stroke: StrokeRecord, index: number) {
-  const length = lengthOf(stroke.median_points)
-  const span = length + stroke.stroke_width
-  const amount = index < props.shown - 1 ? 0 : index === props.shown - 1 ? span * (1 - props.reveal) : span
-  return { array: span, offset: amount }
-}
-
-function pointsOf(points: Pt[]): string {
-  return points.map((p) => p.join(',')).join(' ')
-}
 
 function visibleStrokesOfWork(strokes: StrokeRecord[]): StrokeRecord[] {
   return visibleWorkStrokes(strokes, props.shown)
@@ -130,53 +112,7 @@ const targetBezierPath = computed<string | null>(() => {
   return ed.strokes[props.selectedIndex]?.outline_path ?? null
 })
 
-const bezierNodes = computed(() => {
-  const d = targetBezierPath.value
-  if (!d) return { anchors: [], controls: [], lines: [] }
-  const segs = parseEditablePath(d)
-  const anchors: { segIndex: number; x: number; y: number }[] = []
-  const controls: { kind: 'c1' | 'c2'; segIndex: number; x: number; y: number }[] = []
-  const lines: { x1: number; y1: number; x2: number; y2: number }[] = []
-
-  let prevX = 0
-  let prevY = 0
-  let startX = 0
-  let startY = 0
-
-  segs.forEach((seg, idx) => {
-    if (seg.op === 'M') {
-      anchors.push({ segIndex: idx, x: seg.x, y: seg.y })
-      prevX = seg.x
-      prevY = seg.y
-      startX = seg.x
-      startY = seg.y
-    } else if (seg.op === 'L') {
-      anchors.push({ segIndex: idx, x: seg.x, y: seg.y })
-      prevX = seg.x
-      prevY = seg.y
-    } else if (seg.op === 'Q') {
-      lines.push({ x1: prevX, y1: prevY, x2: seg.x1, y2: seg.y1 })
-      lines.push({ x1: seg.x, y1: seg.y, x2: seg.x1, y2: seg.y1 })
-      controls.push({ kind: 'c1', segIndex: idx, x: seg.x1, y: seg.y1 })
-      anchors.push({ segIndex: idx, x: seg.x, y: seg.y })
-      prevX = seg.x
-      prevY = seg.y
-    } else if (seg.op === 'C') {
-      lines.push({ x1: prevX, y1: prevY, x2: seg.x1, y2: seg.y1 })
-      lines.push({ x1: seg.x, y1: seg.y, x2: seg.x2, y2: seg.y2 })
-      controls.push({ kind: 'c1', segIndex: idx, x: seg.x1, y: seg.y1 })
-      controls.push({ kind: 'c2', segIndex: idx, x: seg.x2, y: seg.y2 })
-      anchors.push({ segIndex: idx, x: seg.x, y: seg.y })
-      prevX = seg.x
-      prevY = seg.y
-    } else if (seg.op === 'Z') {
-      prevX = startX
-      prevY = startY
-    }
-  })
-
-  return { anchors, controls, lines }
-})
+const bezierNodes = computed(() => bezierNodesOf(targetBezierPath.value))
 
 const targetMedianPoints = computed<Pt[]>(() => {
   const ed = props.editableLayer
@@ -236,12 +172,6 @@ function onShapePointerDown(layerId: string, index: number, event: PointerEvent)
   if (props.tool === 'select' && !props.locked) {
     startMoveDrag(event)
   }
-}
-
-function connectLabel(idx: number, total: number): string {
-  if (idx === 0) return '시'
-  if (idx === total - 1 && total > 1) return '끝'
-  return String(idx)
 }
 </script>
 
@@ -368,10 +298,10 @@ function connectLabel(idx: number, total: number): string {
             :clip-path="`url(#clip-${stroke.stroke_order})`"
             class="anim-stroke"
             :class="{ radical: stroke.is_radical }"
-            :points="pointsOf(stroke.median_points)"
+            :points="polylinePoints(stroke.median_points)"
             :stroke-width="stroke.stroke_width"
-            :stroke-dasharray="dashOf(stroke, index).array"
-            :stroke-dashoffset="dashOf(stroke, index).offset"
+            :stroke-dasharray="strokeDash(stroke, index, shown, reveal).array"
+            :stroke-dashoffset="strokeDash(stroke, index, shown, reveal).offset"
           />
         </g>
 
@@ -387,7 +317,7 @@ function connectLabel(idx: number, total: number): string {
             :key="`ov-median-${sIdx}`"
             class="median-stroke"
             :class="{ 'is-current-median': sIdx === selectedIndex }"
-            :points="pointsOf(stroke.median_points)"
+            :points="polylinePoints(stroke.median_points)"
           />
         </g>
 
@@ -471,12 +401,12 @@ function connectLabel(idx: number, total: number): string {
       <!-- C. 중심선 정점 편집(median) 핸들 -->
       <g v-if="tool === 'median' && !locked && targetMedianPoints.length > 0" class="overlay-median-edit">
         <polyline
-          :points="pointsOf(targetMedianPoints)"
+          :points="polylinePoints(targetMedianPoints)"
           class="median-hit-line"
           @pointerdown="onMedianLinePointerDown"
         />
         <polyline
-          :points="pointsOf(targetMedianPoints)"
+          :points="polylinePoints(targetMedianPoints)"
           class="median-active-guide"
         />
         <g
@@ -516,7 +446,7 @@ function connectLabel(idx: number, total: number): string {
       <g v-if="tool === 'connect' && connectPoints.length > 0" class="overlay-connect">
         <polyline
           v-if="connectPoints.length > 1"
-          :points="pointsOf(connectPoints)"
+          :points="polylinePoints(connectPoints)"
           class="connect-guide"
         />
         <line

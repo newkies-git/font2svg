@@ -1,9 +1,9 @@
 import { backupDatabase, backupPathFor } from './dbBackup.ts'
 import type { DatabaseSync } from 'node:sqlite'
 import { transaction } from './db.ts'
-import { CANVAS, DEFAULT_STROKE_WIDTH, KANGXI_COUNT, PRE_MIGRATION_TAG, SHA256_HEX_LENGTH } from '../src/lib/constants.ts'
+import { CANVAS, DEFAULT_STROKE_WIDTH, KANGXI_COUNT, PRE_MIGRATION_TAG, SHA256_HEX_LENGTH } from '../shared/constants.ts'
 import { ACTION_FONT, ACTOR_FONT, ACTOR_MIGRATION, ACTOR_USER } from './model.ts'
-import type { Pt } from '../src/types.ts'
+import type { Pt } from '../shared/types.ts'
 import { KANGXI_RADICALS } from './radicals.ts'
 
 export const NO_FONT_SHA256 = '0'.repeat(SHA256_HEX_LENGTH)

@@ -1,5 +1,5 @@
 import { ref } from 'vue'
-import type { CharacterDetail } from '../types.ts'
+import type { CharacterDetail } from '../../shared/types.ts'
 
 // 화면 전체가 공유하는 상태: 선택한 글자, 상태·오류 메시지, 진행 중 표시, 재생 위치.
 // 컴포저블마다 이 값들을 낱개 인자로 받던 것을 한 객체로 묶어 넘긴다.

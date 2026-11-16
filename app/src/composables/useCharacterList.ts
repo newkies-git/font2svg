@@ -1,6 +1,6 @@
 import { apiRequest, apiUrl } from '../lib/api.ts'
 import { computed, onBeforeUnmount, ref, type Ref } from 'vue'
-import type { CharacterSummary, IssueStatus, StatusFilter } from '../types.ts'
+import type { CharacterSummary, IssueStatus, StatusFilter } from '../../shared/types.ts'
 
 export function useCharacterList(error: Ref<string>) {
   const chars = ref<CharacterSummary[]>([])

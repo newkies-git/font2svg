@@ -1,5 +1,5 @@
 import { onBeforeUnmount, ref, type Ref } from 'vue'
-import { REVEAL_STEP, REVEAL_STROKE_MS } from '../lib/constants.ts'
+import { REVEAL_STEP, REVEAL_STROKE_MS } from '../../shared/constants.ts'
 
 // requestAnimationFrame 기반 필순 재생. shown/reveal은 뷰어와 공유하는 상태다.
 export function usePlayback(strokeCount: () => number, shown: Ref<number>, reveal: Ref<number>) {

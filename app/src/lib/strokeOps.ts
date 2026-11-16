@@ -1,6 +1,6 @@
-import type { Pt, StrokeRecord } from '../types.ts'
-import { round1 } from './paths.ts'
-import { recoverMedian } from './strokeCut.ts'
+import type { Pt, StrokeRecord } from '../../shared/types.ts'
+import { round1 } from '../../shared/paths.ts'
+import { recoverMedian } from '../../shared/strokeCut.ts'
 import type { BBox } from './vectorEdit.ts'
 import { recomputeStrokeWidth } from './vectorEdit.ts'
 

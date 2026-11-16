@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { CharacterSummary } from '../types.ts'
+import type { CharacterSummary } from '../../shared/types.ts'
 
 defineProps<{
   rows: CharacterSummary[]

@@ -1,7 +1,7 @@
-import { warnOnce } from '../src/lib/log.ts'
-import { FETCH_TIMEOUT_MS, MEDIAN_MIN_POINTS } from '../src/lib/constants.ts'
-import { recoverMedian } from '../src/lib/strokeCut.ts'
-import type { Pt } from '../src/types.ts'
+import { warnOnce } from '../shared/log.ts'
+import { FETCH_TIMEOUT_MS, MEDIAN_MIN_POINTS } from '../shared/constants.ts'
+import { recoverMedian } from '../shared/strokeCut.ts'
+import type { Pt } from '../shared/types.ts'
 import { parseNaverSvg } from './animSvg.ts'
 import { IDS_OPERATOR } from './ids.ts'
 

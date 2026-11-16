@@ -1,5 +1,5 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue'
-import type { ThemeMode } from '../types.ts'
+import type { ThemeMode } from '../../shared/types.ts'
 
 function applyTheme(mode: ThemeMode) {
   const meta = document.querySelector('meta[name="color-scheme"]')

@@ -1,6 +1,6 @@
-import { warnOnce } from '../src/lib/log.ts'
+import { warnOnce } from '../shared/log.ts'
 import path from 'node:path'
-import { OLLAMA_TIMEOUT_MS } from '../src/lib/constants.ts'
+import { OLLAMA_TIMEOUT_MS } from '../shared/constants.ts'
 import type { Box } from './geometry.ts'
 
 export const IDS_URL = 'https://www.babelstone.co.uk/CJK/IDS.TXT'

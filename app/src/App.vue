@@ -15,10 +15,10 @@ import { usePlayback } from './composables/usePlayback.ts'
 import { useStudioState } from './composables/useStudioState.ts'
 import { useTheme } from './composables/useTheme.ts'
 import { apiRequest, apiUrl, characterUrl } from './lib/api.ts'
-import { MISSING_FETCH_LIMIT, LAYER_ID } from './lib/constants.ts'
+import { MISSING_FETCH_LIMIT, LAYER_ID } from '../shared/constants.ts'
 import { issueLabel } from './lib/labels.ts'
 import { resolveKeyAction } from './lib/keymap.ts'
-import type { CharacterDetail, CharacterSummary } from './types.ts'
+import type { CharacterDetail, CharacterSummary } from '../shared/types.ts'
 
 const studio = useStudioState()
 const { selected, message, error, busy, shown, reveal } = studio

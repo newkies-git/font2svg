@@ -1,6 +1,6 @@
-import { LAYER_ID } from '../lib/constants.ts'
+import { LAYER_ID } from '../../shared/constants.ts'
 import type { Ref } from 'vue'
-import type { CharacterDetail, EditorTool, LayerRecord } from '../types.ts'
+import type { CharacterDetail, EditorTool, LayerRecord } from '../../shared/types.ts'
 import { cloneLayer, cloneStroke } from './layerClone.ts'
 import type { LayerEditorState } from './layerEditorState.ts'
 

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import opentype from 'opentype.js'
-import { CANVAS, COORD_ROUND } from '../src/lib/constants.ts'
+import { CANVAS, COORD_ROUND } from '../shared/constants.ts'
 
 export type FontFile = {
   sha256: string

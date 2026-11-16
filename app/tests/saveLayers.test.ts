@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import test, { after } from 'node:test'
 import { getWorkspace } from '../server/workspace.ts'
-import type { StrokeRecord } from '../src/types.ts'
+import type { StrokeRecord } from '../shared/types.ts'
 import { rectPath, strokeOf, tempDir } from './helpers.ts'
 
 // 작업 공간은 프로세스당 하나(싱글턴)라 이 파일의 테스트가 같은 임시 DB를 공유한다. 각 테스트는 자기 글자를 쓴다.

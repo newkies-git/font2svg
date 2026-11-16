@@ -1,5 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite'
-import { DEFAULT_STROKE_WIDTH, MIN_STROKE_WIDTH, STROKE_WIDTH_CAP_RATIO } from '../src/lib/constants.ts'
+import { DEFAULT_STROKE_WIDTH, MIN_STROKE_WIDTH, STROKE_WIDTH_CAP_RATIO } from '../shared/constants.ts'
 import { parseAnimSvg } from './animSvg.ts'
 import { validate } from './compileOutput.ts'
 import { transaction } from './db.ts'

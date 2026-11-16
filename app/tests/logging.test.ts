@@ -4,9 +4,9 @@ import test, { beforeEach, mock } from 'node:test'
 import { readJsonBody } from '../server/http.ts'
 import { askOllama } from '../server/ids.ts'
 import { parseHanja } from '../server/references.ts'
-import { WARN_ONCE_LIMIT } from '../src/lib/constants.ts'
-import { resetWarnings, warnOnce } from '../src/lib/log.ts'
-import { recoverMedian } from '../src/lib/strokeCut.ts'
+import { WARN_ONCE_LIMIT } from '../shared/constants.ts'
+import { resetWarnings, warnOnce } from '../shared/log.ts'
+import { recoverMedian } from '../shared/strokeCut.ts'
 import { recomputeStrokeWidth } from '../src/lib/vectorEdit.ts'
 
 let warn: ReturnType<typeof mock.method>

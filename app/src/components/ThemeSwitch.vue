@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { ThemeMode } from '../types.ts'
+import type { ThemeMode } from '../../shared/types.ts'
 
 defineProps<{ mode: ThemeMode }>()
 const emit = defineEmits<{ select: [mode: ThemeMode] }>()

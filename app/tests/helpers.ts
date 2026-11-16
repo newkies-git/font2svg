@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { migrate, seed } from '../server/schema.ts'
-import type { StrokeRecord } from '../src/types.ts'
+import type { StrokeRecord } from '../shared/types.ts'
 
 export function tempDir(prefix = 'font2svg-test-'): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix))

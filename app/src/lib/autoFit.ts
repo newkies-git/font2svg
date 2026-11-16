@@ -16,10 +16,10 @@ import {
   FIT_STEP_SHEAR,
   FIT_STEP_SHIFT,
   CANVAS,
-} from './constants.ts'
-import { flattenContours } from './paths.ts'
+} from '../../shared/constants.ts'
+import { flattenContours } from '../../shared/paths.ts'
 import { transformStroke } from './vectorEdit.ts'
-import type { Pt, StrokeRecord } from '../types.ts'
+import type { Pt, StrokeRecord } from '../../shared/types.ts'
 
 type Loop = { x: number; y: number }[]
 

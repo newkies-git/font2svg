@@ -1,7 +1,7 @@
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { DatabaseSync } from 'node:sqlite'
-import { BACKUP_TAG } from '../src/lib/constants.ts'
+import { BACKUP_TAG } from '../shared/constants.ts'
 import { backupDatabase, backupPathFor } from '../server/dbBackup.ts'
 
 // 사용법: npm run backup [-- <복사본을 둘 폴더>]

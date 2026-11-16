@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { sanitizeLayerPaths, sanitizeLayerStrokes } from '../server/layerData.ts'
 import { fontContoursOf, fontFingerprint } from '../server/layers.ts'
-import type { LayerRecord } from '../src/types.ts'
+import type { LayerRecord } from '../shared/types.ts'
 import { rectPath, strokeOf } from './helpers.ts'
 
 const valid = strokeOf(rectPath(0, 0, 100, 100), [[10, 10], [90, 90]])

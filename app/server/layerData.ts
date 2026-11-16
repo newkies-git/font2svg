@@ -1,7 +1,7 @@
-import { DEFAULT_STROKE_WIDTH, MIN_STROKE_WIDTH, OPACITY_STEPS, STROKE_WIDTH_CAP_RATIO } from '../src/lib/constants.ts'
-import { warnOnce } from '../src/lib/log.ts'
-import { isValidSvgPath } from '../src/lib/paths.ts'
-import type { LayerColor, Pt, StrokeRecord } from '../src/types.ts'
+import { DEFAULT_STROKE_WIDTH, MIN_STROKE_WIDTH, OPACITY_STEPS, STROKE_WIDTH_CAP_RATIO } from '../shared/constants.ts'
+import { warnOnce } from '../shared/log.ts'
+import { isValidSvgPath } from '../shared/paths.ts'
+import type { LayerColor, Pt, StrokeRecord } from '../shared/types.ts'
 import { ribbonPath, roundPoints } from './geometry.ts'
 import { normalizeCap } from './model.ts'
 

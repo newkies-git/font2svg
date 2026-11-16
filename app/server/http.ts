@@ -1,4 +1,4 @@
-import { API_BODY_LIMIT_BYTES } from '../src/lib/constants.ts'
+import { API_BODY_LIMIT_BYTES } from '../shared/constants.ts'
 
 // DB를 쓰는 API는 같은 컴퓨터에서 온 요청만 받는다(vite --host로 열어도 외부에서는 쓸 수 없게).
 const LOOPBACK_ADDRESSES: ReadonlySet<string> = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1'])

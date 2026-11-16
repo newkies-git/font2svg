@@ -1,4 +1,4 @@
-import type { CharacterDetail, IssueStatus } from '../types.ts'
+import type { CharacterDetail, IssueStatus } from '../../shared/types.ts'
 
 export const ISSUE_LABELS: Record<IssueStatus, string> = { OPEN: '작업 전', DRAFT: '승인 대기', APPROVED: '승인됨' }
 

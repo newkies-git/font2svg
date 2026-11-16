@@ -5,7 +5,7 @@ import type { DatabaseSync } from 'node:sqlite'
 import { buildCharacterLayers } from '../server/layers.ts'
 import { createOutlineMapping } from '../server/outlineMapping.ts'
 import { splitOutlinePieces } from '../server/geometry.ts'
-import type { StrokeRecord } from '../src/types.ts'
+import type { StrokeRecord } from '../shared/types.ts'
 import { insertCharacter, openMigratedDb, rectPath, strokeOf, tempDir } from './helpers.ts'
 
 const UNICODE = 'U+4E01'

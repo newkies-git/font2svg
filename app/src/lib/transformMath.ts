@@ -1,4 +1,4 @@
-import type { Pt } from '../types.ts'
+import type { Pt } from '../../shared/types.ts'
 import type { BBox } from './vectorEdit.ts'
 
 // 포토샵 자유 변형과 같은 4가지 방식. 모두 (x, y) → (x', y')로 점을 옮기는 함수를 돌려준다.

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { CharacterSummary, StatusFilter, ThemeMode } from '../types.ts'
+import type { CharacterSummary, StatusFilter, ThemeMode } from '../../shared/types.ts'
 import CharacterList from './CharacterList.vue'
 import ThemeSwitch from './ThemeSwitch.vue'
 

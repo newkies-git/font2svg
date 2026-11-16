@@ -8,7 +8,7 @@ import {
   type HandleRef,
 } from '../lib/vectorEdit.ts'
 import { distortMap, MIN_BOX_SIDE, rotateMap, skewMap, type HandleDir, type TransformMode } from '../lib/transformMath.ts'
-import type { LayerRecord, Pt, StrokeRecord } from '../types.ts'
+import type { LayerRecord, Pt, StrokeRecord } from '../../shared/types.ts'
 import { cloneStroke } from './layerClone.ts'
 
 const cloneStrokesOf = (list: StrokeRecord[]): StrokeRecord[] => list.map(cloneStroke)

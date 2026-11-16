@@ -1,4 +1,4 @@
-import { warnOnce } from '../src/lib/log.ts'
+import { warnOnce } from '../shared/log.ts'
 import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -9,9 +9,9 @@ import {
   IDS_FILE_LIMIT,
   IDS_MAX_DEPTH,
   MISSING_FETCH_LIMIT,
-} from '../src/lib/constants.ts'
-import { isReferenceKind, type ReferenceKind } from '../src/lib/layerKind.ts'
-import type { Pt } from '../src/types.ts'
+} from '../shared/constants.ts'
+import { isReferenceKind, type ReferenceKind } from '../shared/layerKind.ts'
+import type { Pt } from '../shared/types.ts'
 import { transaction } from './db.ts'
 import type { FontFile } from './font.ts'
 import { fitMedians, roundPoints, splitByContours, type Box, type ImportedStrokes } from './geometry.ts'

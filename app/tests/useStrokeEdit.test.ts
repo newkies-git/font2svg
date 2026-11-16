@@ -3,8 +3,8 @@ import test from 'node:test'
 import { ref } from 'vue'
 import { createLayerEditorState } from '../src/composables/layerEditorState.ts'
 import { useStrokeEdit } from '../src/composables/useStrokeEdit.ts'
-import { LAYER_ID } from '../src/lib/constants.ts'
-import type { LayerRecord, StrokeRecord } from '../src/types.ts'
+import { LAYER_ID } from '../shared/constants.ts'
+import type { LayerRecord, StrokeRecord } from '../shared/types.ts'
 import { rectPath, strokeOf } from './helpers.ts'
 
 const bar = (y: number): StrokeRecord => strokeOf(rectPath(100, y, 500, y + 60), [[110, y + 30], [490, y + 30]])

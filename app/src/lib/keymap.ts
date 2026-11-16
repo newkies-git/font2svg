@@ -1,5 +1,5 @@
-import type { EditorTool } from '../types.ts'
-import { NUDGE_STEP } from './constants.ts'
+import type { EditorTool } from '../../shared/types.ts'
+import { NUDGE_STEP } from '../../shared/constants.ts'
 
 // 전역 단축키를 "무슨 동작인지"로 해석한다(순수 함수). 동작 실행과 입력창·선택 글자 검사는 App.vue가 맡는다.
 export type KeyAction =

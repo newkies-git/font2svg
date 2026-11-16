@@ -1,6 +1,6 @@
 import { computed, ref } from 'vue'
-import { CANVAS } from '../lib/constants.ts'
-import type { EditorTool, Pt } from '../types.ts'
+import { CANVAS } from '../../shared/constants.ts'
+import type { EditorTool, Pt } from '../../shared/types.ts'
 
 const LOUPE_ZOOM = 2.8
 const LOUPE_RADIUS = 58

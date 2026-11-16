@@ -1,4 +1,4 @@
-import type { LayerRecord, Pt, StrokeRecord } from '../types.ts'
+import type { LayerRecord, Pt, StrokeRecord } from '../../shared/types.ts'
 
 export function cloneStroke(s: StrokeRecord): StrokeRecord {
   return {

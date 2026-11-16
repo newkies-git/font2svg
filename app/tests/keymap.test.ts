@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { NUDGE_STEP } from '../src/lib/constants.ts'
+import { NUDGE_STEP } from '../shared/constants.ts'
 import { resolveKeyAction, type KeyContext } from '../src/lib/keymap.ts'
 
 const press = (key: string, over: Partial<KeyContext> = {}) =>

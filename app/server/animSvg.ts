@@ -1,5 +1,5 @@
-import { ACJK_SVG_Y_ORIGIN, ANIM_PATH_LENGTH, ANIM_STROKE_SECONDS, ANIM_STROKE_STEP_SECONDS, CANVAS, COORD_ROUND } from '../src/lib/constants.ts'
-import type { Pt } from '../src/types.ts'
+import { ACJK_SVG_Y_ORIGIN, ANIM_PATH_LENGTH, ANIM_STROKE_SECONDS, ANIM_STROKE_STEP_SECONDS, CANVAS, COORD_ROUND } from '../shared/constants.ts'
+import type { Pt } from '../shared/types.ts'
 type Segment = { command: string; values: number[] }
 
 // 명령별 인자 수. AnimCJK SVG가 쓰는 절대 좌표 명령만 받는다.

@@ -1,4 +1,4 @@
-import type { CapType, Pt, StrokeRecord } from '../src/types.ts'
+import type { CapType, Pt, StrokeRecord } from '../shared/types.ts'
 
 export type { Pt }
 

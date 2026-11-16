@@ -1,6 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite'
-import { UNICODE_HEX_PAD } from '../src/lib/constants.ts'
-import type { StrokeRecord } from '../src/types.ts'
+import { UNICODE_HEX_PAD } from '../shared/constants.ts'
+import type { StrokeRecord } from '../shared/types.ts'
 import { transaction } from './db.ts'
 import { buildCharacterLayers } from './layers.ts'
 import { ACTOR_USER } from './model.ts'

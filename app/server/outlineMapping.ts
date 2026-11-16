@@ -1,6 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite'
-import { DEFAULT_STROKE_WIDTH, LAYER_ID } from '../src/lib/constants.ts'
-import type { LayerRecord, StrokeRecord } from '../src/types.ts'
+import { DEFAULT_STROKE_WIDTH, LAYER_ID } from '../shared/constants.ts'
+import type { LayerRecord, StrokeRecord } from '../shared/types.ts'
 import { contourIndicesOfOutline, contourLoopsOf, ribbonPath, splitOutlinePieces } from './geometry.ts'
 import { fontContoursOf, fontFingerprint, patchLayersMeta, saveNonStrokeLayerContent } from './layers.ts'
 

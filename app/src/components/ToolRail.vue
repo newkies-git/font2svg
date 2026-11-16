@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { EditorTool } from '../types.ts'
+import type { EditorTool } from '../../shared/types.ts'
 
 defineProps<{ tool: EditorTool }>()
 const emit = defineEmits<{ select: [tool: EditorTool] }>()

@@ -1,5 +1,5 @@
-import { ACJK_BATCH_LIMIT, FONT_BATCH_LIMIT, MISSING_FETCH_LIMIT } from '../src/lib/constants.ts'
-import type { LayerMetaPatch } from '../src/types.ts'
+import { ACJK_BATCH_LIMIT, FONT_BATCH_LIMIT, MISSING_FETCH_LIMIT } from '../shared/constants.ts'
+import type { LayerMetaPatch } from '../shared/types.ts'
 import { sanitizeLayerStrokes } from './layerData.ts'
 import type { Workspace } from './workspace.ts'
 

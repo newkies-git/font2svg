@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { isContourLayer } from '../lib/layerKind.ts'
-import { LAYER_ID } from '../lib/constants.ts'
+import { isContourLayer } from '../../shared/layerKind.ts'
+import { LAYER_ID } from '../../shared/constants.ts'
 import { computed, ref } from 'vue'
-import type { CapType, LayerRecord, StrokeRecord } from '../types.ts'
+import type { CapType, LayerRecord, StrokeRecord } from '../../shared/types.ts'
 
 const props = defineProps<{
   layer: LayerRecord | null

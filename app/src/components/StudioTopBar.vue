@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { LAYER_ID } from '../lib/constants.ts'
+import { LAYER_ID } from '../../shared/constants.ts'
 import { ref } from 'vue'
 import { ISSUE_LABELS } from '../lib/labels.ts'
 import type { TransformMode } from '../lib/transformMath.ts'
-import type { CharacterDetail, EditorTool, LayerRecord, Pt } from '../types.ts'
+import type { CharacterDetail, EditorTool, LayerRecord, Pt } from '../../shared/types.ts'
 
 defineProps<{
   selected: CharacterDetail | null
