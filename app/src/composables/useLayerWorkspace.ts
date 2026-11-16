@@ -53,6 +53,7 @@ export function useLayerWorkspace(
     activeStrokes: state.activeStrokes,
     activeTool: state.activeTool,
     transformScope: state.transformScope,
+    transformMode: state.transformMode,
     selectedStrokeIndex: state.selectedStrokeIndex,
     selectedMedianPointIndex: state.selectedMedianPointIndex,
     knifeFrom: state.knifeFrom,

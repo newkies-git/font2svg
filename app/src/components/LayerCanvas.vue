@@ -4,6 +4,7 @@ import { useCanvasDrag, type ResizeDir } from '../composables/useCanvasDrag.ts'
 import { useCanvasFit, visibleWorkStrokes } from '../composables/useCanvasFit.ts'
 import { useCanvasLoupe } from '../composables/useCanvasLoupe.ts'
 import { BADGE_RADIUS, CANVAS } from '../lib/constants.ts'
+import { handleDirsFor, handlePoint, type TransformMode } from '../lib/transformMath.ts'
 import { parseEditablePath, pathsBBox, strokesBBox, type BBox } from '../lib/vectorEdit.ts'
 import type { CharacterDetail, EditorTool, LayerRecord, Pt, StrokeRecord } from '../types.ts'
 
@@ -14,6 +15,7 @@ const props = defineProps<{
   locked: boolean
   tool: EditorTool
   scope: 'layer' | 'stroke'
+  transformMode: TransformMode
   selectedIndex: number
   shown: number
   reveal: number
@@ -107,22 +109,14 @@ const activeBBox = computed<BBox | null>(() => {
   return strokesBBox(ed.strokes)
 })
 
+// 변형 방식에 따라 보여 줄 핸들(크기 8방향 / 회전·왜곡 모서리 / 기울임 변 중앙)
 const resizeHandles = computed<{ dir: ResizeDir; x: number; y: number }[]>(() => {
   const b = activeBBox.value
   if (!b) return []
-  const mx = (b.minX + b.maxX) / 2
-  const my = (b.minY + b.maxY) / 2
-  // y축이 위쪽이므로 maxY가 화면 위쪽(north), minY가 화면 아래쪽(south)
-  return [
-    { dir: 'nw', x: b.minX, y: b.maxY },
-    { dir: 'n', x: mx, y: b.maxY },
-    { dir: 'ne', x: b.maxX, y: b.maxY },
-    { dir: 'e', x: b.maxX, y: my },
-    { dir: 'se', x: b.maxX, y: b.minY },
-    { dir: 's', x: mx, y: b.minY },
-    { dir: 'sw', x: b.minX, y: b.minY },
-    { dir: 'w', x: b.minX, y: my },
-  ]
+  return handleDirsFor(props.transformMode).map((dir) => {
+    const [x, y] = handlePoint(b, dir)
+    return { dir, x, y }
+  })
 })
 
 // 베지어 편집용 파싱 결과
@@ -191,7 +185,7 @@ const targetMedianPoints = computed<Pt[]>(() => {
 
 const {
   startMoveDrag,
-  startResizeDrag,
+  startHandleDrag,
   startBezierHandleDrag,
   onMedianVertexPointerDown,
   onMedianLinePointerDown,
@@ -200,6 +194,7 @@ const {
   locked: () => props.locked,
   selectedIndex: () => props.selectedIndex,
   activeBBox: () => activeBBox.value,
+  transformMode: () => props.transformMode,
   targetBezierPath: () => targetBezierPath.value,
   eventToFont,
   emit: {
@@ -415,7 +410,7 @@ function connectLabel(idx: number, total: number): string {
 
       <!-- ==== 도구별 편집 인터랙션 오버레이 (잠금 해제 시 활성화) ==== -->
 
-      <!-- A. 선택·변환(select) 바운딩 박스 및 8방향 크기 조절 핸들 -->
+      <!-- A. 선택·변환(select) 바운딩 박스 및 변형 방식별 핸들 -->
       <g v-if="tool === 'select' && activeBBox && !locked" class="overlay-transform">
         <rect
           :x="activeBBox.minX"
@@ -434,7 +429,9 @@ function connectLabel(idx: number, total: number): string {
           height="20"
           class="bbox-handle"
           :data-dir="h.dir"
-          @pointerdown="startResizeDrag(h.dir, $event)"
+          :data-mode="transformMode"
+          :rx="transformMode === 'rotate' ? 10 : 0"
+          @pointerdown="startHandleDrag(h.dir, $event)"
         />
       </g>
 

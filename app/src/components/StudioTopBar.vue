@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { ISSUE_LABELS } from '../lib/labels.ts'
+import type { TransformMode } from '../lib/transformMath.ts'
 import type { CharacterDetail, EditorTool, LayerRecord, Pt } from '../types.ts'
 
 defineProps<{
   selected: CharacterDetail | null
   tool: EditorTool
   scope: 'layer' | 'stroke'
+  transformMode: TransformMode
   editableLayer: LayerRecord | null
   locked: boolean
   hasFont: boolean
@@ -17,8 +19,16 @@ defineProps<{
   busy: boolean
 }>()
 
+const TRANSFORM_MODES: { mode: TransformMode; label: string; hint: string }[] = [
+  { mode: 'scale', label: '크기', hint: '8방향 핸들로 크기를 조절합니다 (Shift: 비율 유지)' },
+  { mode: 'rotate', label: '회전', hint: '모서리 핸들을 끌어 중심을 기준으로 회전합니다 (Shift: 15° 단위)' },
+  { mode: 'skew', label: '기울임', hint: '변 중앙 핸들을 끌어 반대편 변을 고정한 채 기울입니다' },
+  { mode: 'distort', label: '왜곡', hint: '모서리 하나만 옮겨 사다리꼴·비틀림 모양으로 맞춥니다' },
+]
+
 const emit = defineEmits<{
   changeScope: [scope: 'layer' | 'stroke']
+  changeTransformMode: [mode: TransformMode]
   alignFont: []
   reverseMedian: []
   resegment: []
@@ -106,6 +116,19 @@ function runMenuAction(fn: () => void) {
             @click="emit('changeScope', 'stroke')"
           >
             단일 획 변환
+          </button>
+        </div>
+        <div class="seg-control" role="group" aria-label="변형 방식">
+          <button
+            v-for="m in TRANSFORM_MODES"
+            :key="m.mode"
+            type="button"
+            :class="{ on: transformMode === m.mode }"
+            :aria-pressed="transformMode === m.mode"
+            :title="m.hint"
+            @click="emit('changeTransformMode', m.mode)"
+          >
+            {{ m.label }}
           </button>
         </div>
         <button

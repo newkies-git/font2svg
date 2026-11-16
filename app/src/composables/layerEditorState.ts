@@ -1,4 +1,5 @@
 import { computed, ref, type ComputedRef, type Ref } from 'vue'
+import type { TransformMode } from '../lib/transformMath.ts'
 import type { CharacterDetail, EditorTool, LayerRecord, Pt, StrokeRecord } from '../types.ts'
 
 export type LayerEditorState = {
@@ -9,6 +10,7 @@ export type LayerEditorState = {
   activeLayerId: Ref<string>
   activeTool: Ref<EditorTool>
   transformScope: Ref<'layer' | 'stroke'>
+  transformMode: Ref<TransformMode>
   selectedStrokeIndex: Ref<number>
   selectedMedianPointIndex: Ref<number | null>
   knifeFrom: Ref<Pt | null>
@@ -36,6 +38,7 @@ export function createLayerEditorState(
   const activeLayerId = ref<string>('strokes')
   const activeTool = ref<EditorTool>('select')
   const transformScope = ref<'layer' | 'stroke'>('layer')
+  const transformMode = ref<TransformMode>('scale')
   const selectedStrokeIndex = ref<number>(0)
   const selectedMedianPointIndex = ref<number | null>(null)
   const knifeFrom = ref<Pt | null>(null)
@@ -81,6 +84,7 @@ export function createLayerEditorState(
     activeLayerId,
     activeTool,
     transformScope,
+    transformMode,
     selectedStrokeIndex,
     selectedMedianPointIndex,
     knifeFrom,

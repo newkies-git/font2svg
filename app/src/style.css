@@ -1863,6 +1863,21 @@
   .bbox-handle[data-dir="w"] {
     cursor: ew-resize;
   }
+  .bbox-handle[data-mode="rotate"] {
+    cursor: grab;
+  }
+  .bbox-handle[data-mode="skew"][data-dir="n"],
+  .bbox-handle[data-mode="skew"][data-dir="s"] {
+    cursor: ew-resize;
+  }
+  .bbox-handle[data-mode="skew"][data-dir="e"],
+  .bbox-handle[data-mode="skew"][data-dir="w"] {
+    cursor: ns-resize;
+  }
+  .bbox-handle[data-mode="distort"] {
+    cursor: crosshair;
+  }
+
   .bbox-handle[data-dir="ne"],
   .bbox-handle[data-dir="sw"] {
     cursor: nesw-resize;

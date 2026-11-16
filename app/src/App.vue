@@ -45,6 +45,7 @@ const {
   isEditableLocked,
   activeTool,
   transformScope,
+  transformMode,
   selectedStrokeIndex,
   knifeFrom,
   connectPoints,
@@ -467,6 +468,7 @@ onBeforeUnmount(() => {
         :selected="selected"
         :tool="activeTool"
         :scope="transformScope"
+        :transform-mode="transformMode"
         :editable-layer="editableLayer"
         :locked="isEditableLocked"
         :has-font="Boolean(fontLayer?.paths.length)"
@@ -476,6 +478,7 @@ onBeforeUnmount(() => {
         :work-stroke-count="workStrokeCount"
         :busy="busy"
         @change-scope="transformScope = $event"
+        @change-transform-mode="transformMode = $event"
         @align-font="alignActiveToFont"
         @reverse-median="reverseActiveStrokeMedian()"
         @resegment="resegmentActiveByFont"
@@ -507,6 +510,7 @@ onBeforeUnmount(() => {
               :locked="isEditableLocked"
               :tool="activeTool"
               :scope="transformScope"
+              :transform-mode="transformMode"
               :selected-index="selectedStrokeIndex"
               :shown="shown"
               :reveal="reveal"
