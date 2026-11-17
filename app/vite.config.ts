@@ -1,41 +1,20 @@
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { ServerResponse } from 'node:http'
 import vue from '@vitejs/plugin-vue'
 import type { Plugin } from 'vite'
 import { defineConfig } from 'vite'
-import { HTTP_FORBIDDEN, isLoopbackAddress, readJsonBody } from './server/http.ts'
-import { handleApi } from './server/routes.ts'
+import { createApiMiddleware } from './server/apiMiddleware.ts'
 import { getWorkspace } from './server/workspace.ts'
 
 const appDir = path.dirname(fileURLToPath(import.meta.url))
 const rootDir = path.resolve(appDir, '..')
 
-function send(res: ServerResponse, status: number, body: unknown) {
-  res.statusCode = status
-  res.setHeader('Content-Type', 'application/json; charset=utf-8')
-  res.end(JSON.stringify(body))
-}
-
+// 개발 서버가 뜰 때 작업 공간(DB)을 열고 /api/*를 연결한다. 설정을 읽기만 하는 build에서는 DB를 열지 않는다.
 function workspaceApi(): Plugin {
-  const ws = getWorkspace(rootDir)
   return {
     name: 'hanja-workspace-api',
     configureServer(server) {
-      server.middlewares.use(async (req, res, next) => {
-        const url = new URL(req.url ?? '/', 'http://localhost')
-        if (!url.pathname.startsWith('/api/')) return next()
-        if (!isLoopbackAddress(req.socket.remoteAddress)) {
-          return send(res, HTTP_FORBIDDEN, { error: '이 API는 같은 컴퓨터에서만 쓸 수 있습니다.' })
-        }
-        const result = await handleApi(ws, {
-          method: req.method ?? 'GET',
-          pathname: url.pathname,
-          searchParams: url.searchParams,
-          readBody: () => readJsonBody(req),
-        })
-        send(res, result.status, result.body)
-      })
+      server.middlewares.use(createApiMiddleware(getWorkspace(rootDir)))
     },
   }
 }
