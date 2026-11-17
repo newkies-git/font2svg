@@ -2,6 +2,7 @@ import { ACJK_BATCH_LIMIT, FONT_BATCH_LIMIT, MISSING_FETCH_LIMIT } from '../shar
 import type { LayerMetaPatch } from '../shared/types.ts'
 import { HTTP_BAD_REQUEST, HTTP_NOT_FOUND, HTTP_OK } from './http.ts'
 import { sanitizeLayerStrokes } from './layerData.ts'
+import { parseLayerSavePayload } from './layerRequests.ts'
 import type { Workspace } from './workspace.ts'
 
 export type ApiResult = { status: number; body: unknown }
@@ -39,7 +40,8 @@ function limitOf(value: unknown, fallback: number): number {
   return Number.isFinite(limit) ? limit : fallback
 }
 
-const text = (value: unknown, fallback = ''): string => (typeof value === 'string' ? value : fallback)
+// 문자열이고 비어 있지 않을 때만 값으로 본다.
+const optionalText = (value: unknown): string | undefined => (typeof value === 'string' && value ? value : undefined)
 
 const ROUTES: Route[] = [
   { method: 'GET', pattern: 'characters', handler: ({ ws, searchParams }) => ws.listCharacters(searchParams.get('q') ?? '') },
@@ -99,7 +101,7 @@ const ROUTES: Route[] = [
   {
     method: 'POST',
     pattern: 'characters/:unicode/outline/generate',
-    handler: async ({ ws, params, body }) => ws.generateOutline(params.unicode, text((await body()).sourceLayerId) || undefined),
+    handler: async ({ ws, params, body }) => ws.generateOutline(params.unicode, optionalText((await body()).sourceLayerId)),
   },
   {
     method: 'POST',
@@ -125,7 +127,7 @@ const ROUTES: Route[] = [
     pattern: 'characters/:unicode/layers',
     handler: async ({ ws, params, body }) => {
       const payload = await body()
-      return ws.duplicateLayer(params.unicode, text(payload.sourceLayerId) || undefined, text(payload.name) || undefined)
+      return ws.duplicateLayer(params.unicode, optionalText(payload.sourceLayerId), optionalText(payload.name))
     },
   },
   { method: 'DELETE', pattern: 'characters/:unicode/layers/:layerId', handler: ({ ws, params }) => ws.deleteLayer(params.unicode, params.layerId) },
@@ -133,12 +135,7 @@ const ROUTES: Route[] = [
     method: 'POST',
     pattern: 'characters/:unicode/layers/:layerId/save',
     handler: async ({ ws, params, body }) => {
-      const payload = await body()
-      return ws.saveLayer(params.unicode, params.layerId, {
-        strokes: payload.strokes,
-        paths: payload.paths,
-        action: typeof payload.action === 'string' ? payload.action : undefined,
-      })
+      return ws.saveLayer(params.unicode, params.layerId, parseLayerSavePayload(await body()))
     },
   },
   { method: 'POST', pattern: 'characters/:unicode/layers/batch', handler: async ({ ws, params, body }) => ws.saveLayers(params.unicode, (await body()).layers) },

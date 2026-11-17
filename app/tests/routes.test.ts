@@ -130,3 +130,23 @@ test('획 저장 경로는 입력을 검증한 획만 작업 공간에 넘긴다
   assert.equal(bad.status, HTTP_BAD_REQUEST)
   assert.equal(calls.length, 1, '형식이 틀리면 작업 공간을 호출하지 않는다')
 })
+
+test('레이어 저장: action은 문자열일 때만 넘기고 나머지 내용은 그대로 넘긴다', async () => {
+  const { ws, calls } = fakeWorkspace()
+  await handleApi(ws, request('POST', '/api/characters/U%2B4E01/layers/custom-1/save', { strokes: [1], action: 7, extra: 'x' }))
+  assert.deepEqual(calls[0].args, ['U+4E01', 'custom-1', { strokes: [1], paths: undefined, action: undefined }])
+})
+
+test('복제와 윤곽 생성: 비었거나 문자열이 아닌 선택 값은 없는 값으로 넘긴다', async () => {
+  const { ws, calls } = fakeWorkspace()
+  await handleApi(ws, request('POST', '/api/characters/U%2B4E01/layers', { sourceLayerId: 'mmh', name: '사본' }))
+  await handleApi(ws, request('POST', '/api/characters/U%2B4E01/layers', { sourceLayerId: '', name: 5 }))
+  await handleApi(ws, request('POST', '/api/characters/U%2B4E01/outline/generate', { sourceLayerId: 'strokes' }))
+  await handleApi(ws, request('POST', '/api/characters/U%2B4E01/outline/generate', { sourceLayerId: null }))
+  assert.deepEqual(calls.map((call) => call.args), [
+    ['U+4E01', 'mmh', '사본'],
+    ['U+4E01', undefined, undefined],
+    ['U+4E01', 'strokes'],
+    ['U+4E01', undefined],
+  ])
+})

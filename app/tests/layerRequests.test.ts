@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { LAYER_BATCH_LIMIT } from '../shared/constants.ts'
-import { parseLayerBatch, parseResegmentMedians } from '../server/layerRequests.ts'
+import { parseLayerBatch, parseLayerSavePayload, parseResegmentMedians } from '../server/layerRequests.ts'
 
 test('레이어 일괄 저장은 id와 내용만 골라 정리한다', () => {
   const batch = parseLayerBatch([{ id: 'a', strokes: [1], paths: ['M0 0'], action: '편집', extra: 1 }, { id: 'b', action: 5 }])
@@ -30,4 +30,9 @@ test('재분할 중심선은 소수 첫째 자리로 반올림하고 점이 둘 
   assert.throws(() => parseResegmentMedians([[[0, 0], [1, 1]], [[1, 1]]]), /2획 중심선은 2점 이상/)
   assert.throws(() => parseResegmentMedians([]), /비어 있습니다/)
   assert.throws(() => parseResegmentMedians(null), /비어 있습니다/)
+})
+
+test('저장 요청 한 건은 내용만 골라 정리하고 action은 문자열일 때만 받는다', () => {
+  assert.deepEqual(parseLayerSavePayload({ strokes: [1], paths: ['M0 0'], action: '편집', extra: 1 } as never), { strokes: [1], paths: ['M0 0'], action: '편집' })
+  assert.deepEqual(parseLayerSavePayload({ action: 3 }), { strokes: undefined, paths: undefined, action: undefined })
 })
