@@ -1,15 +1,16 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { DB_BUSY_TIMEOUT_MS, DEFAULT_STROKE_WIDTH, LAYER_BATCH_LIMIT, LAYER_ID } from '../shared/constants.ts'
-import type { LayerMetaPatch, Pt } from '../shared/types.ts'
+import { DB_BUSY_TIMEOUT_MS, DEFAULT_STROKE_WIDTH, LAYER_ID } from '../shared/constants.ts'
+import type { LayerMetaPatch } from '../shared/types.ts'
 import { createCharacterCatalog } from './characterCatalog.ts'
 import { isReferenceKind } from '../shared/layerKind.ts'
 import { createCompileOutput } from './compileOutput.ts'
 import { transaction } from './db.ts'
 import { createFontApply } from './fontApply.ts'
-import { roundPoints, splitByContours } from './geometry.ts'
+import { splitByContours } from './geometry.ts'
 import { createIssues } from './issues.ts'
+import { parseLayerBatch, parseResegmentMedians, type LayerSavePayload } from './layerRequests.ts'
 import {
   assertLayerUnlocked,
   createCustomLayer,
@@ -115,8 +116,6 @@ export function createWorkspace(rootDir: string) {
     return getCharacter(unicode)
   }
 
-  type LayerSavePayload = { strokes?: unknown; paths?: unknown; action?: string }
-
   // 레이어 하나를 저장한다(응답은 만들지 않는다). 작업 획 레이어는 이력이 남는 획 저장을 쓴다.
   function writeLayer(unicode: string, char: string, layerId: string, payload: LayerSavePayload) {
     assertLayerUnlocked(db, char, layerId)
@@ -136,16 +135,7 @@ export function createWorkspace(rootDir: string) {
   // 여러 레이어를 한 트랜잭션으로 저장한다. 하나라도 실패하면 전부 되돌려 일부만 저장되지 않는다.
   function saveLayers(unicode: string, items: unknown) {
     const character = strokes.requireCharacter(unicode)
-    if (!Array.isArray(items) || items.length === 0) throw new Error('저장할 레이어 목록이 비어 있습니다.')
-    if (items.length > LAYER_BATCH_LIMIT) throw new Error(`한 번에 저장할 수 있는 레이어는 ${LAYER_BATCH_LIMIT}개까지입니다.`)
-    const ids = new Set<string>()
-    const batch = items.map((item, index) => {
-      const entry = (item ?? {}) as { id?: unknown } & LayerSavePayload
-      if (typeof entry.id !== 'string' || !entry.id) throw new Error(`${index + 1}번째 레이어에 id가 없습니다.`)
-      if (ids.has(entry.id)) throw new Error(`레이어 '${entry.id}'가 중복되었습니다.`)
-      ids.add(entry.id)
-      return { id: entry.id, payload: { strokes: entry.strokes, paths: entry.paths, action: typeof entry.action === 'string' ? entry.action : undefined } }
-    })
+    const batch = parseLayerBatch(items)
     transaction(db, () => {
       for (const { id, payload } of batch) writeLayer(unicode, String(character.char), id, payload)
     })
@@ -158,21 +148,29 @@ export function createWorkspace(rootDir: string) {
     return getCharacter(unicode)
   }
 
+  // 외부 수신을 지원하는 레이어별 수신 방법. retryMiss는 "없음"으로 저장된 이전 결과를 지우고 다시 받는다(네이버는 사전이 갱신될 수 있다).
+  const remoteLayers: Record<string, { retryMiss?: boolean; notFound: string; load: (unicode: string, char: string) => Promise<unknown> }> = {
+    [LAYER_ID.naver]: {
+      retryMiss: true,
+      notFound: '네이버 한자사전에서 이 글자의 획순을 찾지 못했습니다.',
+      load: (unicode, char) => references.loadSource(unicode, 'NAVER', naverUrl(char), () => fetchNaver(char)),
+    },
+    [LAYER_ID.acjk]: {
+      notFound: 'AnimCJK에서 이 글자 데이터를 찾지 못했습니다.',
+      load: (unicode, char) => references.loadSource(unicode, 'ACJK', ACJK_BLOB, () => references.fetchAcjk(char)),
+    },
+    [LAYER_ID.mmh]: {
+      notFound: 'Hanzi(MMH)에서 이 글자 데이터를 찾지 못했습니다.',
+      load: (unicode, char) => references.loadSource(unicode, 'MMH', hanjaUrl(char), () => fetchHanja(char)),
+    },
+  }
+
   async function fetchLayer(unicode: string, layerId: string) {
     const character = strokes.requireCharacter(unicode)
-    if (layerId === LAYER_ID.naver) {
-      db.prepare(`DELETE FROM reference_data WHERE unicode = ? AND source = 'NAVER' AND found = 0`).run(unicode)
-      const naver = await references.loadSource(unicode, 'NAVER', naverUrl(character.char), () => fetchNaver(character.char))
-      if (!naver) throw new Error('네이버 한자사전에서 이 글자의 획순을 찾지 못했습니다.')
-    } else if (layerId === LAYER_ID.acjk) {
-      const acjk = await references.loadSource(unicode, 'ACJK', ACJK_BLOB, () => references.fetchAcjk(character.char))
-      if (!acjk) throw new Error('AnimCJK에서 이 글자 데이터를 찾지 못했습니다.')
-    } else if (layerId === LAYER_ID.mmh) {
-      const mmh = await references.loadSource(unicode, 'MMH', hanjaUrl(character.char), () => fetchHanja(character.char))
-      if (!mmh) throw new Error('Hanzi(MMH)에서 이 글자 데이터를 찾지 못했습니다.')
-    } else {
-      throw new Error('외부 수신을 지원하지 않는 레이어입니다.')
-    }
+    const remote = Object.hasOwn(remoteLayers, layerId) ? remoteLayers[layerId] : undefined
+    if (!remote) throw new Error('외부 수신을 지원하지 않는 레이어입니다.')
+    if (remote.retryMiss) db.prepare(`DELETE FROM reference_data WHERE unicode = ? AND source = 'NAVER' AND found = 0`).run(unicode)
+    if (!(await remote.load(unicode, character.char))) throw new Error(remote.notFound)
     patchLayersMeta(db, character.char, [{ id: layerId, visible: true }])
     return getCharacter(unicode)
   }
@@ -219,11 +217,7 @@ export function createWorkspace(rootDir: string) {
     if (!detail) throw new Error('등록되지 않은 글자입니다.')
     const contours = fontContoursOf(detail)
     if (contours.length === 0) throw new Error('궁서체 윤곽이 없어 재분할할 수 없습니다.')
-    if (!Array.isArray(mediansRaw) || mediansRaw.length === 0) throw new Error('중심선 배열이 비어 있습니다.')
-    const medians = mediansRaw.map((line, index) => {
-      if (!Array.isArray(line) || line.length < 2) throw new Error(`${index + 1}획 중심선은 2점 이상이어야 합니다.`)
-      return roundPoints(line as Pt[])
-    })
+    const medians = parseResegmentMedians(mediansRaw)
     const split = splitByContours(contours, medians)
     if (!split) {
       throw new Error('중심선 기준 윤곽 자동 분할이 품질 검사를 통과하지 못했습니다. 중심선이 윤곽을 고르게 지나도록 조정해 보세요.')

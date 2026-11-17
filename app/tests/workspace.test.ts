@@ -71,6 +71,7 @@ test('외부 수신: 네이버에 있으면 레이어를 표시하고, 없거나
   assert.equal(layer.available, true)
   assert.equal(layer.visible, true)
   await assert.rejects(ws.fetchLayer('U+56DB', 'strokes'), /외부 수신을 지원하지 않는/)
+  await assert.rejects(ws.fetchLayer('U+56DB', 'constructor'), /외부 수신을 지원하지 않는/, '객체 기본 속성 이름이 수신 방법으로 잡히지 않는다')
   await assert.rejects(ws.fetchLayer('U+56DB', 'mmh'), /Hanzi\(MMH\)에서/)
   await assert.rejects(ws.fetchLayer('U+56DB', 'acjk'), /AnimCJK에서/)
 })
