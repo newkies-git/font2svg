@@ -186,6 +186,48 @@ export function buildCharacterLayers(db: DatabaseSync, params: LayerBuildParams)
   return records.sort((a, b) => a.z_index - b.z_index)
 }
 
+// 표시 설정으로 저장하는 값. visible·locked는 DB에 0/1로 들어간다.
+type LayerMeta = { kind: string; name: string; z_index: number; visible: number; opacity: number; locked: number; label_color: LayerColor }
+
+// 지금 적용 중인 표시 설정: 저장된 행이 있으면 그 값, 없으면 기본 레이어의 값.
+function currentLayerMeta(existing: CharacterLayerRow | undefined, builtin: BuiltinLayerSpec | undefined): LayerMeta | null {
+  if (existing) {
+    return {
+      kind: existing.kind,
+      name: existing.name,
+      z_index: existing.z_index,
+      visible: existing.visible,
+      opacity: existing.opacity,
+      locked: existing.locked,
+      label_color: existing.label_color as LayerColor,
+    }
+  }
+  if (!builtin) return null
+  return {
+    kind: builtin.kind,
+    name: builtin.name,
+    z_index: builtin.z_index,
+    visible: builtin.visible ? 1 : 0,
+    opacity: builtin.opacity,
+    locked: builtin.locked ? 1 : 0,
+    label_color: builtin.label_color,
+  }
+}
+
+// 요청(patch)에서 올바른 타입으로 온 값만 현재 설정에 덮어쓴다. 잘못된 값은 현재 값을 유지한다.
+export function mergeLayerMeta(current: LayerMeta, patch: LayerMetaPatch): LayerMeta {
+  const name = typeof patch.name === 'string' ? patch.name.trim() : ''
+  return {
+    kind: current.kind,
+    name: name || current.name,
+    z_index: typeof patch.z_index === 'number' && Number.isFinite(patch.z_index) ? Math.round(patch.z_index) : current.z_index,
+    visible: typeof patch.visible === 'boolean' ? Number(patch.visible) : current.visible,
+    opacity: patch.opacity !== undefined ? clampOpacity(patch.opacity, current.opacity) : current.opacity,
+    locked: typeof patch.locked === 'boolean' ? Number(patch.locked) : current.locked,
+    label_color: patch.label_color !== undefined ? normalizeColor(patch.label_color, current.label_color) : current.label_color,
+  }
+}
+
 export function patchLayersMeta(db: DatabaseSync, char: string, patches: LayerMetaPatch[]): void {
   const builtinById = new Map(BUILTIN_LAYERS.map((b) => [b.id, b]))
   const selectOne = db.prepare('SELECT * FROM character_layers WHERE char = ? AND layer_id = ?')
@@ -206,38 +248,19 @@ export function patchLayersMeta(db: DatabaseSync, char: string, patches: LayerMe
     for (const patch of patches) {
       if (!patch || typeof patch.id !== 'string') continue
       const existing = selectOne.get(char, patch.id) as CharacterLayerRow | undefined
-      const builtin = builtinById.get(patch.id)
-      if (!existing && !builtin) continue
-
-      const kind = existing?.kind ?? builtin!.kind
-      const baseName = existing?.name ?? builtin!.name
-      const nextName = typeof patch.name === 'string' && patch.name.trim() ? patch.name.trim() : baseName
-      const nextZ = typeof patch.z_index === 'number' && Number.isFinite(patch.z_index)
-        ? Math.round(patch.z_index)
-        : (existing?.z_index ?? builtin!.z_index)
-      const nextVisible = typeof patch.visible === 'boolean'
-        ? (patch.visible ? 1 : 0)
-        : (existing?.visible ?? (builtin!.visible ? 1 : 0))
-      const nextOpacity = patch.opacity !== undefined
-        ? clampOpacity(patch.opacity, existing?.opacity ?? builtin!.opacity)
-        : (existing?.opacity ?? builtin!.opacity)
-      const nextLocked = typeof patch.locked === 'boolean'
-        ? (patch.locked ? 1 : 0)
-        : (existing?.locked ?? (builtin!.locked ? 1 : 0))
-      const nextColor = patch.label_color !== undefined
-        ? normalizeColor(patch.label_color, (existing?.label_color as LayerColor) ?? builtin!.label_color)
-        : ((existing?.label_color as LayerColor) ?? builtin!.label_color)
-
+      const current = currentLayerMeta(existing, builtinById.get(patch.id))
+      if (!current) continue
+      const next = mergeLayerMeta(current, patch)
       upsert.run(
         char,
         patch.id,
-        kind,
-        nextName,
-        nextZ,
-        nextVisible,
-        nextOpacity,
-        nextLocked,
-        nextColor,
+        next.kind,
+        next.name,
+        next.z_index,
+        next.visible,
+        next.opacity,
+        next.locked,
+        next.label_color,
         existing?.strokes_json ?? null,
         existing?.paths_json ?? null,
         existing?.modified ?? 0,
