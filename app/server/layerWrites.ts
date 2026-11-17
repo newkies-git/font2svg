@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
 import { DEFAULT_CUSTOM_LAYER_OPACITY } from '../shared/constants.ts'
-import type { LayerColor, LayerKind, LayerMetaPatch, LayerRecord } from '../shared/types.ts'
+import type { LayerColor, LayerMetaPatch, LayerRecord } from '../shared/types.ts'
 import { transaction } from './db.ts'
 import { clampOpacity, normalizeColor, sanitizeLayerPaths, sanitizeLayerStrokes } from './layerData.ts'
 import { BUILTIN_LAYERS, type BuiltinLayerSpec } from './layers.ts'
@@ -110,9 +110,9 @@ export function saveNonStrokeLayerContent(
   const existing = db
     .prepare('SELECT * FROM character_layers WHERE char = ? AND layer_id = ?')
     .get(char, layerId) as CharacterLayerRow | undefined
-  if (!builtin && !existing) throw new Error('존재하지 않는 레이어입니다.')
-  const kind = (existing?.kind ?? builtin!.kind) as LayerKind
-  if (kind === 'MEDIANS' || kind === 'NUMBERS') {
+  const current = currentLayerMeta(existing, builtin)
+  if (!current) throw new Error('존재하지 않는 레이어입니다.')
+  if (current.kind === 'MEDIANS' || current.kind === 'NUMBERS') {
     throw new Error('오버레이 레이어는 직접 도형을 저장하지 않습니다.')
   }
 
@@ -134,13 +134,13 @@ export function saveNonStrokeLayerContent(
   `).run(
     char,
     layerId,
-    kind,
-    existing?.name ?? builtin!.name,
-    existing?.z_index ?? builtin!.z_index,
-    existing?.visible ?? (builtin!.visible ? 1 : 0),
-    existing?.opacity ?? builtin!.opacity,
-    existing?.locked ?? 0,
-    existing?.label_color ?? builtin!.label_color,
+    current.kind,
+    current.name,
+    current.z_index,
+    current.visible,
+    current.opacity,
+    current.locked,
+    current.label_color,
     strokesJson,
     pathsJson,
   )
