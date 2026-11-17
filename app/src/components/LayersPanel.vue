@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
-import { CANVAS, LAYER_ID } from '../../shared/constants.ts'
-import { isReferenceKind } from '../../shared/layerKind.ts'
+import { LAYER_ID } from '../../shared/constants.ts'
 import type { LayerColor, LayerRecord } from '../../shared/types.ts'
+import { canApplyToStrokes, canFetch, canReset, isSoloedLayer, layerCountText } from '../lib/layerPanel.ts'
+import LayerPropsStrip from './LayerPropsStrip.vue'
+import LayerThumb from './LayerThumb.vue'
 
 const props = defineProps<{
   layers: LayerRecord[]
@@ -29,26 +31,8 @@ const emit = defineEmits<{
   remove: []
 }>()
 
-const colorChoices: { id: LayerColor; label: string }[] = [
-  { id: 'ink', label: '먹색' },
-  { id: 'slate', label: '회청' },
-  { id: 'blue', label: '파랑' },
-  { id: 'violet', label: '보라' },
-  { id: 'green', label: '초록' },
-  { id: 'amber', label: '주황' },
-  { id: 'rose', label: '분홍' },
-  { id: 'none', label: '없음' },
-]
-
 const activeLayer = computed(() => props.layers.find((l) => l.id === props.activeLayerId) ?? null)
 const activeIndex = computed(() => props.layers.findIndex((l) => l.id === props.activeLayerId))
-const opacityPercent = computed(() => Math.round((activeLayer.value?.opacity ?? 1) * 100))
-
-function isSoloedLayer(layerId: string): boolean {
-  const target = props.layers.find((l) => l.id === layerId)
-  if (!target || !target.visible) return false
-  return !props.layers.some((l) => l.id !== layerId && l.visible)
-}
 
 const renamingId = ref<string | null>(null)
 const renameDraft = ref('')
@@ -98,33 +82,6 @@ function moveActiveStep(delta: -1 | 1) {
   const target = props.layers[idx + delta]
   if (cur && target) emit('reorder', cur.id, target.id)
 }
-
-function canFetch(layer: LayerRecord): boolean {
-  return !layer.available && isReferenceKind(layer.kind)
-}
-
-function canApplyToStrokes(layer: LayerRecord | null): boolean {
-  if (!layer) return false
-  return layer.id !== LAYER_ID.strokes && layer.strokes.length > 0
-}
-
-function canReset(layer: LayerRecord | null): boolean {
-  if (!layer) return false
-  if (layer.kind !== 'FONT' && layer.kind !== 'OUTLINE' && !isReferenceKind(layer.kind)) return false
-  return layer.modified || props.dirtyIds.has(layer.id)
-}
-
-function layerCountText(layer: LayerRecord): string {
-  if (layer.kind === 'MEDIANS' || layer.kind === 'NUMBERS') return ''
-  if (layer.strokes.length > 0) return `${layer.strokes.length}획`
-  if (layer.paths.length > 0) return `윤곽 ${layer.paths.length}`
-  return layer.kind === 'OUTLINE' ? '미생성' : '미수신'
-}
-
-function thumbPaths(layer: LayerRecord): string[] {
-  if (layer.strokes.length > 0) return layer.strokes.map((s) => s.outline_path).filter(Boolean)
-  return layer.paths
-}
 </script>
 
 <template>
@@ -138,37 +95,12 @@ function thumbPaths(layer: LayerRecord): string[] {
       </div>
     </div>
 
-    <!-- PhotoCraft Blend/Opacity + Label Color Strip -->
-    <div class="layer-props-strip" :class="{ disabled: !hasSelection || !activeLayer }">
-      <div class="opacity-row">
-        <label for="layer-opacity-range" class="prop-label">불투명도</label>
-        <input
-          id="layer-opacity-range"
-          type="range"
-          min="0"
-          max="100"
-          step="5"
-          :disabled="!hasSelection || !activeLayer"
-          :value="opacityPercent"
-          @input="activeLayer && emit('changeOpacity', activeLayer.id, Number(($event.target as HTMLInputElement).value) / 100)"
-        />
-        <span class="opacity-val">{{ opacityPercent }}%</span>
-      </div>
-
-      <div class="color-swatches" role="group" aria-label="레이어 색상 라벨">
-        <button
-          v-for="c in colorChoices"
-          :key="c.id"
-          type="button"
-          class="swatch-btn"
-          :class="{ selected: activeLayer?.label_color === c.id }"
-          :data-color="c.id"
-          :title="`색상 라벨: ${c.label}`"
-          :disabled="!hasSelection || !activeLayer"
-          @click="activeLayer && emit('changeColor', activeLayer.id, c.id)"
-        />
-      </div>
-    </div>
+    <LayerPropsStrip
+      :active-layer="activeLayer"
+      :has-selection="hasSelection"
+      @change-opacity="(layerId, opacity) => emit('changeOpacity', layerId, opacity)"
+      @change-color="(layerId, color) => emit('changeColor', layerId, color)"
+    />
 
     <!-- Layer Stack Rows -->
     <ul v-if="hasSelection" class="layer-list" role="listbox" aria-label="레이어 스택">
@@ -212,19 +144,7 @@ function thumbPaths(layer: LayerRecord): string[] {
           </svg>
         </button>
 
-        <!-- Thumbnail -->
-        <div class="layer-thumb" :data-color="layer.label_color" aria-hidden="true">
-          <svg v-if="thumbPaths(layer).length > 0" :viewBox="`0 0 ${CANVAS} ${CANVAS}`" class="thumb-svg">
-            <g :transform="`translate(0 ${CANVAS}) scale(1 -1)`">
-              <path v-for="(d, pIdx) in thumbPaths(layer)" :key="pIdx" :d="d" />
-            </g>
-          </svg>
-          <svg v-else-if="layer.kind === 'MEDIANS'" class="thumb-icon" viewBox="0 0 16 16" fill="none">
-            <path d="M3 12L7 6.5L10 9L13 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-          </svg>
-          <span v-else-if="layer.kind === 'NUMBERS'" class="thumb-glyph">12</span>
-          <span v-else class="thumb-glyph">—</span>
-        </div>
+        <LayerThumb :layer="layer" />
 
         <!-- Single-Line Layer Name + Meta -->
         <div class="layer-name-col" @dblclick.stop="startRename(layer)">
@@ -264,9 +184,9 @@ function thumbPaths(layer: LayerRecord): string[] {
           <button
             type="button"
             class="row-icon-btn solo"
-            :class="{ active: isSoloedLayer(layer.id) }"
-            :aria-pressed="isSoloedLayer(layer.id)"
-            :title="isSoloedLayer(layer.id) ? '단독 보기 해제' : `${layer.name} 단독 보기`"
+            :class="{ active: isSoloedLayer(layers, layer.id) }"
+            :aria-pressed="isSoloedLayer(layers, layer.id)"
+            :title="isSoloedLayer(layers, layer.id) ? '단독 보기 해제' : `${layer.name} 단독 보기`"
             @click="emit('solo', layer.id)"
           >
             S
@@ -326,7 +246,7 @@ function thumbPaths(layer: LayerRecord): string[] {
           궁서체 분할
         </button>
         <button
-          v-if="canReset(activeLayer)"
+          v-if="canReset(activeLayer, dirtyIds)"
           type="button"
           class="foot-chip"
           :disabled="busy"
