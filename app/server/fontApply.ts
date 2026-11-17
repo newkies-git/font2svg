@@ -2,6 +2,7 @@ import path from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
 import { FONT_BATCH_LIMIT } from '../shared/constants.ts'
 import type { Pt, StrokeRecord } from '../shared/types.ts'
+import { markCharacterEdited } from './characterWrites.ts'
 import { transaction } from './db.ts'
 import { loadFont, type FontFile } from './font.ts'
 import { roundPoints, splitByContours, type ImportedStrokes } from './geometry.ts'
@@ -77,7 +78,7 @@ export function createFontApply(
         start_cap_type: stroke.start_cap_type,
         end_cap_type: stroke.end_cap_type,
       })), ACTOR_FONT, ACTION_FONT, undefined, split.fontOutline)
-      db.prepare('UPDATE characters SET last_modified_by = ? WHERE unicode = ?').run(ACTOR_FONT, unicode)
+      markCharacterEdited(db, unicode, ACTOR_FONT)
     })
     return 'APPLIED'
   }

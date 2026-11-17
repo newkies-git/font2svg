@@ -2,6 +2,7 @@ import type { DatabaseSync } from 'node:sqlite'
 import { clampStrokeWidth } from '../shared/clamp.ts'
 import { DEFAULT_STROKE_WIDTH } from '../shared/constants.ts'
 import { parseAnimSvg } from './animSvg.ts'
+import { markCharacterEdited, setCharacterStrokeCount } from './characterWrites.ts'
 import { validate } from './compileOutput.ts'
 import { transaction } from './db.ts'
 import { ribbonPath, roundPoints, type ImportedStrokes } from './geometry.ts'
@@ -183,7 +184,7 @@ export function createStrokeStore(db: DatabaseSync) {
     transaction(db, () => {
       if (readStrokeRow(unicode)) {
         writeStrokes(unicode, items, ACTOR_USER, action)
-        db.prepare('UPDATE characters SET stroke_count = ?, last_modified_by = ? WHERE unicode = ?').run(items.length, ACTOR_USER, unicode)
+        setCharacterStrokeCount(db, unicode, items.length, ACTOR_USER)
       } else {
         // strokes에 없는 글자는 승인 전 작업 데이터를 고친다. 궁서체 윤곽만 있던 글자에 획이 생기면 수작업이다.
         const prev = readWorkingRow(unicode)
@@ -198,7 +199,7 @@ export function createStrokeStore(db: DatabaseSync) {
           INSERT INTO issues (char, reason, status) SELECT char, '수작업 편집', ? FROM characters WHERE unicode = ?
           ON CONFLICT(char) DO UPDATE SET status = excluded.status
         `).run(items.length > 0 ? 'DRAFT' : 'OPEN', unicode)
-        db.prepare('UPDATE characters SET last_modified_by = ? WHERE unicode = ?').run(ACTOR_USER, unicode)
+        markCharacterEdited(db, unicode, ACTOR_USER)
       }
     })
   }
@@ -224,7 +225,7 @@ export function createStrokeStore(db: DatabaseSync) {
     const fontOutline = parseStringArray(working.font_outline, '궁서체 윤곽')
     transaction(db, () => {
       writeStrokes(unicode, items, ACTOR_USER, ACTION_APPROVE, { source: working.source, url: working.source_url }, fontOutline.length > 0 ? fontOutline : undefined)
-      db.prepare('UPDATE characters SET stroke_count = ?, last_modified_by = ? WHERE unicode = ?').run(items.length, ACTOR_USER, unicode)
+      setCharacterStrokeCount(db, unicode, items.length, ACTOR_USER)
       db.prepare(`UPDATE issues SET status = 'APPROVED' WHERE char = ?`).run(character.char)
       db.prepare('DELETE FROM working_data WHERE char = ?').run(character.char)
     })
@@ -246,8 +247,7 @@ export function createStrokeStore(db: DatabaseSync) {
                            last_modified_at = CURRENT_TIMESTAMP, last_modified_by = ?
         WHERE char = ?
       `).run(target.radical, target.font_outline, target.stroke_outlines, target.median_line, target.origin, target.origin_url, ACTOR_USER, character.char)
-      db.prepare('UPDATE characters SET stroke_count = ?, last_modified_by = ? WHERE unicode = ?')
-        .run(parseStrokeOutlines(target.stroke_outlines).length, ACTOR_USER, unicode)
+      setCharacterStrokeCount(db, unicode, parseStrokeOutlines(target.stroke_outlines).length, ACTOR_USER)
     })
   }
 

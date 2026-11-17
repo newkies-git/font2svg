@@ -11,6 +11,7 @@ import {
 } from '../shared/constants.ts'
 import { isReferenceKind, type ReferenceKind } from '../shared/layerKind.ts'
 import type { Pt } from '../shared/types.ts'
+import { setCharacterStrokeCount } from './characterWrites.ts'
 import { transaction } from './db.ts'
 import type { FontFile } from './font.ts'
 import { roundPoints, splitByContours, type ImportedStrokes } from './geometry.ts'
@@ -161,8 +162,7 @@ export function createReferencePipeline(
     transaction(db, () => {
       strokes.writeStrokes(unicode, toItems(glyph, new Set(radical)), by, action, { source, url }, fontOutline)
       db.prepare('DELETE FROM working_data WHERE char = (SELECT char FROM characters WHERE unicode = ?)').run(unicode)
-      db.prepare('UPDATE characters SET stroke_count = ?, last_modified_by = ? WHERE unicode = ?')
-        .run(medians.length, by, unicode)
+      setCharacterStrokeCount(db, unicode, medians.length, by)
       issues.clearIssue(unicode)
     })
   }

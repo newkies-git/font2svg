@@ -4,6 +4,7 @@ import type { DatabaseSync } from 'node:sqlite'
 import { CANVAS } from '../shared/constants.ts'
 import type { CompiledGlyphJson, Pt } from '../shared/types.ts'
 import { animatedSvg } from './animSvg.ts'
+import { markCharacterEdited } from './characterWrites.ts'
 import { ACTOR_USER } from './model.ts'
 import { KANGXI_RADICALS } from './radicals.ts'
 
@@ -86,7 +87,7 @@ export function createCompileOutput(
       strokeWidths: strokes.map((stroke) => stroke.stroke_width),
       source: { outline: String(detail.origin_url || detail.origin), medians: String(detail.origin_url || detail.origin) },
     }
-    db.prepare('UPDATE characters SET last_modified_by = ? WHERE unicode = ?').run(ACTOR_USER, unicode)
+    markCharacterEdited(db, unicode, ACTOR_USER)
     clearIssue(unicode)
     const file = charFile(compiledDir, String(detail.char))
     fs.writeFileSync(file, `${JSON.stringify(compiled)}\n`)
