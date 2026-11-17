@@ -1,4 +1,5 @@
-import { DEFAULT_STROKE_WIDTH, MIN_STROKE_WIDTH, OPACITY_STEPS, STROKE_WIDTH_CAP_RATIO } from '../shared/constants.ts'
+import { clampStrokeWidth, snapOpacity } from '../shared/clamp.ts'
+import { DEFAULT_STROKE_WIDTH } from '../shared/constants.ts'
 import { warnOnce } from '../shared/log.ts'
 import { isValidSvgPath } from '../shared/paths.ts'
 import type { LayerColor, Pt, StrokeRecord } from '../shared/types.ts'
@@ -9,15 +10,10 @@ import { normalizeCap } from './model.ts'
 const FONT_HASH_RE = /^[0-9a-f]+$/
 const VALID_COLORS = new Set<LayerColor>(['none', 'ink', 'slate', 'blue', 'violet', 'green', 'amber', 'rose'])
 
-function clampStrokeWidth(value: number): number {
-  const max = Math.round(DEFAULT_STROKE_WIDTH * STROKE_WIDTH_CAP_RATIO)
-  return Math.max(MIN_STROKE_WIDTH, Math.min(max, Math.round(value) || DEFAULT_STROKE_WIDTH))
-}
-
 export function clampOpacity(value: unknown, fallback: number): number {
   const n = Number(value)
   if (!Number.isFinite(n)) return fallback
-  return Math.max(0, Math.min(1, Math.round(n * OPACITY_STEPS) / OPACITY_STEPS))
+  return snapOpacity(n)
 }
 
 export function normalizeColor(value: unknown, fallback: LayerColor): LayerColor {

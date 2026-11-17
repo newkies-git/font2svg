@@ -1,5 +1,5 @@
 import { AREA_FLATNESS, CANVAS, DEFAULT_STROKE_WIDTH, OUTLINE_CONTOUR_MATCH_RATIO, OUTLINE_CONTOUR_TOLERANCE, MAX_COVERED_AREA_RATIO, MEDIAN_BBOX_INSET, MEDIAN_MIN_POINTS, MEDIAN_SIMPLIFY_TOLERANCE, MIN_COVERED_AREA_RATIO, MIN_STROKE_AREA_RATIO } from '../shared/constants.ts'
-import { flattenContours, polygonArea, round1, type Pt as Point } from '../shared/paths.ts'
+import { flattenContours, pointSegmentDistance, polygonArea, round1, type Pt as Point } from '../shared/paths.ts'
 import { computeOptimalStrokeWidth, recoverMedian, segmentOutlineByMedians, simplifyPolyline } from '../shared/strokeCut.ts'
 import type { Pt } from '../shared/types.ts'
 
@@ -61,14 +61,6 @@ export function contourLoopsOf(contours: string[]): Point[][][] {
   return contours.map((d) => flattenContours(d, AREA_FLATNESS))
 }
 
-function distanceToSegment(p: Point, a: Point, b: Point): number {
-  const dx = b.x - a.x
-  const dy = b.y - a.y
-  const lengthSq = dx * dx + dy * dy
-  const t = lengthSq === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / lengthSq))
-  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy))
-}
-
 // 획 윤곽의 꼭짓점이 어느 궁서체 윤곽선 위에 놓였는지로 소속 윤곽을 구한다.
 export function contourIndicesOfOutline(outline: string, contourLoops: Point[][][]): number[] {
   const vertices = flattenContours(outline, AREA_FLATNESS).flat()
@@ -76,7 +68,7 @@ export function contourIndicesOfOutline(outline: string, contourLoops: Point[][]
   const result: number[] = []
   contourLoops.forEach((loops, index) => {
     const hits = vertices.filter((vertex) => loops.some((loop) => loop.some((from, i) => (
-      distanceToSegment(vertex, from, loop[(i + 1) % loop.length]) <= OUTLINE_CONTOUR_TOLERANCE
+      pointSegmentDistance(vertex, from, loop[(i + 1) % loop.length]) <= OUTLINE_CONTOUR_TOLERANCE
     )))).length
     if (hits / vertices.length >= OUTLINE_CONTOUR_MATCH_RATIO) result.push(index)
   })

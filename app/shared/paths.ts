@@ -120,6 +120,16 @@ export function polygonArea(points: Pt[]): number {
   return twice / 2
 }
 
+// 점 p에서 선분 ab까지의 최단 거리. 선분이 한 점이면 그 점까지의 거리다.
+export function pointSegmentDistance(p: Pt, a: Pt, b: Pt): number {
+  const dx = b.x - a.x
+  const dy = b.y - a.y
+  const len2 = dx * dx + dy * dy
+  if (len2 === 0) return Math.hypot(p.x - a.x, p.y - a.y)
+  const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2))
+  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy))
+}
+
 export function flattenContours(d: string, flatness: number): Pt[][] {
   const contours: Pt[][] = []
   let current: Pt[] = []

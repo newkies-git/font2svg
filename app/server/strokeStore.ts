@@ -1,5 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite'
-import { DEFAULT_STROKE_WIDTH, MIN_STROKE_WIDTH, STROKE_WIDTH_CAP_RATIO } from '../shared/constants.ts'
+import { clampStrokeWidth } from '../shared/clamp.ts'
+import { DEFAULT_STROKE_WIDTH } from '../shared/constants.ts'
 import { parseAnimSvg } from './animSvg.ts'
 import { validate } from './compileOutput.ts'
 import { transaction } from './db.ts'
@@ -43,10 +44,6 @@ export function toItems(strokes: ImportedStrokes, radical: Set<number>): StrokeI
   }))
 }
 
-function clampWidth(value: number): number {
-  return Math.max(MIN_STROKE_WIDTH, Math.min(Math.round(DEFAULT_STROKE_WIDTH * STROKE_WIDTH_CAP_RATIO), Math.round(value) || DEFAULT_STROKE_WIDTH))
-}
-
 export function itemsOf(row: { stroke_outlines: string; median_line: string }): StrokeItem[] {
   const outlines = parseStrokeOutlines(row.stroke_outlines)
   const lines = new Map(parseMedianLines(row.median_line).map((line) => [line.order, line]))
@@ -73,7 +70,7 @@ export function sanitizedItems(strokes: StrokeItem[]): StrokeItem[] {
     return {
       outline_path: stroke.outline_path,
       median_points: roundPoints(stroke.median_points),
-      stroke_width: clampWidth(stroke.stroke_width),
+      stroke_width: clampStrokeWidth(stroke.stroke_width),
       is_radical: stroke.is_radical ? 1 : 0,
       start_cap_type: normalizeCap(stroke.start_cap_type),
       end_cap_type: normalizeCap(stroke.end_cap_type),

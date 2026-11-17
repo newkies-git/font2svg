@@ -9,15 +9,6 @@ const MIN_LOOP_AREA = 20
 const CHAIKIN_NEAR = 0.75
 const CHAIKIN_FAR = 0.25
 
-export function pointSegmentDistance(p: Pt, a: Pt, b: Pt): number {
-  const dx = b.x - a.x
-  const dy = b.y - a.y
-  const len2 = dx * dx + dy * dy
-  if (len2 === 0) return Math.hypot(p.x - a.x, p.y - a.y)
-  const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2))
-  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy))
-}
-
 export function traceLoops(mask: Uint8Array, w: number, h: number): Pt[][] {
   const used = new Uint8Array(w * h)
   const loops: { pts: Pt[]; area: number }[] = []

@@ -1,7 +1,6 @@
 import { DEFAULT_STROKE_WIDTH, MIN_STROKE_WIDTH, STROKE_WIDTH_CAP_RATIO, STROKE_WIDTH_MARGIN } from '../constants.ts'
 import { warnOnce } from '../log.ts'
-import { flattenContours, samplePath, type Pt } from '../paths.ts'
-import { pointSegmentDistance } from './contour.ts'
+import { flattenContours, pointSegmentDistance, samplePath, type Pt } from '../paths.ts'
 import { count, GeometryError, pixelToFont, rasterize, type Raster } from './raster.ts'
 import { buildSegments, degrees, pruneSpurs, skelNeighbors, zhangSuen, type Segment } from './skeleton.ts'
 

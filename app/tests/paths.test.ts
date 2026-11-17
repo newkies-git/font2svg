@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { flattenContours, parseCommands, polygonArea } from '../shared/paths.ts'
+import { flattenContours, parseCommands, pointSegmentDistance, polygonArea } from '../shared/paths.ts'
 import { pathArea, pathBounds, pathCovers } from './helpers.ts'
 
 test('polygonArea: 감는 방향에 따라 부호가 다르고 크기는 같다', () => {
@@ -24,18 +24,11 @@ test('경로 기하 도우미: 구멍은 면적에서 빼고, 점 포함은 구�
 // 곡선을 편 꼭짓점들이 실제 곡선에서 얼마나 벗어나는지: 곡선을 촘촘히 찍어 가장 가까운 선분까지의 최대 거리
 function maxDeviation(curve: (t: number) => { x: number; y: number }, polyline: { x: number; y: number }[]): number {
   const SAMPLES = 2000
-  const distanceToSegment = (p: { x: number; y: number }, a: { x: number; y: number }, b: { x: number; y: number }) => {
-    const dx = b.x - a.x
-    const dy = b.y - a.y
-    const lengthSq = dx * dx + dy * dy
-    const t = lengthSq === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / lengthSq))
-    return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy))
-  }
   let worst = 0
   for (let i = 0; i <= SAMPLES; i++) {
     const point = curve(i / SAMPLES)
     let nearest = Infinity
-    for (let k = 0; k + 1 < polyline.length; k++) nearest = Math.min(nearest, distanceToSegment(point, polyline[k], polyline[k + 1]))
+    for (let k = 0; k + 1 < polyline.length; k++) nearest = Math.min(nearest, pointSegmentDistance(point, polyline[k], polyline[k + 1]))
     worst = Math.max(worst, nearest)
   }
   return worst
@@ -107,4 +100,13 @@ test('parseCommands: H·V는 한 좌표만 바꾸고, M 뒤 좌표 쌍은 선이
   assert.deepEqual(parseCommands('M0 0 L1'), [{ op: 'M', n: [0, 0] }])
   assert.deepEqual(parseCommands('M0 0 Q1 2 3'), [{ op: 'M', n: [0, 0] }])
   assert.deepEqual(parseCommands('M1,2L3,4 5,6Z'), [{ op: 'M', n: [1, 2] }, { op: 'L', n: [3, 4] }, { op: 'L', n: [5, 6] }, { op: 'Z', n: [] }])
+})
+
+test('점-선분 거리: 선분 안쪽 수선, 양 끝 밖, 길이 0인 선분', () => {
+  const a = { x: 0, y: 0 }
+  const b = { x: 10, y: 0 }
+  assert.equal(pointSegmentDistance({ x: 5, y: 3 }, a, b), 3, '수선의 발이 선분 안')
+  assert.equal(pointSegmentDistance({ x: -4, y: 3 }, a, b), 5, '시작점 바깥은 시작점까지')
+  assert.equal(pointSegmentDistance({ x: 13, y: 4 }, a, b), 5, '끝점 바깥은 끝점까지')
+  assert.equal(pointSegmentDistance({ x: 3, y: 4 }, a, a), 5, '선분이 한 점이면 그 점까지')
 })

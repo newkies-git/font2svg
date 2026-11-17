@@ -1,7 +1,8 @@
 import { warnOnce } from '../../shared/log.ts'
 import { apiRequest, characterUrl } from '../lib/api.ts'
 import type { Ref } from 'vue'
-import { META_PATCH_DEBOUNCE_MS, OPACITY_STEPS } from '../../shared/constants.ts'
+import { snapOpacity } from '../../shared/clamp.ts'
+import { META_PATCH_DEBOUNCE_MS } from '../../shared/constants.ts'
 import { isReferenceKind } from '../../shared/layerKind.ts'
 import type { LayerColor, LayerMetaPatch, LayerRecord } from '../../shared/types.ts'
 import type { LayerEditorState } from './layerEditorState.ts'
@@ -139,7 +140,7 @@ export function useLayerAppearance(
   function setLayerOpacity(layerId: string, opacity: number) {
     const target = layers.value.find((l) => l.id === layerId)
     if (!target) return
-    const clamped = Math.max(0, Math.min(1, Math.round(opacity * OPACITY_STEPS) / OPACITY_STEPS))
+    const clamped = snapOpacity(opacity)
     target.opacity = clamped
     queueMetaPatch({ id: target.id, opacity: clamped })
   }

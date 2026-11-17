@@ -1,6 +1,7 @@
 import { DEFAULT_STROKE_WIDTH } from '../constants.ts'
 import { flattenContours, type Pt } from '../paths.ts'
-import { outlineOfLoop, pointSegmentDistance, traceLoops } from './contour.ts'
+import { pointSegmentDistance } from '../paths.ts'
+import { outlineOfLoop, traceLoops } from './contour.ts'
 import { computeOptimalStrokeWidth } from './median.ts'
 import { OUTLINE_FLATNESS, pixelToFont, rasterize } from './raster.ts'
 
