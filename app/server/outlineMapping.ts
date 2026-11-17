@@ -2,7 +2,8 @@ import type { DatabaseSync } from 'node:sqlite'
 import { DEFAULT_STROKE_WIDTH, LAYER_ID } from '../shared/constants.ts'
 import type { LayerRecord, StrokeRecord } from '../shared/types.ts'
 import { contourIndicesOfOutline, contourLoopsOf, ribbonPath, splitOutlinePieces } from './geometry.ts'
-import { fontContoursOf, fontFingerprint, patchLayersMeta, saveNonStrokeLayerContent } from './layers.ts'
+import { fontContoursOf, fontFingerprint } from './layers.ts'
+import { patchLayersMeta, saveNonStrokeLayerContent } from './layerWrites.ts'
 
 const OUTLINE_LAYER_ID = LAYER_ID.outline
 const SOURCE_FALLBACK_IDS = [LAYER_ID.naver, LAYER_ID.mmh, LAYER_ID.acjk] as const

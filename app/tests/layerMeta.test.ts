@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { LayerMetaPatch } from '../shared/types.ts'
-import { mergeLayerMeta } from '../server/layers.ts'
+import { mergeLayerMeta } from '../server/layerWrites.ts'
 
 const current = { kind: 'MMH', name: '기존', z_index: 3, visible: 1, opacity: 0.6, locked: 0, label_color: 'violet' } as const
 const merge = (patch: Partial<LayerMetaPatch>) => mergeLayerMeta({ ...current }, { id: 'x', ...patch } as LayerMetaPatch)

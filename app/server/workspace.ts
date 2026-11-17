@@ -11,15 +11,15 @@ import { createFontApply } from './fontApply.ts'
 import { splitByContours } from './geometry.ts'
 import { createIssues } from './issues.ts'
 import { parseLayerBatch, parseResegmentMedians, type LayerSavePayload } from './layerRequests.ts'
+import { fontContoursOf } from './layers.ts'
 import {
   assertLayerUnlocked,
   createCustomLayer,
   deleteCustomLayer,
-  fontContoursOf,
   patchLayersMeta,
   resetNonStrokeLayer,
   saveNonStrokeLayerContent,
-} from './layers.ts'
+} from './layerWrites.ts'
 import { sanitizeLayerStrokes } from './layerData.ts'
 import { ORIGIN_MANUAL, type StrokeItem } from './model.ts'
 import { createOutlineMapping } from './outlineMapping.ts'
