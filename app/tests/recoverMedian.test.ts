@@ -58,3 +58,39 @@ test('획 폭 계산: 중심선이 2점 미만이거나 윤곽이 비면 기본�
   const huge = computeOptimalStrokeWidth(rectPath(0, 0, 5000, 5000), [{ x: 0, y: 0 }, { x: 1, y: 1 }], 100)
   assert.equal(huge, Math.floor(100 * STROKE_WIDTH_CAP_RATIO), '상한은 기본 폭의 배율')
 })
+
+// 사각 고리(口): 바깥 윤곽과 반대 방향으로 그린 안쪽 윤곽. 골격이 끝점·갈림 없이 닫힌 고리가 된다.
+const RING_OUTER = { min: 200, max: 800 }
+const RING_INNER = { min: 280, max: 720 }
+const RING = `M${RING_OUTER.min} ${RING_OUTER.min} L${RING_OUTER.max} ${RING_OUTER.min} L${RING_OUTER.max} ${RING_OUTER.max} L${RING_OUTER.min} ${RING_OUTER.max} Z `
+  + `M${RING_INNER.min} ${RING_INNER.min} L${RING_INNER.min} ${RING_INNER.max} L${RING_INNER.max} ${RING_INNER.max} L${RING_INNER.max} ${RING_INNER.min} Z`
+const RING_TOLERANCE = 6
+
+const insideRingBand = (point: { x: number; y: number }) => {
+  const inOuter = point.x >= RING_OUTER.min - RING_TOLERANCE && point.x <= RING_OUTER.max + RING_TOLERANCE && point.y >= RING_OUTER.min - RING_TOLERANCE && point.y <= RING_OUTER.max + RING_TOLERANCE
+  const inHole = point.x > RING_INNER.min + RING_TOLERANCE && point.x < RING_INNER.max - RING_TOLERANCE && point.y > RING_INNER.min + RING_TOLERANCE && point.y < RING_INNER.max - RING_TOLERANCE
+  return inOuter && !inHole
+}
+
+test('끝점이 없는 닫힌 고리(口)도 고리를 따라가는 중심선을 만든다', () => {
+  const { median, width, radii } = recoverMedian(RING)
+  assert.ok(median.length > 100, `점 ${median.length}개`)
+  assert.ok(median.every(insideRingBand), '중심선이 고리 띠 안쪽을 지난다')
+  assert.equal(radii.length, median.length)
+  assert.ok(width >= MIN_STROKE_WIDTH)
+  const corners = [[RING_OUTER.min, RING_OUTER.min], [RING_OUTER.max, RING_OUTER.min], [RING_OUTER.max, RING_OUTER.max], [RING_OUTER.min, RING_OUTER.max]]
+  const visited = corners.filter(([cx, cy]) => median.some((point) => Math.hypot(point.x - cx, point.y - cy) < (RING_INNER.min - RING_OUTER.min) * 2))
+  assert.ok(visited.length >= 3, `고리의 모서리 ${visited.length}곳을 지난다`)
+})
+
+test('떨어진 점이 섞인 고리는 점이 아니라 고리를 중심선으로 잡는다', () => {
+  const { median } = recoverMedian(`${rectPath(0, 900, 40, 940)} ${RING}`)
+  assert.ok(median.length > 100)
+  assert.ok(median.every(insideRingBand))
+})
+
+test('떨어진 점이 섞인 한 줄 획은 점이 아니라 줄 전체를 잡는다(한 가닥 안에서 방향을 맞춘다)', () => {
+  const { median } = recoverMedian(`${rectPath(0, 900, 40, 940)} ${rectPath(100, 400, 900, 460)}`)
+  assert.ok(first(median).x < last(median).x, '가로 획은 왼쪽에서 오른쪽')
+  assert.ok(Math.hypot(last(median).x - first(median).x, last(median).y - first(median).y) > 700)
+})
