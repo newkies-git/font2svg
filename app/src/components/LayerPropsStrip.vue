@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { LayerColor, LayerRecord } from '../../shared/types.ts'
+import { fromPercent, OPACITY_SLIDER, toPercent } from '../lib/percent.ts'
 
 const props = defineProps<{
   activeLayer: LayerRecord | null
@@ -23,7 +24,7 @@ const colorChoices: { id: LayerColor; label: string }[] = [
   { id: 'none', label: '없음' },
 ]
 
-const opacityPercent = computed(() => Math.round((props.activeLayer?.opacity ?? 1) * 100))
+const opacityPercent = computed(() => toPercent(props.activeLayer?.opacity ?? 1))
 </script>
 
 <template>
@@ -34,12 +35,12 @@ const opacityPercent = computed(() => Math.round((props.activeLayer?.opacity ?? 
       <input
         id="layer-opacity-range"
         type="range"
-        min="0"
-        max="100"
-        step="5"
+:min="OPACITY_SLIDER.min"
+        :max="OPACITY_SLIDER.max"
+        :step="OPACITY_SLIDER.step"
         :disabled="!hasSelection || !activeLayer"
         :value="opacityPercent"
-        @input="activeLayer && emit('changeOpacity', activeLayer.id, Number(($event.target as HTMLInputElement).value) / 100)"
+        @input="activeLayer && emit('changeOpacity', activeLayer.id, fromPercent(Number(($event.target as HTMLInputElement).value)))"
       />
       <span class="opacity-val">{{ opacityPercent }}%</span>
     </div>

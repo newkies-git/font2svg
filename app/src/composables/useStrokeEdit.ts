@@ -3,6 +3,7 @@ import { LAYER_ID } from '../../shared/constants.ts'
 import type { Ref } from 'vue'
 import { autoFitLayer, autoFitStroke } from '../lib/autoFit.ts'
 import { boxAlignTransform, moveItem, withCap, withMedianPoints } from '../lib/strokeOps.ts'
+import { toPercent } from '../lib/percent.ts'
 import {
   mergeTwoStrokes,
   pathsBBox,
@@ -227,7 +228,7 @@ export function useStrokeEdit(
     const result = single
       ? autoFitStroke(target.strokes, fl.paths, selectedStrokeIndex.value)
       : autoFitLayer(target.strokes, fl.paths)
-    const percent = (value: number) => `${Math.round(value * 100)}%`
+    const percent = (value: number) => `${toPercent(value)}%`
     const subject = single ? `${selectedStrokeIndex.value + 1}획` : `'${target.name}' 레이어`
     if (result.after <= result.before) {
       message.value = `${subject}: 더 나은 위치를 찾지 못했습니다 (겹침 ${percent(result.before)}). 수동으로 대략 맞춘 뒤 다시 시도하세요.`

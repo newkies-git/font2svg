@@ -3,6 +3,9 @@ import type { CharacterSummary, StatusFilter, ThemeMode } from '../../shared/typ
 import CharacterList from './CharacterList.vue'
 import ThemeSwitch from './ThemeSwitch.vue'
 
+// IME로 글자를 조합하는 동안 keydown이 갖는 keyCode. isComposing을 지원하지 않는 환경에서 Enter를 걸러 낸다.
+const IME_PROCESSING_KEY_CODE = 229
+
 defineProps<{
   themeMode: ThemeMode
   counts: Record<StatusFilter, number>
@@ -30,7 +33,7 @@ const tabs: { filter: StatusFilter; label: string; countClass?: string }[] = [
 
 function onSearchKeyDown(event: KeyboardEvent) {
   if (event.key === 'Enter') {
-    if (event.isComposing || event.keyCode === 229) return
+    if (event.isComposing || event.keyCode === IME_PROCESSING_KEY_CODE) return
     event.preventDefault()
     emit('submit')
   }

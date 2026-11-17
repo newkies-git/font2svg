@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { polylinePoints } from '../../lib/canvasGeometry.ts'
+import { MEDIAN_END_RADIUS, MEDIAN_MID_RADIUS } from '../../lib/canvasMetrics.ts'
 import type { Pt } from '../../../shared/types.ts'
 
 defineProps<{ points: Pt[] }>()
@@ -30,7 +31,7 @@ const emit = defineEmits<{
       @contextmenu.prevent="emit('deleteVertex', ptIdx)"
     >
       <circle
-        :r="ptIdx === 0 || ptIdx === points.length - 1 ? 14 : 11"
+        :r="ptIdx === 0 || ptIdx === points.length - 1 ? MEDIAN_END_RADIUS : MEDIAN_MID_RADIUS"
         class="median-vertex"
         :class="{
           'is-start': ptIdx === 0,

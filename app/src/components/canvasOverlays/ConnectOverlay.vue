@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { connectLabel, polylinePoints } from '../../lib/canvasGeometry.ts'
+import { CONNECT_END_RADIUS, CONNECT_MID_RADIUS } from '../../lib/canvasMetrics.ts'
 import type { Pt } from '../../../shared/types.ts'
 import { MIN_CONNECT_POINTS } from '../../composables/useConnectTool.ts'
 
@@ -27,7 +28,7 @@ defineProps<{ connectPoints: Pt[] }>()
       :transform="`translate(${pt[0]} ${pt[1]})`"
     >
       <circle
-        :r="ptIdx === 0 || ptIdx === connectPoints.length - 1 ? 13 : 10"
+        :r="ptIdx === 0 || ptIdx === connectPoints.length - 1 ? CONNECT_END_RADIUS : CONNECT_MID_RADIUS"
         class="connect-vertex"
         :class="{
           'is-start': ptIdx === 0,

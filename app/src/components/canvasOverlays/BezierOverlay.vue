@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { bezierNodesOf } from '../../lib/canvasGeometry.ts'
 import type { HandleRef } from '../../lib/vectorEdit.ts'
+import { BEZIER_ANCHOR_SIZE, BEZIER_CONTROL_RADIUS } from '../../lib/canvasMetrics.ts'
 
 defineProps<{ nodes: ReturnType<typeof bezierNodesOf> }>()
 
@@ -23,17 +24,17 @@ const emit = defineEmits<{ startDrag: [handle: HandleRef, event: PointerEvent] }
       :key="`bc-${cIdx}`"
       :cx="ctrl.x"
       :cy="ctrl.y"
-      r="9"
+      :r="BEZIER_CONTROL_RADIUS"
       class="bezier-ctrl-pt"
       @pointerdown="emit('startDrag', { kind: ctrl.kind, segIndex: ctrl.segIndex }, $event)"
     />
     <rect
       v-for="(anc, aIdx) in nodes.anchors"
       :key="`ba-${aIdx}`"
-      :x="anc.x - 8"
-      :y="anc.y - 8"
-      width="16"
-      height="16"
+      :x="anc.x - BEZIER_ANCHOR_SIZE / 2"
+      :y="anc.y - BEZIER_ANCHOR_SIZE / 2"
+      :width="BEZIER_ANCHOR_SIZE"
+      :height="BEZIER_ANCHOR_SIZE"
       class="bezier-anchor-pt"
       @pointerdown="emit('startDrag', { kind: 'anchor', segIndex: anc.segIndex }, $event)"
     />

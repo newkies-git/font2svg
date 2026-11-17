@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { LOUPE_CROSS_HALF, LOUPE_FOCUS_RADIUS } from '../../lib/canvasMetrics.ts'
 type LoupeLens = { cx: number; cy: number; sx: number; sy: number }
 
 defineProps<{
@@ -25,17 +26,17 @@ defineProps<{
     </g>
     <circle :cx="lens.cx" :cy="lens.cy" :r="radius" class="loupe-ring" />
     <line
-      :x1="lens.cx - 10"
+      :x1="lens.cx - LOUPE_CROSS_HALF"
       :y1="lens.cy"
-      :x2="lens.cx + 10"
+      :x2="lens.cx + LOUPE_CROSS_HALF"
       :y2="lens.cy"
       class="loupe-cross"
     />
     <line
       :x1="lens.cx"
-      :y1="lens.cy - 10"
+      :y1="lens.cy - LOUPE_CROSS_HALF"
       :x2="lens.cx"
-      :y2="lens.cy + 10"
+      :y2="lens.cy + LOUPE_CROSS_HALF"
       class="loupe-cross"
     />
     <line
@@ -45,6 +46,6 @@ defineProps<{
       :x2="lens.cx"
       :y2="lens.cy"
     />
-    <circle :cx="lens.sx" :cy="lens.sy" r="3" class="loupe-focus" />
+    <circle :cx="lens.sx" :cy="lens.sy" :r="LOUPE_FOCUS_RADIUS" class="loupe-focus" />
   </g>
 </template>
