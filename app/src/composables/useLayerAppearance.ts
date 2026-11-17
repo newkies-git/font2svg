@@ -22,7 +22,8 @@ export function useLayerAppearance(
     pendingMeta.set(patch.id, { ...prev, ...patch })
     if (metaTimer) clearTimeout(metaTimer)
     metaTimer = setTimeout(() => {
-      flushMetaPatches()
+      // flushMetaPatches는 저장 실패를 스스로 경고로 남기므로 기다리지 않는다.
+      void flushMetaPatches()
     }, META_PATCH_DEBOUNCE_MS)
   }
 

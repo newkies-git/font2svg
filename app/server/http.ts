@@ -4,6 +4,7 @@ export const HTTP_OK = 200
 export const HTTP_BAD_REQUEST = 400
 export const HTTP_FORBIDDEN = 403
 export const HTTP_NOT_FOUND = 404
+export const HTTP_INTERNAL_ERROR = 500
 
 // DB를 쓰는 API는 같은 컴퓨터에서 온 요청만 받는다(vite --host로 열어도 외부에서는 쓸 수 없게).
 const LOOPBACK_ADDRESSES: ReadonlySet<string> = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1'])

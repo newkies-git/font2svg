@@ -1,11 +1,14 @@
 import assert from 'node:assert/strict'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import test from 'node:test'
+import test, { beforeEach, mock } from 'node:test'
 import { createApiMiddleware } from '../server/apiMiddleware.ts'
-import { HTTP_BAD_REQUEST, HTTP_FORBIDDEN, HTTP_OK } from '../server/http.ts'
+import { HTTP_BAD_REQUEST, HTTP_FORBIDDEN, HTTP_INTERNAL_ERROR, HTTP_OK } from '../server/http.ts'
 import type { Workspace } from '../server/workspace.ts'
 
 const LOOPBACK = '127.0.0.1'
+
+// 예상하지 못한 오류 경로는 경고를 남기므로 시험 출력에서 막는다.
+beforeEach(() => mock.method(console, 'warn', () => {}))
 
 // 호출 기록만 남기는 가짜 작업 공간
 function fakeWorkspace() {
@@ -31,18 +34,26 @@ function fakeRequest(method: string, url: string, options: { address?: string | 
 
 function fakeResponse() {
   const sent = { status: 0, headers: {} as Record<string, string>, body: '' }
+  let finish: () => void = () => {}
+  const finished = new Promise<void>((resolve) => { finish = resolve })
   const res = {
+    headersSent: false,
     set statusCode(value: number) { sent.status = value },
     setHeader: (name: string, value: string) => { sent.headers[name] = value },
-    end: (text: string) => { sent.body = text },
+    end: (text?: string) => { sent.body = text ?? ''; finish() },
   } as unknown as ServerResponse
-  return { res, sent }
+  return { res, sent, finished, finish }
 }
 
-async function run(ws: Workspace, req: IncomingMessage) {
-  const { res, sent } = fakeResponse()
+// 미들웨어는 Promise를 돌려주지 않으므로, 응답이 끝나거나 next가 불릴 때까지 기다린다.
+async function run(ws: Workspace, req: IncomingMessage, next: () => void = () => {}) {
+  const { res, sent, finished, finish } = fakeResponse()
   let nextCalled = false
-  await createApiMiddleware(ws)(req, res, () => { nextCalled = true })
+  createApiMiddleware(ws)(req, res, () => {
+    nextCalled = true
+    try { next() } finally { finish() }
+  })
+  await finished
   return { sent, nextCalled }
 }
 
@@ -94,4 +105,31 @@ test('JSON 본문은 읽어서 핸들러에 넘기고, 잘못된 JSON은 400으�
   assert.equal(failed.sent.status, HTTP_BAD_REQUEST)
   assert.deepEqual(JSON.parse(failed.sent.body), { error: 'JSON 형식이 아닙니다.' })
   assert.equal(bad.calls.length, 0)
+})
+
+test('읽을 수 없는 주소는 처리되지 않은 오류 대신 400으로 알린다', async () => {
+  const { ws, calls } = fakeWorkspace()
+  for (const url of ['//', '//host:bad']) {
+    const { sent, nextCalled } = await run(ws, fakeRequest('GET', url))
+    assert.equal(sent.status, HTTP_BAD_REQUEST, url)
+    assert.deepEqual(JSON.parse(sent.body), { error: '요청 주소가 올바르지 않습니다.' })
+    assert.equal(nextCalled, false)
+  }
+  assert.equal(calls.length, 0)
+})
+
+test('예상하지 못한 오류는 500으로 알리고 처리되지 않은 rejection이 되지 않는다', async () => {
+  const unhandled: unknown[] = []
+  const onUnhandled = (reason: unknown) => { unhandled.push(reason) }
+  process.on('unhandledRejection', onUnhandled)
+  try {
+    const { ws } = fakeWorkspace()
+    const { sent } = await run(ws, fakeRequest('GET', '/index.html'), () => { throw new Error('다음 미들웨어 실패') })
+    assert.equal(sent.status, HTTP_INTERNAL_ERROR)
+    assert.deepEqual(JSON.parse(sent.body), { error: '요청을 처리하지 못했습니다.' })
+    await new Promise((resolve) => setImmediate(resolve))
+    assert.deepEqual(unhandled, [])
+  } finally {
+    process.off('unhandledRejection', onUnhandled)
+  }
 })

@@ -45,7 +45,8 @@ export function useCharacterList(error: Ref<string>) {
 
   function clearSearch() {
     query.value = ''
-    loadList()
+    // loadList는 오류를 스스로 error에 담으므로 기다리지 않는다.
+    void loadList()
   }
 
   onBeforeUnmount(() => {
