@@ -5,7 +5,7 @@ import type { LayerRecord, Pt, StrokeRecord } from '../../shared/types.ts'
 import type { LayerEditorState } from './layerEditorState.ts'
 
 // 윤곽 연결에 필요한 최소 점 수(시작·중간·끝)
-const MIN_CONNECT_POINTS = 3
+export const MIN_CONNECT_POINTS = 3
 // 앞 점과 이 거리(저장 좌표) 안쪽이면 같은 점을 다시 찍은 것으로 보고 무시한다.
 const MIN_CONNECT_POINT_GAP = 1.5
 const CONNECT_KEYS_HINT = 'Enter 연결 · ⌫ 되돌리기 · Esc 취소'
