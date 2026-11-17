@@ -47,6 +47,40 @@ function clampWidth(value: number): number {
   return Math.max(MIN_STROKE_WIDTH, Math.min(Math.round(DEFAULT_STROKE_WIDTH * STROKE_WIDTH_CAP_RATIO), Math.round(value) || DEFAULT_STROKE_WIDTH))
 }
 
+export function itemsOf(row: { stroke_outlines: string; median_line: string }): StrokeItem[] {
+  const outlines = parseStrokeOutlines(row.stroke_outlines)
+  const lines = new Map(parseMedianLines(row.median_line).map((line) => [line.order, line]))
+  return outlines.map((outline): StrokeItem => {
+    const line = lines.get(outline.order)
+    if (!line) throw new Error(`${outline.order}획의 중심선 데이터가 없습니다.`)
+    return {
+      outline_path: outline.path,
+      median_points: line.points,
+      stroke_width: line.width,
+      is_radical: outline.radical ? 1 : 0,
+      start_cap_type: normalizeCap(line.start_cap),
+      end_cap_type: normalizeCap(line.end_cap),
+    }
+  })
+}
+
+// 화면에서 받은 획을 저장 형식으로 정리한다. 중심선이 없는 획은 거부하고, 폭·끝 모양·부수 표시는 허용 범위로 맞춘다.
+export function sanitizedItems(strokes: StrokeItem[]): StrokeItem[] {
+  return strokes.map((stroke, index): StrokeItem => {
+    if (!Array.isArray(stroke.median_points) || stroke.median_points.length < 2) {
+      throw new Error(`${index + 1}획의 중심선이 없습니다.`)
+    }
+    return {
+      outline_path: stroke.outline_path,
+      median_points: roundPoints(stroke.median_points),
+      stroke_width: clampWidth(stroke.stroke_width),
+      is_radical: stroke.is_radical ? 1 : 0,
+      start_cap_type: normalizeCap(stroke.start_cap_type),
+      end_cap_type: normalizeCap(stroke.end_cap_type),
+    }
+  })
+}
+
 export function createStrokeStore(db: DatabaseSync) {
   function requireCharacter(unicode: string): { char: string } {
     const character = db.prepare('SELECT char FROM characters WHERE unicode = ?').get(unicode) as { char: string } | undefined
@@ -73,23 +107,6 @@ export function createStrokeStore(db: DatabaseSync) {
       SELECT w.source, w.source_url, w.font_outline, w.stroke_outlines, w.median_line
       FROM working_data w JOIN characters c ON c.char = w.char WHERE c.unicode = ?
     `).get(unicode) as { source: string; source_url: string | null; font_outline: string; stroke_outlines: string; median_line: string } | undefined
-  }
-
-  function itemsOf(row: { stroke_outlines: string; median_line: string }): StrokeItem[] {
-    const outlines = parseStrokeOutlines(row.stroke_outlines)
-    const lines = new Map(parseMedianLines(row.median_line).map((line) => [line.order, line]))
-    return outlines.map((outline): StrokeItem => {
-      const line = lines.get(outline.order)
-      if (!line) throw new Error(`${outline.order}획의 중심선 데이터가 없습니다.`)
-      return {
-        outline_path: outline.path,
-        median_points: line.points,
-        stroke_width: line.width,
-        is_radical: outline.radical ? 1 : 0,
-        start_cap_type: normalizeCap(line.start_cap),
-        end_cap_type: normalizeCap(line.end_cap),
-      }
-    })
   }
 
   function readStrokes(unicode: string): StrokeItem[] {
@@ -165,19 +182,7 @@ export function createStrokeStore(db: DatabaseSync) {
 
   function updateStrokes(unicode: string, strokes: StrokeItem[], action: string) {
     requireCharacter(unicode)
-    const items = strokes.map((stroke, index): StrokeItem => {
-      if (!Array.isArray(stroke.median_points) || stroke.median_points.length < 2) {
-        throw new Error(`${index + 1}획의 중심선이 없습니다.`)
-      }
-      return {
-        outline_path: stroke.outline_path,
-        median_points: roundPoints(stroke.median_points),
-        stroke_width: clampWidth(stroke.stroke_width),
-        is_radical: stroke.is_radical ? 1 : 0,
-        start_cap_type: normalizeCap(stroke.start_cap_type),
-        end_cap_type: normalizeCap(stroke.end_cap_type),
-      }
-    })
+    const items = sanitizedItems(strokes)
     transaction(db, () => {
       if (readStrokeRow(unicode)) {
         writeStrokes(unicode, items, ACTOR_USER, action)
