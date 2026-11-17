@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import CharacterSidebar from './components/CharacterSidebar.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
 import LayerCanvas from './components/LayerCanvas.vue'
@@ -12,10 +12,11 @@ import { useCharacterActions } from './composables/useCharacterActions.ts'
 import { useCharacterList } from './composables/useCharacterList.ts'
 import { useLayerWorkspace } from './composables/useLayerWorkspace.ts'
 import { usePlayback } from './composables/usePlayback.ts'
+import { useStrokeStepper } from './composables/useStrokeStepper.ts'
+import { useStudioShortcuts } from './composables/useStudioShortcuts.ts'
 import { useStudioState } from './composables/useStudioState.ts'
 import { useTheme } from './composables/useTheme.ts'
 import { LAYER_ID } from '../shared/constants.ts'
-import { resolveKeyAction } from './lib/keymap.ts'
 import type { CapType } from '../shared/types.ts'
 
 const studio = useStudioState()
@@ -125,94 +126,31 @@ function unlockActiveLayers() {
   if (editableLayer.value && !editableLayer.value.visible) toggleLayerVisible(editableLayer.value.id, false)
 }
 
-function onGlobalKeyDown(event: KeyboardEvent) {
-  const tag = (event.target as HTMLElement)?.tagName
-  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
-  if (!selected.value) return
+const { first: firstStroke, prev: prevStroke, next: nextStroke } = useStrokeStepper(() => workStrokeCount.value, shown, reveal, selectedStrokeIndex)
 
-  const action = resolveKeyAction({
-    key: event.key,
-    meta: event.metaKey,
-    ctrl: event.ctrlKey,
-    alt: event.altKey,
-    shift: event.shiftKey,
-    activeTool: activeTool.value,
-    canNudge: !isEditableLocked.value,
-  })
-  if (!action) return
-  // Esc는 브라우저 기본 동작(전체화면 해제 등)을 그대로 둔다.
-  if (action.type !== 'cancel') event.preventDefault()
-
-  switch (action.type) {
-    case 'save':
-      if (!busy.value) void saveAllDirtyLayers()
-      break
-    case 'undo':
-      if (!busy.value && selected.value.history_count > 0) void undo()
-      break
-    case 'tool':
-      selectTool(action.tool)
-      break
-    case 'commitConnect':
-      commitConnectOutline()
-      break
-    case 'undoConnectPoint':
-      undoConnectPoint()
-      break
-    case 'nudge':
-      applyAffineToActive((x, y) => [x + action.dx, y + action.dy], 1)
-      break
-    case 'stepPrev':
-      if (shown.value > 1) {
-        shown.value -= 1
-        reveal.value = 1
-        selectedStrokeIndex.value = Math.max(0, shown.value - 1)
-      }
-      break
-    case 'stepNext':
-      if (shown.value < workStrokeCount.value) {
-        shown.value += 1
-        reveal.value = 1
-        selectedStrokeIndex.value = shown.value - 1
-      }
-      break
-    case 'togglePlay':
-      if (playing.value) stop()
-      else play()
-      break
-    case 'cancel':
-      if (knifePoints.value.length > 0) cancelKnife()
-      else if (connectPoints.value.length) cancelConnect()
-      break
-  }
-}
-
-function firstStroke() {
-  shown.value = 1
-  reveal.value = 1
-  selectedStrokeIndex.value = 0
-}
-
-function prevStroke() {
-  shown.value = Math.max(1, shown.value - 1)
-  reveal.value = 1
-  selectedStrokeIndex.value = Math.max(0, shown.value - 1)
-}
-
-function nextStroke() {
-  shown.value = Math.min(workStrokeCount.value, shown.value + 1)
-  reveal.value = 1
-  selectedStrokeIndex.value = Math.max(0, shown.value - 1)
-}
-
-onMounted(() => {
-  window.addEventListener('keydown', onGlobalKeyDown)
-  loadList()
+useStudioShortcuts({
+  selected,
+  busy,
+  activeTool,
+  isEditableLocked,
+  playing,
+  hasKnifePoints: () => knifePoints.value.length > 0,
+  hasConnectPoints: () => connectPoints.value.length > 0,
+  save: () => void saveAllDirtyLayers(),
+  undo: () => void undo(),
+  selectTool,
+  commitConnect: commitConnectOutline,
+  undoConnectPoint,
+  nudge: (move) => applyAffineToActive(move, 1),
+  stepPrev: prevStroke,
+  stepNext: nextStroke,
+  play,
+  stop,
+  cancelKnife,
+  cancelConnect,
 })
 
-onBeforeUnmount(() => {
-  window.removeEventListener('keydown', onGlobalKeyDown)
-})
+onMounted(loadList)
 </script>
 
 <template>
