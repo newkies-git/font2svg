@@ -67,110 +67,122 @@ export function fontContoursOf(detail: { layers: LayerRecord[]; font_outline: st
   return fontLayer && fontLayer.paths.length > 0 ? fontLayer.paths : detail.font_outline
 }
 
-export function buildCharacterLayers(
+type LayerBuildParams = {
+  unicode: string
+  char: string
+  working: boolean
+  historyCount: number
+  originUrl: string | null
+  strokes: StrokeRecord[]
+  fontContours: string[]
+}
+
+// 저장된 행(있으면)과 기본값을 합쳐 모든 레이어가 공통으로 갖는 표시 속성을 만든다.
+function builtinBase(spec: BuiltinLayerSpec, saved: CharacterLayerRow | undefined, working: boolean) {
+  const defaultName = spec.id === LAYER_ID.strokes && working ? '작업 획 (초안)' : spec.name
+  return {
+    id: spec.id,
+    kind: spec.kind,
+    name: saved?.name ? saved.name : defaultName,
+    z_index: saved ? saved.z_index : spec.z_index,
+    visible: saved ? Boolean(saved.visible) : spec.visible,
+    opacity: saved ? clampOpacity(saved.opacity, spec.opacity) : spec.opacity,
+    locked: saved ? Boolean(saved.locked) : spec.locked,
+    label_color: saved ? normalizeColor(saved.label_color, spec.label_color) : spec.label_color,
+  }
+}
+
+// 기본 레이어 하나의 기록. fontPaths는 화면에 보이는 궁서체 윤곽(편집됐으면 그 윤곽)으로, OUTLINE 매핑이 가리키는 기준이다.
+function builtinLayerRecord(
   db: DatabaseSync,
-  params: {
-    unicode: string
-    char: string
-    working: boolean
-    historyCount: number
-    originUrl: string | null
-    strokes: StrokeRecord[]
-    fontContours: string[]
-  },
-): LayerRecord[] {
+  spec: BuiltinLayerSpec,
+  saved: CharacterLayerRow | undefined,
+  params: LayerBuildParams,
+  fontPaths: string[],
+): LayerRecord {
+  // 종류마다 달라지는 내용(획·윤곽·가용 여부 등)만 아래에서 채운다.
+  const base = builtinBase(spec, saved, params.working)
+  const modified = Boolean(saved?.modified)
+
+  if (spec.kind === 'FONT') {
+    const customPaths = saved?.modified && saved.paths_json ? parseStoredPaths(saved.paths_json) : null
+    const customStrokes = saved?.modified && saved.strokes_json ? parseStoredStrokes(saved.strokes_json) : []
+    const paths = customPaths ?? params.fontContours
+    return { ...base, available: paths.length > 0 || customStrokes.length > 0, modified, source_url: null, strokes: customStrokes, paths }
+  }
+
+  if (spec.kind === 'OUTLINE') {
+    const strokes = saved?.strokes_json ? parseStoredStrokes(saved.strokes_json) : []
+    const currentHash = fontFingerprint(fontPaths)
+    return {
+      ...base,
+      available: strokes.length > 0,
+      modified,
+      source_url: null,
+      strokes,
+      paths: [],
+      stale: strokes.some((stroke) => stroke.font_hash !== undefined && stroke.font_hash !== currentHash),
+    }
+  }
+
+  if (isReferenceKind(spec.kind)) {
+    const ref = readCachedRefStrokes(db, params.unicode, spec.kind)
+    const customStrokes = saved?.modified && saved.strokes_json ? parseStoredStrokes(saved.strokes_json) : null
+    const strokes = customStrokes ?? ref.strokes
+    return { ...base, available: strokes.length > 0, modified, source_url: ref.url, strokes, paths: [] }
+  }
+
+  if (spec.kind === 'STROKES') {
+    return {
+      ...base,
+      available: params.strokes.length > 0,
+      modified: params.historyCount > 0 || params.working,
+      source_url: params.originUrl,
+      strokes: params.strokes,
+      paths: [],
+    }
+  }
+
+  // MEDIANS / NUMBERS 오버레이 레이어
+  return { ...base, available: true, modified: false, source_url: null, strokes: [], paths: [] }
+}
+
+function customLayerRecord(saved: CharacterLayerRow): LayerRecord {
+  const strokes = saved.strokes_json ? parseStoredStrokes(saved.strokes_json) : []
+  const paths = saved.paths_json ? parseStoredPaths(saved.paths_json) : []
+  return {
+    id: saved.layer_id,
+    kind: 'CUSTOM',
+    name: saved.name,
+    z_index: saved.z_index,
+    visible: Boolean(saved.visible),
+    opacity: clampOpacity(saved.opacity, DEFAULT_CUSTOM_LAYER_OPACITY),
+    locked: Boolean(saved.locked),
+    label_color: normalizeColor(saved.label_color, 'none'),
+    available: strokes.length > 0 || paths.length > 0,
+    modified: Boolean(saved.modified),
+    source_url: null,
+    strokes,
+    paths,
+  }
+}
+
+export function buildCharacterLayers(db: DatabaseSync, params: LayerBuildParams): LayerRecord[] {
   const savedRows = db
     .prepare('SELECT * FROM character_layers WHERE char = ? ORDER BY z_index ASC')
     .all(params.char) as CharacterLayerRow[]
   const savedById = new Map(savedRows.map((row) => [row.layer_id, row]))
 
   const records: LayerRecord[] = []
-  // 화면에 보이는 궁서체 윤곽(편집됐으면 그 윤곽). OUTLINE 매핑이 가리키는 기준이다.
   let fontPaths = params.fontContours
-
   for (const spec of BUILTIN_LAYERS) {
-    const saved = savedById.get(spec.id)
-    const visible = saved ? Boolean(saved.visible) : spec.visible
-    const opacity = saved ? clampOpacity(saved.opacity, spec.opacity) : spec.opacity
-    const locked = saved ? Boolean(saved.locked) : spec.locked
-    const zIndex = saved ? saved.z_index : spec.z_index
-    const labelColor = saved ? normalizeColor(saved.label_color, spec.label_color) : spec.label_color
-    const defaultName = spec.id === LAYER_ID.strokes && params.working ? '작업 획 (초안)' : spec.name
-    const name = saved?.name ? saved.name : defaultName
-
-    // 모든 레이어가 공통으로 갖는 표시 속성. 종류마다 달라지는 내용(획·윤곽·가용 여부 등)만 아래에서 채운다.
-    const base = { id: spec.id, kind: spec.kind, name, z_index: zIndex, visible, opacity, locked, label_color: labelColor }
-    const modified = Boolean(saved?.modified)
-
-    if (spec.kind === 'FONT') {
-      const customPaths = saved?.modified && saved.paths_json ? parseStoredPaths(saved.paths_json) : null
-      const customStrokes = saved?.modified && saved.strokes_json ? parseStoredStrokes(saved.strokes_json) : []
-      const paths = customPaths ?? params.fontContours
-      fontPaths = paths
-      records.push({ ...base, available: paths.length > 0 || customStrokes.length > 0, modified, source_url: null, strokes: customStrokes, paths })
-      continue
-    }
-
-    if (spec.kind === 'OUTLINE') {
-      const strokes = saved?.strokes_json ? parseStoredStrokes(saved.strokes_json) : []
-      const currentHash = fontFingerprint(fontPaths)
-      records.push({
-        ...base,
-        available: strokes.length > 0,
-        modified,
-        source_url: null,
-        strokes,
-        paths: [],
-        stale: strokes.some((stroke) => stroke.font_hash !== undefined && stroke.font_hash !== currentHash),
-      })
-      continue
-    }
-
-    if (isReferenceKind(spec.kind)) {
-      const ref = readCachedRefStrokes(db, params.unicode, spec.kind)
-      const customStrokes = saved?.modified && saved.strokes_json ? parseStoredStrokes(saved.strokes_json) : null
-      const strokes = customStrokes ?? ref.strokes
-      records.push({ ...base, available: strokes.length > 0, modified, source_url: ref.url, strokes, paths: [] })
-      continue
-    }
-
-    if (spec.kind === 'STROKES') {
-      records.push({
-        ...base,
-        available: params.strokes.length > 0,
-        modified: params.historyCount > 0 || params.working,
-        source_url: params.originUrl,
-        strokes: params.strokes,
-        paths: [],
-      })
-      continue
-    }
-
-    // MEDIANS / NUMBERS 오버레이 레이어
-    records.push({ ...base, available: true, modified: false, source_url: null, strokes: [], paths: [] })
+    const record = builtinLayerRecord(db, spec, savedById.get(spec.id), params, fontPaths)
+    if (record.kind === 'FONT') fontPaths = record.paths
+    records.push(record)
   }
-
   for (const saved of savedRows) {
-    if (saved.kind !== 'CUSTOM') continue
-    const strokes = saved.strokes_json ? parseStoredStrokes(saved.strokes_json) : []
-    const paths = saved.paths_json ? parseStoredPaths(saved.paths_json) : []
-    records.push({
-      id: saved.layer_id,
-      kind: 'CUSTOM',
-      name: saved.name,
-      z_index: saved.z_index,
-      visible: Boolean(saved.visible),
-      opacity: clampOpacity(saved.opacity, DEFAULT_CUSTOM_LAYER_OPACITY),
-      locked: Boolean(saved.locked),
-      label_color: normalizeColor(saved.label_color, 'none'),
-      available: strokes.length > 0 || paths.length > 0,
-      modified: Boolean(saved.modified),
-      source_url: null,
-      strokes,
-      paths,
-    })
+    if (saved.kind === 'CUSTOM') records.push(customLayerRecord(saved))
   }
-
   return records.sort((a, b) => a.z_index - b.z_index)
 }
 
