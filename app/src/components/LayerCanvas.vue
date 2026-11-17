@@ -7,8 +7,15 @@ import { useCanvasLoupe } from '../composables/useCanvasLoupe.ts'
 import { BADGE_RADIUS, CANVAS } from '../../shared/constants.ts'
 import { handleDirsFor, handlePoint, type TransformMode } from '../lib/transformMath.ts'
 import { pathsBBox, strokesBBox, type BBox } from '../lib/vectorEdit.ts'
-import { bezierNodesOf, connectLabel, polylinePoints, strokeDash } from '../lib/canvasGeometry.ts'
+import { bezierNodesOf, polylinePoints, strokeDash } from '../lib/canvasGeometry.ts'
 import type { CharacterDetail, EditorTool, LayerRecord, Pt, StrokeRecord } from '../../shared/types.ts'
+import { MIN_CONNECT_POINTS } from '../composables/useConnectTool.ts'
+import BezierOverlay from './canvasOverlays/BezierOverlay.vue'
+import ConnectOverlay from './canvasOverlays/ConnectOverlay.vue'
+import KnifeOverlay from './canvasOverlays/KnifeOverlay.vue'
+import LoupeOverlay from './canvasOverlays/LoupeOverlay.vue'
+import MedianEditOverlay from './canvasOverlays/MedianEditOverlay.vue'
+import TransformOverlay from './canvasOverlays/TransformOverlay.vue'
 
 const props = defineProps<{
   selected: CharacterDetail | null
@@ -160,7 +167,7 @@ function onCanvasPointerDown(event: PointerEvent) {
 function onCanvasDblClick(event: MouseEvent) {
   if (props.tool !== 'connect' || props.locked) return
   event.preventDefault()
-  if (props.connectPoints.length >= 3) emit('commitConnect')
+  if (props.connectPoints.length >= MIN_CONNECT_POINTS) emit('commitConnect')
 }
 
 function onShapePointerDown(layerId: string, index: number, event: PointerEvent) {
@@ -342,183 +349,39 @@ function onShapePointerDown(layerId: string, index: number, event: PointerEvent)
       <!-- ==== 도구별 편집 인터랙션 오버레이 (잠금 해제 시 활성화) ==== -->
 
       <!-- A. 선택·변환(select) 바운딩 박스 및 변형 방식별 핸들 -->
-      <g v-if="tool === 'select' && activeBBox && !locked" class="overlay-transform">
-        <rect
-          :x="activeBBox.minX"
-          :y="activeBBox.minY"
-          :width="Math.max(1, activeBBox.maxX - activeBBox.minX)"
-          :height="Math.max(1, activeBBox.maxY - activeBBox.minY)"
-          class="bbox-move-zone"
-          @pointerdown.stop="startMoveDrag"
-        />
-        <rect
-          v-for="h in resizeHandles"
-          :key="h.dir"
-          :x="h.x - 10"
-          :y="h.y - 10"
-          width="20"
-          height="20"
-          class="bbox-handle"
-          :data-dir="h.dir"
-          :data-mode="transformMode"
-          :rx="transformMode === 'rotate' ? 10 : 0"
-          @pointerdown="startHandleDrag(h.dir, $event)"
-        />
-      </g>
+      <TransformOverlay
+        v-if="tool === 'select' && activeBBox && !locked"
+        :bbox="activeBBox"
+        :handles="resizeHandles"
+        :transform-mode="transformMode"
+        @start-move="startMoveDrag"
+        @start-handle="startHandleDrag"
+      />
 
       <!-- B. 베지어 정점 직접 편집(bezier) 핸들 -->
-      <g v-if="tool === 'bezier' && !locked && targetBezierPath" class="overlay-bezier">
-        <line
-          v-for="(ln, lIdx) in bezierNodes.lines"
-          :key="`bl-${lIdx}`"
-          :x1="ln.x1"
-          :y1="ln.y1"
-          :x2="ln.x2"
-          :y2="ln.y2"
-          class="bezier-arm"
-        />
-        <circle
-          v-for="(ctrl, cIdx) in bezierNodes.controls"
-          :key="`bc-${cIdx}`"
-          :cx="ctrl.x"
-          :cy="ctrl.y"
-          r="9"
-          class="bezier-ctrl-pt"
-          @pointerdown="startBezierHandleDrag({ kind: ctrl.kind, segIndex: ctrl.segIndex }, $event)"
-        />
-        <rect
-          v-for="(anc, aIdx) in bezierNodes.anchors"
-          :key="`ba-${aIdx}`"
-          :x="anc.x - 8"
-          :y="anc.y - 8"
-          width="16"
-          height="16"
-          class="bezier-anchor-pt"
-          @pointerdown="startBezierHandleDrag({ kind: 'anchor', segIndex: anc.segIndex }, $event)"
-        />
-      </g>
+      <BezierOverlay
+        v-if="tool === 'bezier' && !locked && targetBezierPath"
+        :nodes="bezierNodes"
+        @start-drag="startBezierHandleDrag"
+      />
 
       <!-- C. 중심선 정점 편집(median) 핸들 -->
-      <g v-if="tool === 'median' && !locked && targetMedianPoints.length > 0" class="overlay-median-edit">
-        <polyline
-          :points="polylinePoints(targetMedianPoints)"
-          class="median-hit-line"
-          @pointerdown="onMedianLinePointerDown"
-        />
-        <polyline
-          :points="polylinePoints(targetMedianPoints)"
-          class="median-active-guide"
-        />
-        <g
-          v-for="(pt, ptIdx) in targetMedianPoints"
-          :key="`mv-${ptIdx}`"
-          :transform="`translate(${pt[0]} ${pt[1]})`"
-          @pointerdown="onMedianVertexPointerDown(ptIdx, $event)"
-          @contextmenu.prevent="emit('deleteMedianVertex', selectedIndex, ptIdx)"
-        >
-          <circle
-            :r="ptIdx === 0 || ptIdx === targetMedianPoints.length - 1 ? 14 : 11"
-            class="median-vertex"
-            :class="{
-              'is-start': ptIdx === 0,
-              'is-end': ptIdx === targetMedianPoints.length - 1 && ptIdx > 0,
-            }"
-          />
-          <text
-            v-if="ptIdx === 0 || ptIdx === targetMedianPoints.length - 1"
-            transform="scale(1 -1)"
-            class="median-vertex-label"
-            text-anchor="middle"
-            dominant-baseline="central"
-          >
-            {{ ptIdx === 0 ? '기' : '수' }}
-          </text>
-        </g>
-      </g>
+      <MedianEditOverlay
+        v-if="tool === 'median' && !locked && targetMedianPoints.length > 0"
+        :points="targetMedianPoints"
+        @line-pointer-down="onMedianLinePointerDown"
+        @vertex-pointer-down="onMedianVertexPointerDown"
+        @delete-vertex="emit('deleteMedianVertex', selectedIndex, $event)"
+      />
 
       <!-- D. 칼 분할(knife) 점·꺾인 선 표시 -->
-      <g v-if="knifePoints.length > 0">
-        <polyline v-if="knifePoints.length > 1" :points="knifePoints.map(([x, y]) => `${x},${y}`).join(' ')" class="knife-path" />
-        <g v-for="(point, index) in knifePoints" :key="index" :transform="`translate(${point[0]} ${point[1]})`">
-          <circle v-if="index === 0" r="14" class="knife-point-pulse" />
-          <circle r="5" class="knife-point" />
-        </g>
-      </g>
+      <KnifeOverlay v-if="knifePoints.length > 0" :knife-points="knifePoints" />
 
       <!-- E. 윤곽 연결(connect) 점·미리보기 -->
-      <g v-if="tool === 'connect' && connectPoints.length > 0" class="overlay-connect">
-        <polyline
-          v-if="connectPoints.length > 1"
-          :points="polylinePoints(connectPoints)"
-          class="connect-guide"
-        />
-        <line
-          v-if="connectPoints.length >= 3"
-          class="connect-close-hint"
-          :x1="connectPoints[connectPoints.length - 1][0]"
-          :y1="connectPoints[connectPoints.length - 1][1]"
-          :x2="connectPoints[0][0]"
-          :y2="connectPoints[0][1]"
-        />
-        <g
-          v-for="(pt, ptIdx) in connectPoints"
-          :key="`cp-${ptIdx}`"
-          :transform="`translate(${pt[0]} ${pt[1]})`"
-        >
-          <circle
-            :r="ptIdx === 0 || ptIdx === connectPoints.length - 1 ? 13 : 10"
-            class="connect-vertex"
-            :class="{
-              'is-start': ptIdx === 0,
-              'is-end': ptIdx === connectPoints.length - 1 && ptIdx > 0,
-            }"
-          />
-          <text transform="scale(1 -1)" class="connect-vertex-label" text-anchor="middle" dominant-baseline="central">
-            {{ connectLabel(ptIdx, connectPoints.length) }}
-          </text>
-        </g>
-      </g>
+      <ConnectOverlay v-if="tool === 'connect' && connectPoints.length > 0" :connect-points="connectPoints" />
     </g>
 
-    <!-- 돋보기: 정밀 도구(베지어·중심선·칼·윤곽연결)에서 커서 주변을 확대 -->
-    <g
-      v-if="loupeVisible && loupeLens && loupeEnabled"
-      class="overlay-loupe"
-      aria-hidden="true"
-      style="pointer-events: none"
-    >
-      <circle :cx="loupeLens.cx" :cy="loupeLens.cy" :r="LOUPE_RADIUS" class="loupe-backdrop" />
-      <g clip-path="url(#loupe-clip)">
-        <g
-          :transform="`translate(${loupeLens.cx} ${loupeLens.cy}) scale(${LOUPE_ZOOM}) translate(${-loupeLens.sx} ${-loupeLens.sy})`"
-        >
-          <use href="#canvas-world" />
-        </g>
-      </g>
-      <circle :cx="loupeLens.cx" :cy="loupeLens.cy" :r="LOUPE_RADIUS" class="loupe-ring" />
-      <line
-        :x1="loupeLens.cx - 10"
-        :y1="loupeLens.cy"
-        :x2="loupeLens.cx + 10"
-        :y2="loupeLens.cy"
-        class="loupe-cross"
-      />
-      <line
-        :x1="loupeLens.cx"
-        :y1="loupeLens.cy - 10"
-        :x2="loupeLens.cx"
-        :y2="loupeLens.cy + 10"
-        class="loupe-cross"
-      />
-      <line
-        class="loupe-leader"
-        :x1="loupeLens.sx"
-        :y1="loupeLens.sy"
-        :x2="loupeLens.cx"
-        :y2="loupeLens.cy"
-      />
-      <circle :cx="loupeLens.sx" :cy="loupeLens.sy" r="3" class="loupe-focus" />
-    </g>
+    <LoupeOverlay v-if="loupeVisible && loupeLens && loupeEnabled" :lens="loupeLens" :zoom="LOUPE_ZOOM" :radius="LOUPE_RADIUS" />
   </svg>
   <div v-else class="empty-state">
     <svg class="empty-svg-icon" viewBox="0 0 36 36" fill="none" aria-hidden="true">
