@@ -47,6 +47,11 @@ export function useLayerCommands(state: LayerEditorState, deps: LayerCommandsDep
     syncFromDetail(detail)
   }
 
+  // 글자 하위 경로로 POST하고 돌려받은 글자 상세를 화면에 반영한다. 실패하면 서버 메시지(없으면 failMessage)로 던진다.
+  async function postAndAdopt(unicode: string, segments: string[], failMessage: string, body?: unknown) {
+    adopt(await apiRequest<CharacterDetail>(characterUrl(unicode, ...segments), failMessage, { method: 'POST', body }))
+  }
+
   // 레이어 id가 dirty면 서버에 먼저 저장하고, 아니면 보류 중인 표시 메타만 비운다. 저장 중 오류가 나면 false.
   async function prepareLayerForServer(layerId: string): Promise<boolean> {
     if (dirtyIds.value.has(layerId)) {
@@ -63,12 +68,7 @@ export function useLayerCommands(state: LayerEditorState, deps: LayerCommandsDep
     if (!current || !target) return
     await flushMetaPatches()
     await run(async () => {
-      const detail = await apiRequest<CharacterDetail>(
-        characterUrl(current.unicode, 'layers', target.id, 'save'),
-        '레이어 저장에 실패했습니다.',
-        { method: 'POST', body: layerSavePayload(target, customAction ?? `${target.name} 편집`) },
-      )
-      adopt(detail)
+      await postAndAdopt(current.unicode, ['layers', target.id, 'save'], '레이어 저장에 실패했습니다.', layerSavePayload(target, customAction ?? `${target.name} 편집`))
       message.value = `'${target.name}' 레이어 저장 완료`
       await onReloadList()
     }, '레이어 저장 중 오류가 발생했습니다.')
@@ -90,11 +90,7 @@ export function useLayerCommands(state: LayerEditorState, deps: LayerCommandsDep
     })
     await run(async () => {
       if (batch.length > 0) {
-        adopt(await apiRequest<CharacterDetail>(
-          characterUrl(current.unicode, 'layers', 'batch'),
-          '레이어 저장에 실패했습니다. 변경한 레이어는 하나도 저장되지 않았습니다.',
-          { method: 'POST', body: { layers: batch } },
-        ))
+        await postAndAdopt(current.unicode, ['layers', 'batch'], '레이어 저장에 실패했습니다. 변경한 레이어는 하나도 저장되지 않았습니다.', { layers: batch })
       }
       message.value = `변경된 레이어 ${ids.length}개를 모두 저장했습니다.`
       await onReloadList()
@@ -106,11 +102,7 @@ export function useLayerCommands(state: LayerEditorState, deps: LayerCommandsDep
     if (!current || !layerId) return
     await flushMetaPatches()
     await run(async () => {
-      adopt(await apiRequest<CharacterDetail>(
-        characterUrl(current.unicode, 'layers', layerId, 'reset'),
-        '원본 복원에 실패했습니다.',
-        { method: 'POST' },
-      ))
+      await postAndAdopt(current.unicode, ['layers', layerId, 'reset'], '원본 복원에 실패했습니다.')
       message.value = '레이어를 원본 데이터로 복원했습니다.'
     }, '원본 복원 중 오류가 발생했습니다.')
   }
@@ -156,11 +148,7 @@ export function useLayerCommands(state: LayerEditorState, deps: LayerCommandsDep
     // 먼저 해당 레이어가 수정 중이면 서버에 반영 후 적용
     if (!(await prepareLayerForServer(layerId))) return
     await run(async () => {
-      adopt(await apiRequest<CharacterDetail>(
-        characterUrl(current.unicode, 'layers', layerId, 'apply'),
-        '작업 획 적용에 실패했습니다.',
-        { method: 'POST', body: { mode } },
-      ))
+      await postAndAdopt(current.unicode, ['layers', layerId, 'apply'], '작업 획 적용에 실패했습니다.', { mode })
       activeLayerId.value = LAYER_ID.strokes
       message.value = mode === 'fit_font'
         ? '선택 레이어의 중심선으로 궁서체 윤곽을 분할해 작업 획에 적용했습니다.'
@@ -196,11 +184,7 @@ export function useLayerCommands(state: LayerEditorState, deps: LayerCommandsDep
     if (!current) return
     if (!(await prepareLayerForServer(LAYER_ID.outline))) return
     await run(async () => {
-      adopt(await apiRequest<CharacterDetail>(
-        characterUrl(current.unicode, 'outline', action),
-        failMessage,
-        { method: 'POST', body: payload },
-      ))
+      await postAndAdopt(current.unicode, ['outline', action], failMessage, payload)
       activeLayerId.value = LAYER_ID.outline
       message.value = doneMessage
     }, failMessage)
