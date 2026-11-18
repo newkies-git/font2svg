@@ -54,6 +54,10 @@ output/     컴파일 산출물(`compiled/<글자>.json`, `.svg`) — Git 추적
 - 앱이 아는 버전보다 높은 DB는 열지 않는다.
 - 여러 레이어 저장은 한 요청·한 트랜잭션이라 일부만 저장되지 않는다.
 
+### 화면 폰트
+
+화면 폰트(Pretendard 가변 폰트, OFL-1.1)는 외부 CDN이 아니라 `app/public/fonts/`의 파일을 쓴다. 외부 CSS는 응답이 걸리면 스크립트 실행까지 막아 앱이 뜨지 않을 수 있고, 이 도구는 DB·API가 모두 로컬이라 화면도 오프라인에서 떠야 한다. 라이선스 전문은 `app/public/fonts/Pretendard-OFL.txt`에 있다. 글꼴을 바꾸려면 `app/src/style.css`의 `@font-face`와 `--font-sans`를 함께 고친다.
+
 ### TypeScript 버전
 
 `package.json`은 `typescript`를 `npm:@typescript/typescript6`로 둔다. `vue-tsc`(현재 최신 3.3.x)가 TypeScript 7에서 없어진 JS API에 의존해 TS 7로는 동작하지 않기 때문이다. `vue-tsc`가 TS 7을 지원하면 이 별칭을 걷어낸다.
