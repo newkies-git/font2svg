@@ -15,17 +15,17 @@ npm run dev        # http://localhost:5173 (API는 Vite 개발 서버가 같이 
 - 궁서체 폰트는 `app/fonts/Gungseouche.ttf`에 직접 두어야 한다(라이선스 때문에 저장소에 포함하지 않는다).
 - 대상 글자 목록은 화면의 업로드로 등록한다(예: `docs/input_1817.json`, 항목은 `{ "한자", "음", "구분" }`).
 - DB(`database/chusa1817.db`)는 첫 실행에 자동으로 만들고 마이그레이션한다. 저장소에는 포함하지 않는다.
-- API는 같은 컴퓨터(loopback)에서 온 요청만 받는다.
+- API는 같은 컴퓨터(loopback)에서 온 요청만 받는다(그 외는 403). 잘못된 주소는 400, 처리 중 예외는 500으로 답하며 서버는 계속 동작한다.
 
 ## 명령
 
 | 명령 | 하는 일 |
 | :--- | :--- |
 | `npm run dev` | 개발 서버 |
-| `npm run build` | 화면 빌드 |
-| `npm run typecheck` | `vue-tsc` 타입 검사 |
+| `npm run build` | 화면 빌드(DB를 열지 않는다. DB는 개발 서버를 켤 때만 연다) |
+| `npm run typecheck` | `vue-tsc` 타입 검사(`noUnusedParameters`·`noImplicitReturns` 등 엄격 옵션 사용) |
 | `npm test` | `node:test` 테스트 |
-| `npm run lint` | ESLint(버그 가능성이 있는 패턴만 검사, 형식 규칙 없음) |
+| `npm run lint` | ESLint(버그 가능성이 있는 패턴만 검사, 형식 규칙 없음. `.ts`에는 기다리지 않은 Promise를 잡는 타입 기반 규칙 포함) |
 | `npm run knip` | 안 쓰는 파일·export·의존성 검사 |
 | `npm run backup` | `database/chusa1817.backup-<시각>.db`로 DB 백업 |
 
@@ -37,11 +37,12 @@ CI(`.github/workflows/ci.yml`)는 타입 검사·lint·knip·테스트·빌드�
 app/
   shared/   서버와 화면이 함께 쓰는 코드: 타입, 상수, 경로·윤곽 분할 알고리즘(strokeCut), 레이어 종류
   server/   API와 저장소(node:sqlite). 화면 코드를 가져오지 않고 shared만 쓴다
+            apiMiddleware(Vite 연결 어댑터), routes(라우터), layers(레이어 구성)·layerWrites(레이어 저장), characterWrites(글자 행 갱신)
   src/      Vue 화면: components(표시), composables(상태·동작), lib(순수 계산)
   scripts/  보조 스크립트(DB 백업)
   tests/    node:test 테스트
 database/   작업 DB, 내려받은 공개 데이터(IDS, AnimCJK)와 백업 — Git 추적 제외
-output/     컴파일 산출물(`compiled/<글자>.json`, `.svg`) — Git 추적 제외
+output/     컴파일 산출물(`compiled/<글자>.json`, `.svg`). 개발 서버를 켤 때 만들어지며 — Git 추적 제외
 ```
 
 ### 레이어
@@ -64,4 +65,4 @@ output/     컴파일 산출물(`compiled/<글자>.json`, `.svg`) — Git 추적
 
 ## 테스트
 
-`npm test`는 임시 디렉터리의 DB로 서버(저장·마이그레이션·라우터·컴파일 출력·SVG 파서)와 화면의 순수 로직(변환·자동 맞춤·편집 컴포저블·단축키)을 검사한다. 브라우저 화면은 자동으로 검증하지 않는다.
+`npm test`는 임시 디렉터리의 DB로 서버(저장·마이그레이션·라우터·컴파일 출력·SVG 파서)와 화면의 순수 로직(변환·자동 맞춤·편집 컴포저블·단축키·칼 분할 뒤 보이는 획 수)을 검사한다. 브라우저 화면은 자동으로 검증하지 않는다.
