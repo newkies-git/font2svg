@@ -51,7 +51,10 @@ export function fakeApi() {
 }
 
 // 선택된 글자와 레이어가 들어 있는 작업 공간(useLayerWorkspace)을 조립한다.
-export function setupWorkspace(layers: LayerRecord[], options: { activeLayerId?: string } = {}) {
+export function setupWorkspace(layers: LayerRecord[], options: {
+  activeLayerId?: string
+  confirmImport?: () => Promise<'replace' | 'append' | null | undefined>
+} = {}) {
   const studio = useStudioState()
   const detail = detailOf(layers)
   studio.selected.value = detail
@@ -60,6 +63,7 @@ export function setupWorkspace(layers: LayerRecord[], options: { activeLayerId?:
   const workspace = useLayerWorkspace(studio, {
     onReloadList: async () => { reloaded.count += 1 },
     stopPlayback: () => { stopped.count += 1 },
+    confirmImport: options.confirmImport,
   })
   workspace.syncFromDetail(detail)
   if (options.activeLayerId) workspace.activeLayerId.value = options.activeLayerId

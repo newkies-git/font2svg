@@ -66,8 +66,18 @@ test('레이어 경로: 저장·초기화·수신·적용·삭제', async () => 
   await handleApi(ws, request('DELETE', '/api/characters/U%2B4E01/layers/custom-1'))
   assert.deepEqual(calls.map((c) => c.name), ['saveLayer', 'resetLayer', 'fetchLayer', 'applyLayerToStrokes', 'applyLayerToStrokes', 'deleteLayer'])
   assert.deepEqual(calls[0].args, ['U+4E01', 'custom-1', { strokes: [1], paths: [2], action: '편집' }])
-  assert.deepEqual(calls[3].args, ['U+4E01', 'mmh', 'fit_font'])
-  assert.deepEqual(calls[4].args, ['U+4E01', 'mmh', 'direct'])
+  assert.deepEqual(calls[3].args, ['U+4E01', 'mmh', 'fit_font', 'replace'])
+  assert.deepEqual(calls[4].args, ['U+4E01', 'mmh', 'direct', 'replace'])
+})
+
+test('네이버 적용 경로는 추가와 교체를 구분한다', async () => {
+  const { ws, calls } = fakeWorkspace()
+  await handleApi(ws, request('POST', '/api/characters/U%2B4E01/apply-naver', { write: 'append' }))
+  await handleApi(ws, request('POST', '/api/characters/U%2B4E01/apply-naver', {}))
+  assert.deepEqual(calls.map((call) => call.args), [
+    ['U+4E01', 'append'],
+    ['U+4E01', 'replace'],
+  ])
 })
 
 test('레이어 일괄 저장 경로', async () => {
@@ -107,7 +117,7 @@ test('핸들러가 던진 오류와 본문 오류는 400', async () => {
   assert.equal(result.status, HTTP_BAD_REQUEST)
   assert.deepEqual(result.body, { error: '승인 불가' })
   const { ws } = fakeWorkspace()
-  const bad = await handleApi(ws, { ...request('POST', '/api/sync-missing'), readBody: async () => { throw new Error('JSON 형식이 아닙니다.') } })
+  const bad = await handleApi(ws, { ...request('POST', '/api/apply-font'), readBody: async () => { throw new Error('JSON 형식이 아닙니다.') } })
   assert.equal(bad.status, HTTP_BAD_REQUEST)
 })
 

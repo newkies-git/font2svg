@@ -3,35 +3,17 @@ import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
-import {
-  ACJK_BATCH_LIMIT,
-  ACJK_FILE_LIMIT,
-  IDS_FILE_LIMIT,
-  MISSING_FETCH_LIMIT,
-} from '../shared/constants.ts'
+import { ACJK_BATCH_LIMIT, ACJK_FILE_LIMIT } from '../shared/constants.ts'
 import { isReferenceKind, type ReferenceKind } from '../shared/layerKind.ts'
 import type { Pt } from '../shared/types.ts'
 import { transaction } from './db.ts'
-import type { FontFile } from './font.ts'
-import { roundPoints, splitByContours, type ImportedStrokes } from './geometry.ts'
-import { composeFrom as composeFromIds, type IdsLookup } from './idsCompose.ts'
-import {
-  askOllama,
-  IDS_BOOK,
-  IDS_FILE,
-  IDS_HEADER,
-  IDS_ORIGINS,
-  IDS_URL,
-  parseIdsFile,
-  type IdsSource,
-} from './ids.ts'
+import type { ImportedStrokes } from './geometry.ts'
 import {
   ACTION_ACJK,
   ACTION_NAVER,
   ACTOR_ACJK,
   ACTOR_FONT,
   ACTOR_HANJA,
-  ACTOR_IDS,
   ACTOR_NAVER,
   ACTOR_USER,
 } from './model.ts'
@@ -41,13 +23,10 @@ import {
   ACJK_RAW,
   ACJK_VARIANTS,
   ACJK_VERSION,
-  fetchHanja,
   fetchLimited,
   fetchNaver,
   HANJA_VERSION,
   hanjaStrokes,
-  hanjaUrl,
-  medianOrRecovered,
   NAVER_VERSION,
   naverUrl,
   parseAcjkLine,
@@ -73,12 +52,15 @@ export function createReferencePipeline(
   deps: {
     strokes: StrokeStore
     issues: IssueWriter
-    getFont: () => FontFile | null
     fontOrGiven: (char: string, medians: Pt[][], outlines: string[]) => ImportedStrokes
+    fitOrGiven: (char: string, medians: Pt[][], outlines: string[]) => {
+      glyph: ImportedStrokes
+      unmatched: number[]
+      status: 'fitted' | 'partial' | 'copied' | 'no-font'
+    }
   },
 ) {
-  const { strokes, issues, getFont, fontOrGiven } = deps
-  let idsIndex: Map<string, string[]> | undefined
+  const { strokes, issues, fontOrGiven, fitOrGiven } = deps
   let acjkIndex: Map<string, { raw: string; url: string }> | undefined
 
   async function loadSource<T>(unicode: string, source: ReferenceKind, url: string, fetchFresh: () => Promise<Remote<T>>): Promise<Found<T> | null> {
@@ -109,16 +91,6 @@ export function createReferencePipeline(
       warnOnce(`reference:${source}`, error)
       return null
     }
-  }
-
-  // 네이버 한자사전(한국 획순)을 먼저 보고, 없으면 AnimCJK, 그다음 Hanja(중국 기준)를 본다.
-  async function loadReference(unicode: string, char: string) {
-    const naver = await loadSource(unicode, 'NAVER', naverUrl(char), () => fetchNaver(char))
-    if (naver) return { source: 'NAVER' as const, ...naver }
-    const acjk = await loadSource(unicode, 'ACJK', ACJK_BLOB, () => fetchAcjk(char))
-    if (acjk) return { source: 'ACJK' as const, ...acjk }
-    const hanja = await loadSource(unicode, 'MMH', hanjaUrl(char), () => fetchHanja(char))
-    return hanja ? { source: 'MMH' as const, ...hanja } : null
   }
 
   // 글자별 원본은 graphics 한 줄에 dictionary의 분해식(acjk)을 붙인 JSON이다. 내려받지 못하면 던진다(없는 글자로 기록하지 않기 위해).
@@ -164,115 +136,31 @@ export function createReferencePipeline(
     })
   }
 
-  async function loadIds(): Promise<Map<string, string[]>> {
-    if (idsIndex) return idsIndex
-    const file = path.join(rootDir, IDS_FILE)
-    if (!fs.existsSync(file)) {
-      try {
-        const response = await fetchLimited(IDS_URL, IDS_FILE_LIMIT)
-        if (!response.ok || !response.text.includes(IDS_HEADER)) return new Map()
-        fs.writeFileSync(file, response.text)
-      } catch (error) {
-        warnOnce('ids-download', error)
-        return new Map()
-      }
-    }
-    idsIndex = parseIdsFile(fs.readFileSync(file, 'utf-8'))
-    return idsIndex
-  }
-
-  // 합성에 쓰는 조회. idsIndex는 loadIds가 끝난 뒤에만 채워지므로 매번 현재 값을 본다.
-  const idsLookup: IdsLookup = {
-    knownMedians(char) {
-      const row = db.prepare('SELECT unicode FROM characters WHERE char = ?').get(char) as { unicode: string } | undefined
-      return (row ? strokes.readStrokes(row.unicode) : []).map((stroke) => stroke.median_points)
-    },
-    decompositions: (char) => idsIndex?.get(char) ?? [],
-  }
-  const composeFrom = (ids: string) => composeFromIds(ids, idsLookup)
-
-  // 사람이 적은 IDS → 공개 IDS(BabelStone) → Ollama 순서로 시도한다.
-  async function composeIds(char: string): Promise<{ ids: string; source: IdsSource; medians: Pt[][] } | null> {
-    const known = IDS_BOOK[char]
-    const knownMedians = known ? composeFrom(known) : null
-    if (known && knownMedians) return { ids: known, source: 'MANUAL', medians: knownMedians }
-    for (const ids of (await loadIds()).get(char) ?? []) {
-      const medians = composeFrom(ids)
-      if (medians) return { ids, source: 'IDS', medians }
-    }
-    const asked = await askOllama(char)
-    const askedMedians = asked ? composeFrom(asked) : null
-    return asked && askedMedians ? { ids: asked, source: 'OLLAMA', medians: askedMedians } : null
-  }
-
-  async function ensureReference(unicode: string) {
-    const character = strokes.requireCharacter(unicode)
-    const existing = strokes.readStrokes(unicode)
-    if (existing.length > 0) {
-      const hanja = await loadReference(unicode, character.char)
-      const row = db.prepare('SELECT last_modified_by AS by, origin FROM strokes WHERE char = ?').get(character.char) as { by: string; origin: string }
-      // 사용자가 고쳤거나 궁서체 윤곽으로 바꾼 획은 레퍼런스 중심선으로 덮어쓰지 않는다. 가져온 출처가 같을 때만 갱신한다.
-      if (hanja && hanja.source === row.origin && hanja.value.medians.length === existing.length && row.by !== ACTOR_USER && row.by !== ACTOR_FONT) {
-        const radical = new Set(hanja.value.radical)
-        strokes.writeStrokes(unicode, existing.map((stroke, index) => ({
-          ...stroke,
-          median_points: roundPoints(medianOrRecovered(hanja.value.medians[index], stroke.outline_path) ?? stroke.median_points),
-          is_radical: radical.has(index) ? 1 : 0,
-        })), ACTOR_HANJA, '레퍼런스 중심선 갱신', { source: hanja.source, url: hanja.url })
-      }
-      return { unicode, source: hanja ? hanja.source : 'DB', fetched: false }
-    }
-
-    if (db.prepare('SELECT 1 FROM working_data WHERE char = ?').get(character.char)) return { unicode, source: 'WORKING', fetched: false }
-
-    const hanja = await loadReference(unicode, character.char)
-    const imported = hanja ? hanjaStrokes(hanja.value) : null
-    if (hanja && imported) {
-      saveImported(unicode, hanja.source, hanja.url, hanja.value.radical, fontOrGiven(character.char, imported.medians, imported.outlines))
-      return { unicode, source: hanja.source, fetched: true }
-    }
-    // Hanja에 없는 글자는 strokes가 아니라 작업 데이터(working_data)에 쓰고 issues에 올린다. 승인해야 strokes로 간다.
-    const composed = await composeIds(character.char)
-    const contours = getFont()?.contours(character.char) ?? null
-    transaction(db, () => {
-      if (composed) {
-        // IDS 합성 중심선을 길잡이로 궁서체 윤곽을 획별로 나눈다. 못 나누면 전체 윤곽과 띠 모양 획을 둔다.
-        const split = contours && splitByContours(contours, composed.medians)
-        const [origin, originUrl] = IDS_ORIGINS[composed.source]
-        const glyph = split || { medians: composed.medians, outlines: [] }
-        strokes.writeWorking(unicode, { source: origin, url: originUrl, fontOutline: glyph.fontOutline ?? contours ?? [], items: toItems(glyph, new Set()) }, ACTOR_IDS)
-        issues.setIssue(unicode, `Hanja에 없음: ${origin} 합성 초안`, ACTOR_IDS, 'DRAFT', Boolean(contours))
-      } else if (contours) {
-        strokes.writeWorking(unicode, { source: 'FONT', url: null, fontOutline: contours, items: [] }, ACTOR_FONT)
-        issues.setIssue(unicode, 'Hanja에 없고 IDS 합성 실패: 궁서체 윤곽만 추출', ACTOR_FONT, 'OPEN', true)
-      } else {
-        issues.setIssue(unicode, 'Hanja, 궁서체, IDS 합성 모두 실패', ACTOR_IDS)
-      }
-    })
-    return { unicode, source: composed?.source ?? (contours ? 'FONT' : 'NONE'), fetched: Boolean(composed || contours) }
-  }
-
-  async function syncMissing(limit = MISSING_FETCH_LIMIT) {
-    const rows = db.prepare(`
-      SELECT c.unicode FROM characters c
-      WHERE NOT EXISTS (SELECT 1 FROM strokes s WHERE s.char = c.char)
-        AND NOT EXISTS (SELECT 1 FROM working_data w WHERE w.char = c.char)
-      ORDER BY c.unicode LIMIT ?
-    `).all(limit) as { unicode: string }[]
-    const results = []
-    for (const row of rows) results.push(await ensureReference(row.unicode))
-    db.exec('PRAGMA wal_checkpoint(TRUNCATE)')
-    return { tried: results.length, results }
+  // 화면에 보이는 작업 획. 승인된 strokes가 있으면 그것을, 없으면 승인 전 작업 데이터를 쓴다.
+  function currentWorkItems(unicode: string) {
+    const confirmed = strokes.readStrokes(unicode)
+    if (confirmed.length > 0) return confirmed
+    const working = strokes.readWorkingRow(unicode)
+    return working ? strokes.itemsOf(working) : []
   }
 
   // 획순이 틀린 글자를 사람이 지정해 네이버 한자사전 획순으로 바꾼다. 사람이 고친 글자도 바꾸며(실행 취소로 되돌린다),
   // 바뀌기 전 strokes 행은 strokes_history에 남고 같은 글자의 작업 데이터는 지워진다. 네이버에 없으면 아무것도 바꾸지 않는다.
-  async function applyNaver(unicode: string) {
+  // write가 append이고 작업 획이 있으면 기존 획 뒤에 붙인다. 비어 있으면 교체와 같다.
+  async function applyNaver(unicode: string, write: 'replace' | 'append' = 'replace') {
     const character = strokes.requireCharacter(unicode)
     const naver = await loadSource(unicode, 'NAVER', naverUrl(character.char), () => fetchNaver(character.char))
     const imported = naver ? hanjaStrokes(naver.value) : null
     if (!naver || !imported) throw new Error('네이버 한자사전에서 이 글자의 획순을 찾지 못했습니다.')
-    saveImported(unicode, 'NAVER', naver.url, naver.value.radical, fontOrGiven(character.char, imported.medians, imported.outlines), ACTION_NAVER)
+    const fitted = fitOrGiven(character.char, imported.medians, imported.outlines)
+    const items = toItems(fitted.glyph, new Set(naver.value.radical))
+    const existing = currentWorkItems(unicode)
+    if (write === 'append' && existing.length > 0) {
+      strokes.updateStrokes(unicode, [...existing, ...items], `${ACTION_NAVER} 추가`)
+      return { unmatched: fitted.unmatched.map((order) => order + existing.length), status: fitted.status }
+    }
+    saveImported(unicode, 'NAVER', naver.url, naver.value.radical, fitted.glyph, ACTION_NAVER)
+    return { unmatched: fitted.unmatched, status: fitted.status }
   }
 
   type AcjkResult = 'REPLACED' | 'EDITED' | 'ALREADY' | 'NOT_IN_ACJK'
@@ -310,8 +198,6 @@ export function createReferencePipeline(
     loadSource,
     fetchAcjk,
     saveImported,
-    ensureReference,
-    syncMissing,
     applyNaver,
     applyAcjkBatch,
   }

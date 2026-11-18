@@ -34,29 +34,29 @@ function seedStrokes(unicode: string, count: number) {
 test('여러 레이어를 한 번에 저장한다', () => {
   const unicode = 'U+4E01'
   seedStrokes(unicode, 1)
-  unlock(unicode, 'mmh')
+  const { createdId } = ws.duplicateLayer(unicode, 'strokes', '복제본')
   const result = ws.saveLayers(unicode, [
     { id: 'strokes', strokes: [bar(100), bar(300)], action: '작업 획 편집' },
-    { id: 'mmh', strokes: [bar(500)] },
+    { id: createdId, strokes: [bar(500)] },
   ])!
   assert.equal(result.strokes.length, 2)
   assert.equal(layerOf(unicode, 'strokes').strokes.length, 2)
-  assert.equal(layerOf(unicode, 'mmh').strokes.length, 1)
-  assert.equal(layerOf(unicode, 'mmh').modified, true)
+  assert.equal(layerOf(unicode, createdId).strokes.length, 1)
+  assert.equal(layerOf(unicode, createdId).modified, true)
 })
 
 test('하나라도 실패하면 모두 되돌린다(부분 저장 없음)', () => {
   const unicode = 'U+4E19'
   seedStrokes(unicode, 1)
-  unlock(unicode, 'mmh')
+  const { createdId } = ws.duplicateLayer(unicode, 'strokes', '복제본')
   const historyBefore = detailOf(unicode).history_count
   assert.throws(() => ws.saveLayers(unicode, [
     { id: 'strokes', strokes: [bar(100), bar(300), bar(500)] },
-    { id: 'mmh', strokes: [{ ...bar(100), outline_path: 'M 0 0 <bad>' }] },
+    { id: createdId, strokes: [{ ...bar(100), outline_path: 'M 0 0 <bad>' }] },
   ]), /SVG 외곽선 경로/)
   assert.equal(detailOf(unicode).strokes.length, 1, '앞의 작업 획 변경도 되돌아가야 한다')
   assert.equal(detailOf(unicode).history_count, historyBefore, '이력도 남지 않아야 한다')
-  assert.equal(layerOf(unicode, 'mmh').modified, false)
+  assert.equal(layerOf(unicode, createdId).strokes.length, 1, '복제본의 획도 잘못된 저장으로 바뀌지 않아야 한다')
 })
 
 test('존재하지 않는 레이어가 섞이면 전부 되돌린다', () => {
@@ -82,26 +82,26 @@ test('입력 검증: 빈 목록, 중복 id, id 없음, 개수 초과, 없는 글
 test('한 개짜리 저장(saveLayer)도 그대로 동작한다', () => {
   const unicode = 'U+620A'
   seedStrokes(unicode, 1)
-  unlock(unicode, 'mmh')
   ws.saveLayer(unicode, 'strokes', { strokes: [bar(100), bar(300)], action: '단일' })
   assert.equal(detailOf(unicode).strokes.length, 2)
-  ws.saveLayer(unicode, 'mmh', { strokes: [bar(100)] })
-  assert.equal(layerOf(unicode, 'mmh').strokes.length, 1)
+  assert.throws(() => ws.saveLayer(unicode, 'mmh', { strokes: [bar(100)] }), /편집하지/)
+  assert.equal(layerOf(unicode, 'mmh').strokes.length, 0)
 })
 
 test('잠긴 레이어는 저장을 거부하고, 일괄 저장이면 전부 되돌린다', () => {
   const unicode = 'U+620A'
   seedStrokes(unicode, 1)
-  // 레퍼런스 레이어는 기본이 잠금이다.
-  assert.throws(() => ws.saveLayer(unicode, 'naver', { strokes: [bar(100)] }), /잠긴 레이어/)
+  // 참고 레이어는 잠금을 풀어도 내용을 저장하지 않는다.
+  assert.throws(() => ws.saveLayer(unicode, 'naver', { strokes: [bar(100)] }), /편집하지/)
   assert.throws(() => ws.saveLayers(unicode, [
     { id: 'strokes', strokes: [bar(100), bar(300), bar(500)] },
     { id: 'naver', strokes: [bar(100)] },
-  ]), /잠긴 레이어/)
+  ]), /편집하지/)
   assert.equal(detailOf(unicode).strokes.length, 1, '앞의 작업 획 변경도 되돌아가야 한다')
   unlock(unicode, 'naver')
-  ws.saveLayer(unicode, 'naver', { strokes: [bar(100)] })
-  assert.equal(layerOf(unicode, 'naver').strokes.length, 1)
+  assert.equal(layerOf(unicode, 'naver').locked, true)
+  assert.throws(() => ws.saveLayer(unicode, 'naver', { strokes: [bar(100)] }), /편집하지/)
+  assert.equal(layerOf(unicode, 'naver').strokes.length, 0)
 })
 
 test('작업 획 레이어를 잠그면 저장을 거부한다', () => {

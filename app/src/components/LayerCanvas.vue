@@ -176,7 +176,8 @@ function onShapePointerDown(layerId: string, index: number, event: PointerEvent)
   if (props.editableLayer?.id !== layerId) return
   event.stopPropagation()
   emit('selectItem', index)
-  if (props.tool === 'select' && !props.locked) {
+  // 궁서체는 기준 레이어라 드래그로 위치·크기를 바꾸지 않는다.
+  if (props.tool === 'select' && !props.locked && props.editableLayer?.kind !== 'FONT') {
     startMoveDrag(event)
   }
 }
@@ -350,7 +351,7 @@ function onShapePointerDown(layerId: string, index: number, event: PointerEvent)
 
       <!-- A. 선택·변환(select) 바운딩 박스 및 변형 방식별 핸들 -->
       <TransformOverlay
-        v-if="tool === 'select' && activeBBox && !locked"
+        v-if="tool === 'select' && activeBBox && !locked && editableLayer?.kind !== 'FONT'"
         :bbox="activeBBox"
         :handles="resizeHandles"
         :transform-mode="transformMode"

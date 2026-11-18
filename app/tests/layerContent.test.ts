@@ -44,16 +44,16 @@ test('이미 있는 행의 표시 설정은 내용을 저장해도 바뀌지 않
 })
 
 test('기본으로 잠긴 레이어는 행이 없으면 저장되지 않고, 오버레이·없는 레이어는 거부한다', () => {
-  assert.throws(() => ws.saveLayer(UNICODE, 'mmh', { strokes: [stroke] }), /잠긴 레이어/)
+  assert.throws(() => ws.saveLayer(UNICODE, 'mmh', { strokes: [stroke] }), /편집하지/)
   assert.equal(rowOf(UNICODE, 'mmh'), undefined)
   assert.throws(() => ws.saveLayer(UNICODE, 'medians', { strokes: [stroke] }), /오버레이 레이어/)
   assert.throws(() => ws.saveLayer(UNICODE, 'nope', { strokes: [stroke] }), /존재하지 않는 레이어/)
 })
 
 test('잠금을 푼 기본 레이어는 저장하면 그 행의 설정을 유지한 채 내용만 채운다', () => {
-  ws.updateLayersMeta(UNICODE, [{ id: 'mmh', locked: false, opacity: 0.2 }])
-  ws.saveLayer(UNICODE, 'mmh', { strokes: [stroke] })
-  assert.deepEqual(rowOf(UNICODE, 'mmh'), {
-    kind: 'MMH', name: 'Hanzi (MMH)', z_index: 2, visible: 0, opacity: 0.2, locked: 0, label_color: 'violet', modified: 1,
+  ws.updateLayersMeta(UNICODE, [{ id: 'font', locked: false, opacity: 0.2 }])
+  ws.saveLayer(UNICODE, 'font', { paths: [rectPath(100, 400, 400, 460)] })
+  assert.deepEqual(rowOf(UNICODE, 'font'), {
+    kind: 'FONT', name: '궁서체 (TTF)', z_index: 0, visible: 1, opacity: 0.2, locked: 0, label_color: 'slate', modified: 1,
   })
 })

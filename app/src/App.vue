@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import CharacterSidebar from './components/CharacterSidebar.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
+import ImportChoiceDialog from './components/ImportChoiceDialog.vue'
 import LayerCanvas from './components/LayerCanvas.vue'
 import LayersPanel from './components/LayersPanel.vue'
 import StepControls from './components/StepControls.vue'
@@ -22,6 +23,8 @@ import type { CapType } from '../shared/types.ts'
 const studio = useStudioState()
 const { selected, message, error, busy, shown, reveal } = studio
 const confirmDialog = ref<InstanceType<typeof ConfirmDialog> | null>(null)
+const importChoice = ref<InstanceType<typeof ImportChoiceDialog> | null>(null)
+const confirmImport = () => importChoice.value?.ask() ?? Promise.resolve(undefined)
 
 const { chars, query, statusFilter, filteredChars, statusCounts, loadList, clearSearch } = useCharacterList(error)
 const { themeMode, setTheme } = useTheme()
@@ -39,10 +42,10 @@ const {
   orderedLayers,
   fontLayer,
   activeLayerId,
+  activeTool,
   activeLayer,
   editableLayer,
   isEditableLocked,
-  activeTool,
   transformScope,
   transformMode,
   selectedStrokeIndex,
@@ -71,8 +74,8 @@ const {
   copyStrokeToWorkLayer,
   restoreActiveSnapshot,
   applyAffineToActive,
-  alignActiveToFont,
   autoFitToFont,
+  resetActiveEdits,
   updateSinglePathInActive,
   moveMedianVertex,
   addMedianVertex,
@@ -93,9 +96,9 @@ const {
   refreshOutlineMapping,
   duplicateActiveLayer,
   deleteActiveCustomLayer,
-} = useLayerWorkspace(studio, { onReloadList: loadList, stopPlayback: stop })
+} = useLayerWorkspace(studio, { onReloadList: loadList, stopPlayback: stop, confirmImport })
 
-const { uploadInitial, openChar, openFirst, undo, approve, compileChar, applyNaver, pullReference, importSvg, importImage, syncMissing } = useCharacterActions(studio, {
+const { uploadInitial, openChar, openFirst, undo, approve, compileChar, applyNaver, importSvg, importImage } = useCharacterActions(studio, {
   chars,
   loadList,
   syncFromDetail,
@@ -104,6 +107,13 @@ const { uploadInitial, openChar, openFirst, undo, approve, compileChar, applyNav
   stopPlayback: stop,
   workStrokeCount: () => workStrokeCount.value,
   confirmReplace: () => confirmDialog.value?.ask() ?? Promise.resolve(undefined),
+  confirmImport,
+  focusWorkStroke: (index) => {
+    activeLayerId.value = LAYER_ID.strokes
+    activeTool.value = 'select'
+    transformScope.value = 'stroke'
+    selectStrokeItem(index)
+  },
 })
 
 // 획 윤곽 자동 매핑에서 중심선 길잡이로 쓸 수 있는 레이어(획이 있는 레이어, 작업 획 우선)
@@ -186,12 +196,13 @@ onMounted(loadList)
         :knife-mode="knifeMode"
         :connect-points="connectPoints"
         :dirty-count="dirtyIds.size"
+        :layer-dirty="editableLayer ? dirtyIds.has(editableLayer.id) : false"
         :work-stroke-count="workStrokeCount"
         :busy="busy"
         @change-scope="transformScope = $event"
         @change-transform-mode="transformMode = $event"
-        @align-font="alignActiveToFont"
         @auto-fit="autoFitToFont"
+        @reset-edits="resetActiveEdits"
         @reverse-median="reverseActiveStrokeMedian()"
         @resegment="resegmentActiveByFont"
         @change-knife-mode="knifeMode = $event"
@@ -205,10 +216,8 @@ onMounted(loadList)
         @undo="undo"
         @compile="compileChar"
         @naver="applyNaver"
-        @reference="pullReference"
         @import-svg="importSvg"
         @import-image="importImage"
-        @sync="syncMissing"
       />
 
       <!-- 2. 중앙 비스크롤 스튜디오 바디: [도구 레일 | 캔버스 스테이지 | 우측 인스펙터 독] -->
@@ -319,9 +328,13 @@ onMounted(loadList)
       </footer>
     </main>
 
-    <ConfirmDialog ref="confirmDialog" title="네이버 획순 적용">
-      현재 획 데이터를 네이버 한자사전 획순으로 바꿉니다.<br />
+    <ConfirmDialog ref="confirmDialog" title="이미지로 작업 획 바꾸기">
+      현재 획 데이터를 이미지에서 뽑은 획으로 바꿉니다.<br />
       바뀐 뒤에도 실행 취소로 되돌릴 수 있습니다.
     </ConfirmDialog>
+    <ImportChoiceDialog ref="importChoice">
+      작업 획에 이미 획이 있습니다.<br />
+      지우고 가져온 획만 쓸지, 기존 획 뒤에 덧붙일지 고르세요.
+    </ImportChoiceDialog>
   </div>
 </template>

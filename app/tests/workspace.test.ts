@@ -90,6 +90,9 @@ test('레이어를 작업 획에 적용(direct): 레퍼런스 종류가 출처�
   assert.equal(detail.strokes.length, 1)
   assert.equal(detail.strokes[0].outline_path, bar)
   assert.equal(strokeCountOf(unicode), 1, '레퍼런스를 적용하면 글자의 획수도 맞춘다')
+  const appended = ws.applyLayerToStrokes(unicode, 'mmh', 'direct', 'append')!
+  assert.equal(appended.strokes.length, 2, '추가면 기존 작업 획 뒤에 붙인다')
+  assert.equal(appended.origin, 'MMH')
 })
 
 test('레이어를 작업 획에 적용(fit_font): 궁서체 윤곽으로 나누고, 궁서체가 없으면 던진다', () => {
@@ -97,6 +100,8 @@ test('레이어를 작업 획에 적용(fit_font): 궁서체 윤곽으로 나누
   const detail = ws.applyLayerToStrokes('U+4E00', 'mmh', 'fit_font')!
   assert.equal(detail.origin, 'MMH')
   assert.ok(detail.strokes.length >= 1)
+  assert.ok(detail.fit_status === 'fitted' || detail.fit_status === 'partial')
+  assert.ok(Array.isArray(detail.unmatched_strokes))
   assert.ok(detail.layers.find((layer) => layer.id === 'font')!.paths.length > 0)
   // 四는 폰트에 없고 저장된 윤곽도 없다(앞 테스트에서 네이버 레이어만 생겼다).
   assert.throws(() => ws.applyLayerToStrokes('U+56DB', 'naver', 'fit_font'), /궁서체 윤곽이 없어/)

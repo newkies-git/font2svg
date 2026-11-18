@@ -149,6 +149,10 @@ export function useLayerAppearance(
   function toggleLayerLock(layerId: string) {
     const target = layers.value.find((l) => l.id === layerId)
     if (!target) return
+    if (isReferenceKind(target.kind)) {
+      message.value = `'${target.name}' 레이어는 참고용이라 잠금을 풀 수 없습니다. 작업 획으로 가져온 뒤 편집하세요.`
+      return
+    }
     target.locked = !target.locked
     queueMetaPatch({ id: target.id, locked: target.locked })
     message.value = target.locked ? `'${target.name}' 레이어를 잠갔습니다.` : `'${target.name}' 레이어 잠금을 해제했습니다.`

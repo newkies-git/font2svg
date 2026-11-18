@@ -152,9 +152,10 @@
 
 @layer components {
   /* ====Layer Color Tokens==== */
+  /* 작업 획 기본색: 파스텔 슬레이트 — 단색 먹색이면 외곽선·중심선이 가려진다 */
   [data-color="ink"] {
-    --layer-accent: var(--color-svg-ink);
-    --layer-fill: color-mix(in srgb, var(--color-svg-ink) 18%, transparent);
+    --layer-accent: light-dark(#64748b, #94a3b8);
+    --layer-fill: light-dark(rgba(148, 163, 184, 0.42), rgba(148, 163, 184, 0.32));
   }
   [data-color="slate"] {
     --layer-accent: light-dark(#475569, #94a3b8);
@@ -1770,11 +1771,13 @@
   }
 
   .ink-stroke {
-    fill: var(--color-svg-ink);
+    fill: var(--layer-fill, light-dark(rgba(148, 163, 184, 0.42), rgba(148, 163, 184, 0.32)));
+    stroke: var(--layer-accent, light-dark(#64748b, #94a3b8));
+    stroke-width: 1.75px;
   }
 
   .ink-stroke.radical-stroke {
-    fill: var(--color-radical);
+    fill: light-dark(rgba(251, 113, 133, 0.38), rgba(251, 113, 133, 0.3));
     stroke: var(--color-radical-border);
     stroke-width: 2.5px;
     stroke-dasharray: 14 8;
@@ -1782,7 +1785,7 @@
 
   .anim-stroke {
     fill: none;
-    stroke: var(--color-svg-ink);
+    stroke: var(--layer-accent, var(--color-svg-ink));
     stroke-linecap: round;
     stroke-linejoin: round;
   }

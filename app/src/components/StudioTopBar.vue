@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { IMAGE_MIMES, type ImageSplit } from '../../shared/constants.ts'
+import { isReferenceKind } from '../../shared/layerKind.ts'
 import { ISSUE_LABELS } from '../lib/labels.ts'
 import type { TransformMode } from '../lib/transformMath.ts'
 import type { CharacterDetail, EditorTool, KnifeMode, LayerRecord, Pt } from '../../shared/types.ts'
@@ -21,6 +22,7 @@ defineProps<{
   knifeMode: KnifeMode
   connectPoints: Pt[]
   dirtyCount: number
+  layerDirty: boolean
   workStrokeCount: number
   busy: boolean
 }>()
@@ -29,8 +31,8 @@ const emit = defineEmits<{
   changeScope: [scope: 'layer' | 'stroke']
   changeTransformMode: [mode: TransformMode]
   changeKnifeMode: [mode: KnifeMode]
-  alignFont: []
   autoFit: []
+  resetEdits: []
   reverseMedian: []
   resegment: []
   cancelKnife: []
@@ -43,10 +45,8 @@ const emit = defineEmits<{
   undo: []
   compile: []
   naver: []
-  reference: []
   importSvg: [event: Event]
   importImage: [event: Event, split: ImageSplit]
-  sync: []
 }>()
 
 const menuRef = ref<HTMLDetailsElement | null>(null)
@@ -99,8 +99,15 @@ function runMenuAction(fn: () => void) {
 
     <!-- 중앙: 선택된 도구 전용 컨텍스트 옵션 -->
     <div v-if="selected" class="topbar-options" role="toolbar" aria-label="활성 도구 옵션">
+      <span
+        v-if="locked && editableLayer && isReferenceKind(editableLayer.kind)"
+        class="ctx-unlock-chip"
+        title="네이버·AnimCJK·Hanzi는 작업 획으로 가져온 뒤 편집합니다."
+      >
+        참고 전용
+      </span>
       <button
-        v-if="locked"
+        v-else-if="locked"
         type="button"
         class="ctx-unlock-chip"
         title="현재 편집 대상 레이어가 잠겨 있거나 숨겨져 있습니다. 클릭하여 잠금을 해제합니다."
@@ -116,11 +123,12 @@ function runMenuAction(fn: () => void) {
         :editable-layer="editableLayer"
         :locked="locked"
         :has-font="hasFont"
+        :dirty="layerDirty"
         :busy="busy"
         @change-scope="emit('changeScope', $event)"
         @change-transform-mode="emit('changeTransformMode', $event)"
-        @align-font="emit('alignFont')"
         @auto-fit="emit('autoFit')"
+        @reset-edits="emit('resetEdits')"
       />
       <MedianToolOptions
         v-else-if="tool === 'median'"
@@ -226,15 +234,7 @@ function runMenuAction(fn: () => void) {
             :disabled="!selected || busy"
             @click="runMenuAction(() => emit('naver'))"
           >
-            네이버 획순으로 작업 획 교체…
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            :disabled="!selected || busy"
-            @click="runMenuAction(() => emit('reference'))"
-          >
-            레퍼런스 다시 수신
+            네이버 획순을 작업 획으로…
           </button>
           <button
             type="button"
@@ -261,15 +261,6 @@ function runMenuAction(fn: () => void) {
             @click="runMenuAction(() => pickImage('COMPONENTS'))"
           >
             이미지를 획 SVG로 변환 (덩어리=획)…
-          </button>
-          <hr />
-          <button
-            type="button"
-            role="menuitem"
-            :disabled="busy"
-            @click="runMenuAction(() => emit('sync'))"
-          >
-            미완료 20자 일괄 동기화
           </button>
         </div>
       </details>

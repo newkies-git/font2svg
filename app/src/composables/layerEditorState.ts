@@ -1,4 +1,5 @@
 import { LAYER_ID } from '../../shared/constants.ts'
+import { isReferenceKind } from '../../shared/layerKind.ts'
 import { computed, ref, type ComputedRef, type Ref } from 'vue'
 import type { TransformMode } from '../lib/transformMath.ts'
 import type { CharacterDetail, EditorTool, KnifeMode, LayerRecord, Pt, StrokeRecord } from '../../shared/types.ts'
@@ -74,7 +75,7 @@ export function createLayerEditorState(
     const cur = activeLayer.value
     const target = editableLayer.value
     if (!cur || !target) return true
-    return cur.locked || target.locked || !cur.visible || !target.visible
+    return cur.locked || target.locked || !cur.visible || !target.visible || isReferenceKind(cur.kind) || isReferenceKind(target.kind)
   })
 
   const activeStrokes = computed<StrokeRecord[]>(() => editableLayer.value?.strokes ?? [])

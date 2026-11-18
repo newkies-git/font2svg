@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
 import { LAYER_ID } from '../../shared/constants.ts'
+import { isReferenceKind } from '../../shared/layerKind.ts'
 import type { LayerColor, LayerRecord } from '../../shared/types.ts'
 import { canApplyToStrokes, canFetch, canReset, isSoloedLayer, layerCountText } from '../lib/layerPanel.ts'
 import LayerPropsStrip from './LayerPropsStrip.vue'
@@ -195,12 +196,13 @@ function moveActiveStep(delta: -1 | 1) {
           <button
             type="button"
             class="row-icon-btn lock"
-            :class="{ locked: layer.locked }"
-            :aria-label="`${layer.name} 잠금 토글`"
-            :title="layer.locked ? '레이어 잠금 해제' : '레이어 잠금'"
+            :class="{ locked: layer.locked || isReferenceKind(layer.kind) }"
+            :disabled="isReferenceKind(layer.kind)"
+            :aria-label="isReferenceKind(layer.kind) ? `${layer.name} 참고 전용` : `${layer.name} 잠금 토글`"
+            :title="isReferenceKind(layer.kind) ? '참고 레이어는 편집하지 않습니다' : (layer.locked ? '레이어 잠금 해제' : '레이어 잠금')"
             @click="emit('toggleLock', layer.id)"
           >
-            <svg v-if="layer.locked" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+            <svg v-if="layer.locked || isReferenceKind(layer.kind)" viewBox="0 0 14 14" fill="none" aria-hidden="true">
               <rect x="2.8" y="6.2" width="8.4" height="6" rx="1" fill="currentColor" />
               <path d="M4.5 6.2V4.4a2.5 2.5 0 0 1 5 0v1.8" stroke="currentColor" stroke-width="1.4" />
             </svg>
@@ -230,13 +232,13 @@ function moveActiveStep(delta: -1 | 1) {
           type="button"
           class="foot-chip"
           :disabled="busy"
-          title="선택 레이어의 획·중심선을 그대로 작업 획에 덮어씁니다"
+          :title="isReferenceKind(activeLayer.kind) ? '참고 획을 궁서체(기본 레이어)에 맞춘 뒤 작업 획으로 가져옵니다. 맞지 않는 획은 작업 획에서 하나씩 고칩니다. 작업 획이 있으면 초기화할지 추가할지 묻습니다.' : '선택 레이어의 획·중심선을 그대로 작업 획에 덮어씁니다'"
           @click="emit('applyLayer', activeLayer.id, 'direct')"
         >
-          작업 획 복사
+          {{ isReferenceKind(activeLayer.kind) ? '기본에 맞추기' : '작업 획 복사' }}
         </button>
         <button
-          v-if="canApplyToStrokes(activeLayer)"
+          v-if="canApplyToStrokes(activeLayer) && !isReferenceKind(activeLayer.kind)"
           type="button"
           class="foot-chip"
           :disabled="busy"

@@ -8,7 +8,7 @@ import { isReferenceKind } from '../shared/layerKind.ts'
 import { createCompileOutput } from './compileOutput.ts'
 import { transaction } from './db.ts'
 import { createFontApply } from './fontApply.ts'
-import { splitByContours } from './geometry.ts'
+import { fitGuideToFont, splitByContours } from './geometry.ts'
 import { createIssues } from './issues.ts'
 import { parseLayerBatch, parseResegmentMedians, type LayerSavePayload } from './layerRequests.ts'
 import { fontContoursOf } from './layers.ts'
@@ -21,6 +21,7 @@ import {
   saveNonStrokeLayerContent,
 } from './layerWrites.ts'
 import { sanitizeLayerStrokes } from './layerData.ts'
+import { toItems } from './strokeStore.ts'
 import { ORIGIN_MANUAL, requireFound, type StrokeItem } from './model.ts'
 import { createOutlineMapping } from './outlineMapping.ts'
 import { createReferencePipeline } from './referencePipeline.ts'
@@ -73,8 +74,8 @@ export function createWorkspace(rootDir: string) {
   const references = createReferencePipeline(db, rootDir, {
     strokes,
     issues,
-    getFont: () => font.getFont(),
     fontOrGiven: font.fontOrGiven,
+    fitOrGiven: font.fitOrGiven,
   })
   const conversions = createConversions(db, { strokes, issues })
   const output = createCompileOutput(db, compiledDir, {
@@ -113,9 +114,10 @@ export function createWorkspace(rootDir: string) {
     return getCharacter(unicode)
   }
 
-  async function applyNaver(unicode: string) {
-    await references.applyNaver(unicode)
-    return getCharacter(unicode)
+  async function applyNaver(unicode: string, write: 'replace' | 'append' = 'replace') {
+    const fit = await references.applyNaver(unicode, write)
+    const detail = getCharacter(unicode)
+    return detail && { ...detail, fit_status: fit.status, unmatched_strokes: fit.unmatched }
   }
 
   function updateLayersMeta(unicode: string, patches: LayerMetaPatch[]) {
@@ -126,6 +128,9 @@ export function createWorkspace(rootDir: string) {
 
   // 레이어 하나를 저장한다(응답은 만들지 않는다). 작업 획 레이어는 이력이 남는 획 저장을 쓴다.
   function writeLayer(unicode: string, char: string, layerId: string, payload: LayerSavePayload) {
+    if (layerId === LAYER_ID.mmh || layerId === LAYER_ID.acjk || layerId === LAYER_ID.naver) {
+      throw new Error('참고 레이어(네이버·AnimCJK·Hanzi)는 편집하지 않습니다. 작업 획으로 가져온 뒤 고치세요.')
+    }
     assertLayerUnlocked(db, char, layerId)
     if (layerId === LAYER_ID.strokes) {
       strokes.updateStrokes(unicode, sanitizeLayerStrokes(payload.strokes), payload.action ?? '획 편집')
@@ -183,40 +188,70 @@ export function createWorkspace(rootDir: string) {
     return getCharacter(unicode)
   }
 
-  function applyLayerToStrokes(unicode: string, layerId: string, mode: 'direct' | 'fit_font' = 'direct') {
+  function applyLayerToStrokes(unicode: string, layerId: string, mode: 'direct' | 'fit_font' = 'direct', write: 'replace' | 'append' = 'replace') {
     const detail = requireFound(getCharacter(unicode))
     const layer = detail.layers.find((item) => item.id === layerId)
     if (!layer || layer.strokes.length === 0) throw new Error('적용할 획 데이터가 없는 레이어입니다.')
     const source = isReferenceKind(layer.kind) ? layer.kind : ORIGIN_MANUAL
     const radicals = layer.strokes.flatMap((stroke, index) => (stroke.is_radical ? [index] : []))
+    const kept = detail.strokes.length
 
-    if (mode === 'fit_font') {
-      const contours = fontContoursOf(detail)
-      if (contours.length === 0) throw new Error('궁서체 윤곽이 없어 자동 분할을 적용할 수 없습니다.')
-      const split = splitByContours(contours, layer.strokes.map((stroke) => stroke.median_points))
-      if (!split) {
-        throw new Error('궁서체 윤곽 자동 분할 품질 검사를 통과하지 못했습니다. 중심선·위치를 조정하거나 [그대로 적용]을 사용하세요.')
+    // 작업 획이 이미 있으면 추가만 이어 붙인다. 비어 있으면 교체와 같다.
+    const commit = (items: StrokeItem[], action: string, glyph: Parameters<typeof references.saveImported>[4] | null) => {
+      if (write === 'append' && detail.strokes.length > 0) {
+        return updateStrokes(unicode, [...detail.strokes, ...items], `${action} 추가`)
       }
-      references.saveImported(unicode, source, layer.source_url, radicals, split, `${layer.name} 중심선으로 궁서체 분할 적용`)
-      return getCharacter(unicode)
+      if (glyph) {
+        references.saveImported(unicode, source, layer.source_url, radicals, glyph, action)
+        return getCharacter(unicode)
+      }
+      return updateStrokes(unicode, items, action)
     }
 
-    if (source !== ORIGIN_MANUAL) {
-      references.saveImported(
-        unicode,
-        source,
-        layer.source_url,
-        radicals,
-        {
-          medians: layer.strokes.map((s) => s.median_points),
-          outlines: layer.strokes.map((s) => s.outline_path),
-          widths: layer.strokes.map((s) => s.stroke_width),
-        },
-        `${layer.name} 레이어 적용`,
-      )
-      return getCharacter(unicode)
+    // 참고 획은 궁서체(기본 레이어)에 맞춘다. 맞지 않는 획은 지우지 않고 번호로 돌려 작업 획에서 고치게 한다.
+    const guide = layer.strokes.map((stroke) => stroke.median_points)
+    const attachFit = (saved: ReturnType<typeof commit>, status: 'fitted' | 'partial' | 'copied' | 'no-font', unmatched: number[]) => {
+      if (!saved || !isReferenceKind(layer.kind)) return saved
+      const offset = write === 'append' && kept > 0 ? kept : 0
+      return { ...saved, fit_status: status, unmatched_strokes: unmatched.map((order) => order + offset) }
     }
-    return updateStrokes(unicode, layer.strokes, `${layer.name} 레이어 적용`)
+
+    if (mode === 'fit_font' || isReferenceKind(layer.kind)) {
+      const contours = fontContoursOf(detail)
+      if (contours.length === 0) {
+        if (mode === 'fit_font') throw new Error('궁서체 윤곽이 없어 자동 분할을 적용할 수 없습니다.')
+      } else {
+        const fitted = fitGuideToFont(contours, guide)
+        if (!fitted) {
+          if (mode === 'fit_font' && !isReferenceKind(layer.kind)) {
+            throw new Error('궁서체 윤곽 자동 분할 품질 검사를 통과하지 못했습니다. 중심선·위치를 조정하거나 [그대로 적용]을 사용하세요.')
+          }
+        } else {
+          const glyph = { medians: fitted.medians, outlines: fitted.outlines, widths: fitted.widths, fontOutline: fitted.fontOutline }
+          const saved = commit(toItems(glyph, new Set(radicals)), `${layer.name} 획을 궁서체에 맞춤`, isReferenceKind(layer.kind) || mode === 'fit_font' ? glyph : null)
+          return attachFit(saved, fitted.unmatched.length > 0 ? 'partial' : 'fitted', fitted.unmatched)
+        }
+      }
+      if (mode === 'fit_font') {
+        const split = splitByContours(fontContoursOf(detail), guide)
+        if (!split) {
+          throw new Error('궁서체 윤곽 자동 분할 품질 검사를 통과하지 못했습니다. 중심선·위치를 조정하거나 [그대로 적용]을 사용하세요.')
+        }
+        return commit(toItems(split, new Set(radicals)), `${layer.name} 중심선으로 궁서체 분할 적용`, split)
+      }
+    }
+
+    const glyph = {
+      medians: layer.strokes.map((s) => s.median_points),
+      outlines: layer.strokes.map((s) => s.outline_path),
+      widths: layer.strokes.map((s) => s.stroke_width),
+    }
+    if (source !== ORIGIN_MANUAL) {
+      const saved = commit(toItems(glyph, new Set(radicals)), `${layer.name} 레이어 적용`, glyph)
+      const orders = layer.strokes.map((_, index) => index + 1)
+      return attachFit(saved, fontContoursOf(detail).length > 0 ? 'copied' : 'no-font', orders)
+    }
+    return commit(layer.strokes, `${layer.name} 레이어 적용`, null)
   }
 
   function resegmentLayer(unicode: string, mediansRaw: unknown) {
@@ -272,8 +307,6 @@ export function createWorkspace(rootDir: string) {
     approve,
     undo,
     applyNaver,
-    ensureReference: references.ensureReference,
-    syncMissing: references.syncMissing,
     applyFontBatch: font.applyFontBatch,
     applyAcjkBatch: references.applyAcjkBatch,
     compile: output.compile,

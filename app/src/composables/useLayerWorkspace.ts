@@ -7,7 +7,11 @@ import type { StudioState } from './useStudioState.ts'
 
 export function useLayerWorkspace(
   studio: StudioState,
-  hooks: { onReloadList: () => Promise<void>; stopPlayback: () => void },
+  hooks: {
+    onReloadList: () => Promise<void>
+    stopPlayback: () => void
+    confirmImport?: () => Promise<'replace' | 'append' | null | undefined>
+  },
 ) {
   const { selected, shown, reveal, message, error, busy } = studio
   const { onReloadList, stopPlayback } = hooks
@@ -28,6 +32,7 @@ export function useLayerWorkspace(
     markDirty: session.markDirty,
     guardUnlocked: session.guardUnlocked,
     updateTargetStrokes: edit.updateTargetStrokes,
+    confirmImport: hooks.confirmImport,
   })
   fetchReference = (layerId, keep) => {
     void commands.fetchReferenceForLayer(layerId, keep)
@@ -78,8 +83,8 @@ export function useLayerWorkspace(
     copyStrokeToWorkLayer: edit.copyStrokeToWorkLayer,
     restoreActiveSnapshot: edit.restoreActiveSnapshot,
     applyAffineToActive: edit.applyAffineToActive,
-    alignActiveToFont: edit.alignActiveToFont,
     autoFitToFont: edit.autoFitToFont,
+    resetActiveEdits: session.resetActiveEdits,
     updateSinglePathInActive: edit.updateSinglePathInActive,
     moveMedianVertex: edit.moveMedianVertex,
     addMedianVertex: edit.addMedianVertex,

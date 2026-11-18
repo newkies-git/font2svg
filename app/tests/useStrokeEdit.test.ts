@@ -167,12 +167,15 @@ test('작업 획에 추가: 다른 레이어의 획을 복제해 끝에 붙인�
   assert.deepEqual(work.strokes.map((s) => s.stroke_order), [1, 2])
 })
 
-test('전체 맞춤 정렬: 궁서체 윤곽 영역으로 획을 옮긴다', () => {
-  const { state, edit, work } = setup([bar(100)])
-  state.layers.value.push(layerOf(LAYER_ID.font, 'FONT', [], { paths: [rectPath(0, 0, 200, 100)] }))
-  edit.alignActiveToFont()
-  const xs = work().strokes[0].median_points.map((p) => p[0])
-  assert.ok(Math.min(...xs) >= 0 && Math.max(...xs) <= 200)
+test('궁서체 레이어는 위치·크기 변환·맞춤 대상이 되지 않는다', () => {
+  const path = rect(100, 100, 400, 400)
+  const { edit, font, error, dirty } = setupLayers([path], [bar(100)], LAYER_ID.font)
+  edit.applyAffineToActive((x, y) => [x + 50, y + 50], 1)
+  assert.deepEqual(font().paths, [path])
+  assert.match(error.value, /기준 레이어/)
+  assert.equal(dirty.length, 0)
+  edit.autoFitToFont()
+  assert.deepEqual(font().paths, [path])
 })
 
 // 궁서체(윤곽만 있는 레이어)와 작업 획을 함께 둔 편집 환경. active로 편집 대상을 고른다.
@@ -210,16 +213,18 @@ test('윤곽 레이어: 윤곽 순서 이동과 삭제(마지막 하나는 보�
   assert.match(error.value, /마지막 남은 윤곽/)
 })
 
-test('윤곽 레이어 변환: 선택한 윤곽 하나만, 또는 전체를 옮긴다', () => {
-  const { edit, font, state } = setupLayers([rect(0, 0, 10, 10), rect(20, 0, 30, 10)], [], LAYER_ID.font)
+test('궁서체 윤곽은 변환 범위와 무관하게 위치·크기를 바꾸지 않는다', () => {
+  const paths = [rect(0, 0, 10, 10), rect(20, 0, 30, 10)]
+  const { edit, font, state, error } = setupLayers(paths, [], LAYER_ID.font)
   const shift = (x: number, y: number): [number, number] => [x + 5, y]
   state.transformScope.value = 'stroke'
   state.selectedStrokeIndex.value = 1
   edit.applyAffineToActive(shift)
-  assert.deepEqual([font().paths[0], font().paths[1]], [rect(0, 0, 10, 10), rect(25, 0, 35, 10)])
+  assert.deepEqual(font().paths, paths)
   state.transformScope.value = 'layer'
   edit.applyAffineToActive(shift)
-  assert.equal(font().paths[0], rect(5, 0, 15, 10))
+  assert.deepEqual(font().paths, paths)
+  assert.match(error.value, /기준 레이어/)
 })
 
 test('획 변환: 단일 획 범위와 레이어 전체 범위', () => {
@@ -345,15 +350,6 @@ test('잠긴 윤곽 레이어에서는 연결·칼 점 지정이 무시된다', 
   edit.applyKnifePoint([1, 1])
   assert.deepEqual(state.connectPoints.value, [])
   assert.deepEqual(state.knifePoints.value, [])
-})
-
-test('궁서체 정렬: 기준 윤곽이 없으면 오류, 있으면 영역에 맞춘다', () => {
-  const none = setupLayers([], [bar(100)], LAYER_ID.strokes)
-  none.edit.alignActiveToFont()
-  assert.match(none.error.value, /정렬 기준이 될 궁서체/)
-  const aligned = setupLayers([rect(0, 0, 200, 100)], [bar(100)], LAYER_ID.strokes)
-  aligned.edit.alignActiveToFont()
-  assert.match(aligned.message.value, /위치·크기를 궁서체 윤곽 영역에 맞췄습니다/)
 })
 
 test('자동 맞춤: 기준 윤곽·획이 없으면 오류', () => {

@@ -22,6 +22,14 @@ const flushTimers = async () => {
   await new Promise((resolve) => setImmediate(resolve)) // 비동기 flush가 끝나기를 기다린다
 }
 
+test('참고 레이어 잠금은 풀리지 않는다', () => {
+  const { workspace, studio } = setupWorkspace([fontLayer(), naver(true), work()])
+  workspace.toggleLayerLock(LAYER_ID.naver)
+  assert.equal(workspace.layers.value.find((layer) => layer.id === LAYER_ID.naver)!.locked, false)
+  assert.match(studio.message.value, /참고용/)
+  assert.equal(patchesSent().length, 0)
+})
+
 test('표시 설정 변경은 잠시 모아서 한 번에 보낸다(같은 레이어는 병합)', async () => {
   const { workspace } = setupWorkspace([fontLayer(), work()])
   api.on('POST', /\/layers-meta$/, {})

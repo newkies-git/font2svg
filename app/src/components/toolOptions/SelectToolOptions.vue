@@ -9,6 +9,7 @@ defineProps<{
   editableLayer: LayerRecord | null
   locked: boolean
   hasFont: boolean
+  dirty: boolean
   busy: boolean
 }>()
 
@@ -22,8 +23,8 @@ const TRANSFORM_MODES: { mode: TransformMode; label: string; hint: string }[] = 
 const emit = defineEmits<{
   changeScope: [scope: 'layer' | 'stroke']
   changeTransformMode: [mode: TransformMode]
-  alignFont: []
   autoFit: []
+  resetEdits: []
 }>()
 </script>
 
@@ -64,21 +65,21 @@ const emit = defineEmits<{
     type="button"
     class="bar-btn"
     :disabled="locked || busy"
-    title="활성 레이어의 바운딩 박스를 궁서체(TTF) 윤곽 영역에 정렬합니다"
-    @click="emit('alignFont')"
-  >
-    궁서체 맞춤
-  </button>
-  <button
-    v-if="hasFont && editableLayer && editableLayer.id !== LAYER_ID.font"
-    type="button"
-    class="bar-btn"
-    :disabled="locked || busy"
     :title="scope === 'stroke'
-      ? '선택한 획을 그 획이 맡은 궁서체 영역에 겹침이 최대가 되도록 자동으로 맞춥니다'
-      : '레이어 전체를 궁서체 글자에 겹침이 최대가 되도록 맞추고, 획마다 한 번 더 보정합니다'"
+      ? '선택한 획을 그 획이 맡은 궁서체 영역에 겹침이 최대가 되도록 자동으로 맞춥니다. 궁서체 자체는 움직이지 않습니다.'
+      : '레이어 전체를 궁서체 글자에 겹침이 최대가 되도록 맞추고, 획마다 한 번 더 보정합니다. 궁서체 자체는 움직이지 않습니다.'"
     @click="emit('autoFit')"
   >
     자동 맞춤
+  </button>
+  <button
+    v-if="editableLayer && editableLayer.id !== LAYER_ID.font"
+    type="button"
+    class="bar-btn"
+    :disabled="locked || busy || !dirty"
+    title="미저장 맞춤·이동 등 편집을 취소하고, 이 레이어를 마지막으로 불러온(또는 저장한) 상태로 되돌립니다"
+    @click="emit('resetEdits')"
+  >
+    초기화
   </button>
 </template>

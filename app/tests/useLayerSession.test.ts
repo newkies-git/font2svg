@@ -102,6 +102,20 @@ test('잠금 가드: 잠금·숨김이면 이유를 알리고, 풀리면 오류�
   assert.equal(studio.error.value, '')
 })
 
+test('초기화: 미저장 편집을 불러온 상태로 되돌리고 dirty를 지운다', () => {
+  const { workspace, studio } = setupWorkspace([fontLayer(), work(bar(100), bar(300))])
+  workspace.syncFromDetail(detailOf([fontLayer(), work(bar(100), bar(300))]))
+  workspace.moveStrokeInActive(0, 1)
+  assert.equal(workspace.dirtyIds.value.has(LAYER_ID.strokes), true)
+  assert.deepEqual(workspace.layers.value.find((l) => l.id === LAYER_ID.strokes)!.strokes.map((s) => s.median_points[0][1]), [330, 130])
+  workspace.resetActiveEdits()
+  assert.equal(workspace.dirtyIds.value.has(LAYER_ID.strokes), false)
+  assert.deepEqual(workspace.layers.value.find((l) => l.id === LAYER_ID.strokes)!.strokes.map((s) => s.median_points[0][1]), [130, 330])
+  assert.match(studio.message.value, /초기화했습니다/)
+  workspace.resetActiveEdits()
+  assert.match(studio.message.value, /되돌릴 변경이 없습니다/)
+})
+
 test('편집 대상 레이어가 없으면 가드는 조용히 막는다', () => {
   const { workspace, studio } = setupWorkspace([fontLayer()])
   workspace.activeLayerId.value = 'missing'

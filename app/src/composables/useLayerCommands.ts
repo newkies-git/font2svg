@@ -1,7 +1,7 @@
 import { LAYER_ID } from '../../shared/constants.ts'
 import type { Ref } from 'vue'
 import { apiRequest, characterUrl } from '../lib/api.ts'
-import { isContourLayer } from '../../shared/layerKind.ts'
+import { isContourLayer, isReferenceKind } from '../../shared/layerKind.ts'
 import type { CharacterDetail, LayerRecord, Pt, StrokeRecord } from '../../shared/types.ts'
 import { createBusyRunner } from './useBusyAction.ts'
 import { cloneLayer } from './layerClone.ts'
@@ -17,6 +17,8 @@ type LayerCommandsDeps = {
   markDirty: (layerId: string) => void
   guardUnlocked: () => LayerRecord | null
   updateTargetStrokes: (nextStrokes: StrokeRecord[], statusMsg?: string) => void
+  // 참고 레이어를 작업 획으로 가져올 때. 작업 획이 있을 때만 부른다. 확인 창이 없으면 undefined.
+  confirmImport?: () => Promise<'replace' | 'append' | null | undefined>
 }
 
 // 서버에 저장할 레이어 내용: 윤곽만 있는 궁서체 레이어는 paths만, 나머지는 획과 paths를 보낸다.
@@ -27,7 +29,10 @@ function layerSavePayload(layer: LayerRecord, action: string) {
 }
 
 export function useLayerCommands(state: LayerEditorState, deps: LayerCommandsDeps) {
-  const { selected, layers, activeLayerId, activeLayer, editableLayer, dirtyIds, soloSnapshot } = state
+  const {
+    selected, layers, activeLayerId, activeLayer, editableLayer, dirtyIds, soloSnapshot, strokesLayer,
+    transformScope, selectedStrokeIndex, activeTool, shown, reveal,
+  } = state
   const {
     message,
     error,
@@ -38,6 +43,7 @@ export function useLayerCommands(state: LayerEditorState, deps: LayerCommandsDep
     markDirty,
     guardUnlocked,
     updateTargetStrokes,
+    confirmImport,
   } = deps
   const run = createBusyRunner(busy, error)
 
@@ -49,7 +55,9 @@ export function useLayerCommands(state: LayerEditorState, deps: LayerCommandsDep
 
   // 글자 하위 경로로 POST하고 돌려받은 글자 상세를 화면에 반영한다. 실패하면 서버 메시지(없으면 failMessage)로 던진다.
   async function postAndAdopt(unicode: string, segments: string[], failMessage: string, body?: unknown) {
-    adopt(await apiRequest<CharacterDetail>(characterUrl(unicode, ...segments), failMessage, { method: 'POST', body }))
+    const detail = await apiRequest<CharacterDetail>(characterUrl(unicode, ...segments), failMessage, { method: 'POST', body })
+    adopt(detail)
+    return detail
   }
 
   // 레이어 id가 dirty면 서버에 먼저 저장하고, 아니면 보류 중인 표시 메타만 비운다. 저장 중 오류가 나면 false.
@@ -145,14 +153,39 @@ export function useLayerCommands(state: LayerEditorState, deps: LayerCommandsDep
   async function applyLayerToWorkStrokes(layerId: string, mode: 'direct' | 'fit_font') {
     const current = selected.value
     if (!current) return
+    const layer = layers.value.find((item) => item.id === layerId)
+    let write: 'replace' | 'append' = 'replace'
+    if (layer && isReferenceKind(layer.kind) && (strokesLayer.value?.strokes.length ?? 0) > 0) {
+      const choice = confirmImport ? await confirmImport() : undefined
+      if (choice !== 'replace' && choice !== 'append') return
+      write = choice
+    }
     // 먼저 해당 레이어가 수정 중이면 서버에 반영 후 적용
     if (!(await prepareLayerForServer(layerId))) return
     await run(async () => {
-      await postAndAdopt(current.unicode, ['layers', layerId, 'apply'], '작업 획 적용에 실패했습니다.', { mode })
+      const applied = await postAndAdopt(current.unicode, ['layers', layerId, 'apply'], '작업 획 적용에 실패했습니다.', { mode, write })
       activeLayerId.value = LAYER_ID.strokes
-      message.value = mode === 'fit_font'
-        ? '선택 레이어의 중심선으로 궁서체 윤곽을 분할해 작업 획에 적용했습니다.'
-        : '선택 레이어의 획 데이터를 작업 획에 적용했습니다.'
+      const fit = applied as CharacterDetail & { fit_status?: 'fitted' | 'partial' | 'copied' | 'no-font'; unmatched_strokes?: number[] }
+      if (layer && isReferenceKind(layer.kind) && fit.fit_status) {
+        transformScope.value = 'stroke'
+        activeTool.value = 'select'
+        const index = Math.max(0, (fit.unmatched_strokes?.[0] ?? 1) - 1)
+        selectedStrokeIndex.value = index
+        shown.value = index + 1
+        reveal.value = 1
+        const orders = fit.unmatched_strokes ?? []
+        message.value = fit.fit_status === 'no-font'
+          ? '궁서체 윤곽이 없어 획을 그대로 가져왔습니다. 작업 획에서 각 획을 편집하세요.'
+          : orders.length > 0
+            ? `궁서체에 맞췄습니다. ${orders.join('·')}획은 맞지 않아 그 획을 편집할 수 있습니다.`
+            : '궁서체(기본 레이어)에 맞춰 작업 획으로 가져왔습니다. 획은 작업 획에서 하나씩 고칠 수 있습니다.'
+      } else {
+        message.value = write === 'append'
+          ? '선택 레이어의 획을 작업 획 뒤에 추가했습니다.'
+          : mode === 'fit_font'
+            ? '선택 레이어의 중심선으로 궁서체 윤곽을 분할해 작업 획에 적용했습니다.'
+            : '선택 레이어의 획 데이터를 작업 획에 적용했습니다.'
+      }
       await onReloadList()
     }, '작업 획 적용 중 오류가 발생했습니다.')
   }

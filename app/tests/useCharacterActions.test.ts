@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test, { afterEach, beforeEach } from 'node:test'
 import { ref } from 'vue'
 import { useCharacterActions } from '../src/composables/useCharacterActions.ts'
-import { LAYER_ID, MISSING_FETCH_LIMIT } from '../shared/constants.ts'
+import { LAYER_ID } from '../shared/constants.ts'
 import type { CharacterSummary } from '../shared/types.ts'
 import { bar, detailOf, ENCODED_UNICODE, fakeApi, layerOf, markDirty, setupWorkspace } from './studioHarness.ts'
 
@@ -18,7 +18,12 @@ const summary = (unicode: string, char: string): CharacterSummary => ({
 const URL_ROOT = `/api/characters/${ENCODED_UNICODE}`
 const path = (call: { url: string }) => call.url.replace(URL_ROOT, '')
 
-function setup(options: { strokes?: number; confirm?: boolean | undefined; chars?: CharacterSummary[] } = {}) {
+function setup(options: {
+  strokes?: number
+  confirm?: boolean | undefined
+  choice?: 'replace' | 'append'
+  chars?: CharacterSummary[]
+} = {}) {
   const strokes = Array.from({ length: options.strokes ?? 1 }, (_, i) => bar(100 + i * 200))
   const harness = setupWorkspace([work(...strokes)])
   const chars = ref<CharacterSummary[]>(options.chars ?? [summary('U+4E00', '一')])
@@ -32,6 +37,12 @@ function setup(options: { strokes?: number; confirm?: boolean | undefined; chars
     stopPlayback: () => { counters.stopped += 1 },
     workStrokeCount: () => harness.workspace.layers.value.find((layer) => layer.id === LAYER_ID.strokes)?.strokes.length ?? 0,
     confirmReplace: async () => { counters.confirm += 1; return options.confirm },
+    confirmImport: async () => {
+      counters.confirm += 1
+      if (options.choice) return options.choice
+      if (options.confirm === undefined) return undefined
+      return options.confirm ? 'replace' : null
+    },
   })
   return { ...harness, chars, counters, actions }
 }
@@ -46,7 +57,7 @@ test('초기 목록 업로드: JSON을 entries로 보내고 등록 수를 안내
   api.on('POST', /\/api\/import$/, { imported: 3 })
   await actions.uploadInitial(fileEvent('[{"한자":"丁"}]').event)
   assert.deepEqual(api.calls[0].body, { entries: [{ 한자: '丁' }] })
-  assert.equal(studio.message.value, '3자 등록 완료. 한자 선택 시 레퍼런스 획 데이터를 수신합니다.')
+  assert.equal(studio.message.value, '3자 등록 완료. 획은 네이버·SVG·이미지로 직접 가져오세요.')
   assert.equal(counters.loadList, 1)
 })
 
@@ -71,17 +82,12 @@ test('글자 열기: 상세를 받아 화면에 반영하고 요약 메시지를
   assert.ok(studio.message.value.endsWith('확인 필요'))
 })
 
-test('글자 열기: 획도 이슈도 없으면 레퍼런스를 받아 온 뒤 다시 연다', async () => {
+test('글자 열기: 획이 없어도 레퍼런스를 자동으로 받지 않는다', async () => {
   const { actions, studio } = setup()
-  let reads = 0
-  api.on('GET', /\/api\/characters\/U%2B4E00$/, () => {
-    reads += 1
-    return { body: reads === 1 ? detailOf([work()], { strokes: [], issue_status: null }) : detailOf([work(bar(100))]) }
-  })
-  api.on('POST', /\/reference$/, { source: 'MMH' })
+  api.on('GET', /\/api\/characters\/U%2B4E00$/, detailOf([work()], { strokes: [], issue_status: null }))
   await actions.openChar(summary('U+4E00', '一'))
-  assert.deepEqual(api.calls.map((call) => `${call.method} ${path(call)}`), ['GET ', 'POST /reference', 'GET '])
-  assert.equal(studio.selected.value!.strokes.length, 1)
+  assert.deepEqual(api.calls.map((call) => call.method), ['GET'])
+  assert.equal(studio.selected.value!.strokes.length, 0)
 })
 
 test('글자 열기 실패: 서버 오류를 보이고 busy를 푼다', async () => {
@@ -111,21 +117,6 @@ test('다시 읽기: 목록을 받은 뒤 보던 글자를 연다(목록에 없�
   chars.value = []
   await actions.reload()
   assert.equal(api.calls.length, 1, '목록에서 사라졌으면 열지 않는다')
-})
-
-test('레퍼런스 받기: 받은 출처를 안내하고 이어서 다시 읽는다', async () => {
-  const { actions, studio, counters } = setup({ chars: [] })
-  api.on('POST', /\/reference$/, { source: 'ACJK' })
-  await actions.pullReference()
-  assert.equal(studio.message.value, 'ACJK 레퍼런스 데이터 반영 완료')
-  assert.equal(counters.loadList, 1, '다시 읽기(reload)를 거친다')
-})
-
-test('레퍼런스 받기: 어느 출처에도 없으면 검색 결과 없음으로 안내한다', async () => {
-  const { actions, studio } = setup({ chars: [] })
-  api.on('POST', /\/reference$/, { source: 'NONE' })
-  await actions.pullReference()
-  assert.equal(studio.message.value, '참조 출처(Hanja, IDS) 검색 결과 없음')
 })
 
 test('승인: approve를 호출하고 안내한 뒤 다시 읽는다', async () => {
@@ -167,11 +158,20 @@ test('네이버 적용: 작업 획이 있으면 먼저 확인하고, 취소하�
   assert.equal(api.calls.length, 0, '확인 창이 없으면 덮어쓰지 않는다')
 })
 
+test('네이버 적용: 추가를 고르면 기존 획 뒤에 붙인다', async () => {
+  const { actions, studio } = setup({ strokes: 2, choice: 'append', chars: [] })
+  api.on('POST', /\/apply-naver$/, {})
+  await actions.applyNaver()
+  assert.deepEqual(api.calls[0].body, { write: 'append' })
+  assert.equal(studio.message.value, '네이버 한자사전 획을 작업 획 뒤에 추가했습니다.')
+})
+
 test('네이버 적용: 확인하면 적용하고, 작업 획이 없으면 묻지 않는다', async () => {
   const confirmed = setup({ strokes: 2, confirm: true, chars: [] })
   api.on('POST', /\/apply-naver$/, {})
   await confirmed.actions.applyNaver()
   assert.equal(path(api.calls[0]), '/apply-naver')
+  assert.deepEqual(api.calls[0].body, { write: 'replace' })
   assert.equal(confirmed.studio.message.value, '네이버 한자사전 획순을 적용했습니다.')
   api.calls.length = 0
   const empty = setup({ strokes: 0, chars: [] })
@@ -220,19 +220,9 @@ test('컴파일 실패: 검증 메시지를 보이고 그래도 다시 읽는다
   assert.equal(studio.error.value, '', '다시 읽으면서 오류 표시가 지워진다')
 })
 
-test('일괄 레퍼런스 조회: 제한을 보내고 시도한 수를 안내한 뒤 목록을 읽는다', async () => {
-  const { actions, studio, counters } = setup()
-  api.on('POST', /\/api\/sync-missing$/, { tried: 7 })
-  await actions.syncMissing()
-  assert.deepEqual(api.calls[0].body, { limit: MISSING_FETCH_LIMIT })
-  assert.equal(studio.message.value, '미완료 한자 7자 레퍼런스 조회 완료')
-  assert.equal(counters.loadList, 1)
-})
-
 test('글자가 선택되지 않았으면 글자 동작은 요청하지 않는다', async () => {
   const { actions, studio } = setup()
   studio.selected.value = null
-  await actions.pullReference()
   await actions.approve()
   await actions.importSvg(fileEvent('<svg/>').event)
   await actions.applyNaver()

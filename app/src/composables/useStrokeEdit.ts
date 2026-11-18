@@ -2,13 +2,11 @@ import { isContourLayer } from '../../shared/layerKind.ts'
 import { LAYER_ID } from '../../shared/constants.ts'
 import type { Ref } from 'vue'
 import { autoFitLayer, autoFitStroke } from '../lib/autoFit.ts'
-import { boxAlignTransform, moveItem, withCap, withMedianPoints } from '../lib/strokeOps.ts'
+import { moveItem, withCap, withMedianPoints } from '../lib/strokeOps.ts'
 import { toPercent } from '../lib/percent.ts'
 import {
   mergeTwoStrokes,
-  pathsBBox,
   reverseMedian,
-  strokesBBox,
   transformPath,
   transformStroke,
 } from '../lib/vectorEdit.ts'
@@ -172,10 +170,18 @@ export function useStrokeEdit(
     target.paths = paths
   }
 
+  // 궁서체(TTF)는 맞춤·편집의 고정 기준이라 위치·크기를 바꾸지 않는다.
+  function rejectFontTransform(target: LayerRecord): boolean {
+    if (target.kind !== 'FONT' && target.id !== LAYER_ID.font) return false
+    error.value = '궁서체(TTF)는 기준 레이어라 위치·크기를 바꿀 수 없습니다. 다른 레이어를 궁서체에 맞추세요.'
+    return true
+  }
+
   // 레이어/획 아핀 변환 적용
   function applyAffineToActive(fn: (x: number, y: number) => Pt, scaleFactor = 1) {
     const target = guardUnlocked()
     if (!target) return
+    if (rejectFontTransform(target)) return
     if (isContourLayer(target)) {
       if (transformScope.value === 'stroke' && target.paths[selectedStrokeIndex.value]) {
         const copy = target.paths.slice()
@@ -195,22 +201,6 @@ export function useStrokeEdit(
     }
   }
 
-  // 선택된 레퍼런스/획 레이어를 궁서체(FONT) 바운딩 박스에 원클릭 정렬
-  function alignActiveToFont() {
-    const target = guardUnlocked()
-    const fl = fontLayer.value
-    if (!target || !fl || fl.paths.length === 0) {
-      error.value = '정렬 기준이 될 궁서체(TTF) 윤곽이 없습니다.'
-      return
-    }
-    const fontBox = pathsBBox(fl.paths)
-    const srcBox = target.strokes.length > 0 ? strokesBBox(target.strokes) : pathsBBox(target.paths)
-    if (!fontBox || !srcBox) return
-    const { map, scale } = boxAlignTransform(fontBox, srcBox)
-    applyAffineToActive(map, scale)
-    message.value = `'${target.name}' 레이어의 위치·크기를 궁서체 윤곽 영역에 맞췄습니다.`
-  }
-
   // 겹침 비율(IoU)을 최대화해 활성 레이어를 궁서체 윤곽에 자동으로 맞춘다.
   // 전체 변환 범위면 레이어 전체(+획별 보정), 단일 획 범위면 선택한 획만 맞춘다.
   function autoFitToFont() {
@@ -220,6 +210,7 @@ export function useStrokeEdit(
       error.value = '맞춤 기준이 될 궁서체(TTF) 윤곽이 없습니다.'
       return
     }
+    if (rejectFontTransform(target)) return
     if (target.strokes.length === 0) {
       error.value = '자동으로 맞출 획 데이터가 없습니다.'
       return
@@ -267,7 +258,6 @@ export function useStrokeEdit(
     copyStrokeToWorkLayer,
     restoreActiveSnapshot,
     applyAffineToActive,
-    alignActiveToFont,
     autoFitToFont,
     updateSinglePathInActive,
     moveMedianVertex,

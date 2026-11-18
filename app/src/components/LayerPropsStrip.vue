@@ -14,7 +14,7 @@ const emit = defineEmits<{
 }>()
 
 const colorChoices: { id: LayerColor; label: string }[] = [
-  { id: 'ink', label: '먹색' },
+  { id: 'ink', label: '파스텔' },
   { id: 'slate', label: '회청' },
   { id: 'blue', label: '파랑' },
   { id: 'violet', label: '보라' },

@@ -124,15 +124,47 @@ test('작업 획에 적용: 수정 중인 레이어를 먼저 저장하고, 저�
 
 test('작업 획에 적용: 저장 뒤 apply를 호출하고 작업 획 레이어로 옮긴다(모드별 안내)', async () => {
   const mmh = layerOf(LAYER_ID.mmh, 'MMH', { strokes: [bar(100)] })
-  const { workspace, studio, reloaded } = setupWorkspace([fontLayer(), mmh, work()])
+  const { workspace, studio, reloaded } = setupWorkspace([fontLayer(), mmh, work()], {
+    confirmImport: async () => 'replace',
+  })
   api.on('POST', /\/layers\/mmh\/apply$/, detailOf([fontLayer(), mmh, work(bar(100))]))
   await workspace.applyLayerToWorkStrokes(LAYER_ID.mmh, 'fit_font')
-  assert.deepEqual(api.calls.at(-1)!.body, { mode: 'fit_font' })
+  assert.deepEqual(api.calls.at(-1)!.body, { mode: 'fit_font', write: 'replace' })
   assert.equal(workspace.activeLayerId.value, LAYER_ID.strokes)
   assert.match(studio.message.value, /궁서체 윤곽을 분할해/)
   assert.equal(reloaded.count, 1)
   await workspace.applyLayerToWorkStrokes(LAYER_ID.mmh, 'direct')
   assert.match(studio.message.value, /획 데이터를 작업 획에 적용/)
+})
+
+test('참고 획을 궁서체에 맞추면 맞지 않는 획을 작업 획에서 고르게 한다', async () => {
+  const mmh = layerOf(LAYER_ID.mmh, 'MMH', { strokes: [bar(100), bar(300)] })
+  const { workspace, studio } = setupWorkspace([fontLayer(), mmh, work()], {
+    confirmImport: async () => 'replace',
+  })
+  api.on('POST', /\/layers\/mmh\/apply$/, {
+    ...detailOf([fontLayer(), mmh, work(bar(100), bar(300))]),
+    fit_status: 'partial',
+    unmatched_strokes: [2],
+  })
+  await workspace.applyLayerToWorkStrokes(LAYER_ID.mmh, 'direct')
+  assert.equal(workspace.activeLayerId.value, LAYER_ID.strokes)
+  assert.equal(workspace.transformScope.value, 'stroke')
+  assert.equal(workspace.selectedStrokeIndex.value, 1)
+  assert.match(studio.message.value, /2획은 맞지 않아/)
+})
+
+test('참고 레이어를 작업 획으로 가져올 때 획이 있으면 초기화와 추가를 묻는다', async () => {
+  const mmh = layerOf(LAYER_ID.mmh, 'MMH', { strokes: [bar(700)] })
+  const declined = setupWorkspace([fontLayer(), mmh, work(bar(100))], { confirmImport: async () => null })
+  await declined.workspace.applyLayerToWorkStrokes(LAYER_ID.mmh, 'direct')
+  assert.equal(api.calls.length, 0)
+
+  const appended = setupWorkspace([fontLayer(), mmh, work(bar(100))], { confirmImport: async () => 'append' })
+  api.on('POST', /\/layers\/mmh\/apply$/, detailOf([fontLayer(), mmh, work(bar(100), bar(700))]))
+  await appended.workspace.applyLayerToWorkStrokes(LAYER_ID.mmh, 'direct')
+  assert.deepEqual(api.calls.at(-1)!.body, { mode: 'direct', write: 'append' })
+  assert.match(appended.studio.message.value, /뒤에 추가/)
 })
 
 test('윤곽 재분할: 활성 레이어 중심선을 보내고 응답으로 획을 바꾼다', async () => {

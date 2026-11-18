@@ -1,4 +1,4 @@
-import { ACJK_BATCH_LIMIT, FONT_BATCH_LIMIT, MISSING_FETCH_LIMIT } from '../shared/constants.ts'
+import { ACJK_BATCH_LIMIT, FONT_BATCH_LIMIT } from '../shared/constants.ts'
 import type { LayerMetaPatch } from '../shared/types.ts'
 import { HTTP_BAD_REQUEST, HTTP_NOT_FOUND, HTTP_OK } from './http.ts'
 import { sanitizeLayerStrokes } from './layerData.ts'
@@ -56,11 +56,6 @@ const ROUTES: Route[] = [
   },
   {
     method: 'POST',
-    pattern: 'sync-missing',
-    handler: async ({ ws, body }) => ws.syncMissing(limitOf((await body()).limit, MISSING_FETCH_LIMIT)),
-  },
-  {
-    method: 'POST',
     pattern: 'apply-font',
     handler: async ({ ws, body }) => {
       const payload = await body()
@@ -101,8 +96,14 @@ const ROUTES: Route[] = [
   { method: 'GET', pattern: 'characters/:unicode/conversions', handler: ({ ws, params }) => ws.listConversions(params.unicode) },
   { method: 'POST', pattern: 'characters/:unicode/approve', handler: ({ ws, params }) => ws.approve(params.unicode) },
   { method: 'POST', pattern: 'characters/:unicode/undo', handler: ({ ws, params }) => ws.undo(params.unicode) },
-  { method: 'POST', pattern: 'characters/:unicode/reference', handler: ({ ws, params }) => ws.ensureReference(params.unicode) },
-  { method: 'POST', pattern: 'characters/:unicode/apply-naver', handler: ({ ws, params }) => ws.applyNaver(params.unicode) },
+  {
+    method: 'POST',
+    pattern: 'characters/:unicode/apply-naver',
+    handler: async ({ ws, params, body }) => {
+      const write = (await body()).write === 'append' ? 'append' : 'replace'
+      return ws.applyNaver(params.unicode, write)
+    },
+  },
   { method: 'POST', pattern: 'characters/:unicode/compile', handler: ({ ws, params }) => ws.compile(params.unicode) },
   {
     method: 'POST',
@@ -151,8 +152,10 @@ const ROUTES: Route[] = [
     method: 'POST',
     pattern: 'characters/:unicode/layers/:layerId/apply',
     handler: async ({ ws, params, body }) => {
-      const mode = (await body()).mode === 'fit_font' ? 'fit_font' : 'direct'
-      return ws.applyLayerToStrokes(params.unicode, params.layerId, mode)
+      const payload = await body()
+      const mode = payload.mode === 'fit_font' ? 'fit_font' : 'direct'
+      const write = payload.write === 'append' ? 'append' : 'replace'
+      return ws.applyLayerToStrokes(params.unicode, params.layerId, mode, write)
     },
   },
 ]

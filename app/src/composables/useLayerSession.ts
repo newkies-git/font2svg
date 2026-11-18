@@ -1,5 +1,6 @@
 import { LAYER_ID } from '../../shared/constants.ts'
-import type { Ref } from 'vue'
+import { isReferenceKind } from '../../shared/layerKind.ts'
+import { ref, type Ref } from 'vue'
 import type { CharacterDetail, EditorTool, LayerRecord } from '../../shared/types.ts'
 import { cloneLayer, cloneStroke } from './layerClone.ts'
 import type { LayerEditorState } from './layerEditorState.ts'
@@ -29,8 +30,13 @@ export function useLayerSession(
     isEditableLocked,
   } = state
 
+  // 서버에서 받은 직후(또는 저장 직후) 레이어 스냅샷. 초기화 버튼이 여기로 되돌린다.
+  const baselines = ref(new Map<string, LayerRecord>())
+
   function syncFromDetail(detail: CharacterDetail) {
-    layers.value = detail.layers.map(cloneLayer)
+    const cloned = detail.layers.map(cloneLayer)
+    layers.value = cloned
+    baselines.value = new Map(cloned.map((layer) => [layer.id, cloneLayer(layer)]))
     dirtyIds.value = new Set()
     soloSnapshot.value = null
     knifePoints.value = []
@@ -44,6 +50,39 @@ export function useLayerSession(
     shown.value = detail.strokes.length
     reveal.value = 1
     selectedStrokeIndex.value = count > 0 ? Math.min(selectedStrokeIndex.value, count - 1) : 0
+  }
+
+  // 편집 중인 레이어를 마지막 동기화 상태로 되돌린다(미저장 맞춤·이동 등 취소). 궁서체 기준 레이어는 대상이 아니다.
+  function resetActiveEdits() {
+    const target = guardUnlocked()
+    if (!target) return
+    if (target.kind === 'FONT' || target.id === LAYER_ID.font) {
+      error.value = '궁서체(TTF)는 기준 레이어라 초기화하지 않습니다.'
+      return
+    }
+    if (!dirtyIds.value.has(target.id)) {
+      message.value = '되돌릴 변경이 없습니다.'
+      return
+    }
+    const baseline = baselines.value.get(target.id)
+    if (!baseline) {
+      error.value = '초기화할 기준 상태가 없습니다. 글자를 다시 선택하세요.'
+      return
+    }
+    const index = layers.value.findIndex((layer) => layer.id === target.id)
+    if (index < 0) return
+    const restored = cloneLayer(baseline)
+    layers.value = layers.value.map((layer, i) => (i === index ? restored : layer))
+    const next = new Set(dirtyIds.value)
+    next.delete(target.id)
+    dirtyIds.value = next
+    if (target.id === LAYER_ID.strokes && selected.value) {
+      selected.value = { ...selected.value, strokes: restored.strokes.map(cloneStroke) }
+      shown.value = Math.max(1, Math.min(restored.strokes.length, shown.value || restored.strokes.length))
+    }
+    const count = restored.kind === 'FONT' ? restored.paths.length : restored.strokes.length
+    if (selectedStrokeIndex.value >= count) selectedStrokeIndex.value = Math.max(0, count - 1)
+    message.value = `'${restored.name}' 레이어를 불러온 상태로 초기화했습니다.`
   }
 
   function markDirty(layerId: string) {
@@ -99,6 +138,10 @@ export function useLayerSession(
   function guardUnlocked(): LayerRecord | null {
     const target = editableLayer.value
     if (!target) return null
+    if (isReferenceKind(target.kind)) {
+      error.value = `'${target.name}' 레이어는 참고용입니다. 작업 획으로 가져온 뒤 편집하세요.`
+      return null
+    }
     if (isEditableLocked.value) {
       const cur = activeLayer.value
       error.value = `'${cur?.name ?? target.name}' 레이어가 잠겨 있거나 숨겨져 있습니다. 우측 레이어 패널에서 잠금(🔒)을 해제하고 눈(👁)을 켜세요.`
@@ -110,6 +153,7 @@ export function useLayerSession(
 
   return {
     syncFromDetail,
+    resetActiveEdits,
     markDirty,
     selectLayer,
     selectTool,

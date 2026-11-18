@@ -86,7 +86,7 @@ function builtinBase(spec: BuiltinLayerSpec, saved: CharacterLayerRow | undefine
     z_index: saved ? saved.z_index : spec.z_index,
     visible: saved ? Boolean(saved.visible) : spec.visible,
     opacity: saved ? clampOpacity(saved.opacity, spec.opacity) : spec.opacity,
-    locked: saved ? Boolean(saved.locked) : spec.locked,
+    locked: isReferenceKind(spec.kind) ? true : (saved ? Boolean(saved.locked) : spec.locked),
     label_color: saved ? normalizeColor(saved.label_color, spec.label_color) : spec.label_color,
   }
 }

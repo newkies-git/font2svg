@@ -5,7 +5,7 @@ import type { Pt, StrokeRecord } from '../shared/types.ts'
 import { markCharacterEdited } from './characterWrites.ts'
 import { transaction } from './db.ts'
 import { loadFont, type FontFile } from './font.ts'
-import { roundPoints, splitByContours, type ImportedStrokes } from './geometry.ts'
+import { fitGuideToFont, roundPoints, splitByContours, type ImportedStrokes } from './geometry.ts'
 import { charactersAfter } from './lookups.ts'
 import { ACTION_FONT, ACTOR_FONT, ACTOR_USER } from './model.ts'
 import { NO_FONT_SHA256 } from './schema.ts'
@@ -50,6 +50,24 @@ export function createFontApply(
   function fontOrGiven(char: string, medians: Pt[][], outlines: string[]): ImportedStrokes {
     const contours = getFont()?.contours(char)
     return (contours && splitByContours(contours, medians)) || { medians, outlines }
+  }
+
+  // 궁서체에 맞추되, 맞지 않는 획은 버리지 않는다. 글자가 폰트에 없으면 받은 윤곽을 그대로 둔다.
+  function fitOrGiven(char: string, medians: Pt[][], outlines: string[]) {
+    const contours = getFont()?.contours(char) ?? []
+    const fitted = contours.length > 0 ? fitGuideToFont(contours, medians) : null
+    if (fitted) {
+      return {
+        glyph: fitted,
+        unmatched: fitted.unmatched,
+        status: fitted.unmatched.length > 0 ? 'partial' as const : 'fitted' as const,
+      }
+    }
+    return {
+      glyph: { medians, outlines } satisfies ImportedStrokes,
+      unmatched: medians.map((_, index) => index + 1),
+      status: contours.length > 0 ? 'copied' as const : 'no-font' as const,
+    }
   }
 
   type FontResult = 'APPLIED' | 'EDITED' | 'ALREADY' | 'NO_STROKES' | 'NO_GLYPH' | 'REJECTED'
@@ -100,5 +118,5 @@ export function createFontApply(
     return { processed: rows.length, counts, rejected, noGlyph, next: rows.length === limit ? rows[rows.length - 1].unicode : null }
   }
 
-  return { getFont, fontOrGiven, applyFontBatch }
+  return { getFont, fontOrGiven, fitOrGiven, applyFontBatch }
 }

@@ -4,6 +4,7 @@ import { DEFAULT_CUSTOM_LAYER_OPACITY } from '../shared/constants.ts'
 import type { LayerColor, LayerMetaPatch, LayerRecord } from '../shared/types.ts'
 import { transaction } from './db.ts'
 import { clampOpacity, normalizeColor, sanitizeLayerPaths, sanitizeLayerStrokes } from './layerData.ts'
+import { isReferenceKind } from '../shared/layerKind.ts'
 import { BUILTIN_LAYERS, type BuiltinLayerSpec } from './layers.ts'
 import type { CharacterLayerRow } from './schema.ts'
 
@@ -44,7 +45,7 @@ export function mergeLayerMeta(current: LayerMeta, patch: LayerMetaPatch): Layer
     z_index: typeof patch.z_index === 'number' && Number.isFinite(patch.z_index) ? Math.round(patch.z_index) : current.z_index,
     visible: typeof patch.visible === 'boolean' ? Number(patch.visible) : current.visible,
     opacity: patch.opacity !== undefined ? clampOpacity(patch.opacity, current.opacity) : current.opacity,
-    locked: typeof patch.locked === 'boolean' ? Number(patch.locked) : current.locked,
+    locked: isReferenceKind(current.kind) ? 1 : (typeof patch.locked === 'boolean' ? Number(patch.locked) : current.locked),
     label_color: patch.label_color !== undefined ? normalizeColor(patch.label_color, current.label_color) : current.label_color,
   }
 }
@@ -112,6 +113,9 @@ export function saveNonStrokeLayerContent(
     .get(char, layerId) as CharacterLayerRow | undefined
   const current = currentLayerMeta(existing, builtin)
   if (!current) throw new Error('존재하지 않는 레이어입니다.')
+  if (isReferenceKind(current.kind)) {
+    throw new Error('참고 레이어(네이버·AnimCJK·Hanzi)는 편집하지 않습니다. 작업 획으로 가져온 뒤 고치세요.')
+  }
   if (current.kind === 'MEDIANS' || current.kind === 'NUMBERS') {
     throw new Error('오버레이 레이어는 직접 도형을 저장하지 않습니다.')
   }

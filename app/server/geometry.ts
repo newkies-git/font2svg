@@ -90,6 +90,20 @@ export function contourIndicesOfOutline(outline: string, contourLoops: Point[][]
   return result
 }
 
+// 길잡이 중심선을 궁서체 윤곽에 맞춘 뒤 획마다 나눈다. 윤곽을 못 찾은 획은 띠 모양으로 남기고 unmatched에 획 번호(1부터)를 넣는다.
+// 나눌 수 없으면 null이다. 그 획은 작업 획에서 그대로 편집한다.
+export function fitGuideToFont(contours: string[], guide: Pt[][]): (ImportedStrokes & { unmatched: number[] }) | null {
+  const pieces = splitOutlinePieces(contours, guide)
+  if (!pieces) return null
+  return {
+    medians: pieces.map((piece) => piece.median),
+    outlines: pieces.map((piece) => piece.outline),
+    widths: pieces.map((piece) => piece.width),
+    fontOutline: contours,
+    unmatched: pieces.flatMap((piece, index) => (piece.contours.length === 0 ? [index + 1] : [])),
+  }
+}
+
 // splitByContours와 달리 품질 검사에 실패해도 전체를 버리지 않고, 윤곽을 못 찾은 획만 contours를 비워(미매핑) 돌려준다.
 // 미매핑 획의 윤곽은 길잡이 중심선을 따라 띠 모양으로 만든다. 사람이 나중에 윤곽을 직접 매핑한다.
 export function splitOutlinePieces(contours: string[], guide: Pt[][]): OutlinePiece[] | null {
