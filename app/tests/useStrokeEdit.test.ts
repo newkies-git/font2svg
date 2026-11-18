@@ -99,6 +99,49 @@ test('칼 분할: 두 점으로 획을 둘로 가르고 조각이 선택된다',
   assert.equal(state.selectedStrokeIndex.value, 1)
 })
 
+// 가로 획 bar(y)를 가로지르는 세로 칼: 획 하나를 둘로 가른다.
+const cutBar = (edit: ReturnType<typeof setup>['edit'], y: number) => {
+  edit.applyKnifePoint([300, y - 50])
+  edit.applyKnifePoint([300, y + 110])
+}
+
+test('칼 분할: 전체가 보이던 상태에서 앞쪽 획을 가르면 나머지 획도 계속 보인다', () => {
+  const { edit, work, state } = setup([bar(100), bar(300), bar(500)])
+  state.shown.value = 3
+  state.selectedStrokeIndex.value = 0
+  cutBar(edit, 100)
+  assert.equal(work().strokes.length, 4)
+  assert.equal(state.shown.value, 4, '3획 → 4획 모두 보인다(예전에는 2획까지만 보였다)')
+  assert.equal(state.selectedStrokeIndex.value, 1)
+})
+
+test('칼 분할: 중간 단계까지 보던 중 보이는 획을 가르면 뒤의 보이던 획만 따라 늘어난다', () => {
+  const { edit, work, state } = setup([bar(100), bar(300), bar(500)])
+  state.shown.value = 2
+  state.selectedStrokeIndex.value = 1
+  cutBar(edit, 300)
+  assert.equal(work().strokes.length, 4)
+  assert.equal(state.shown.value, 3, '보이던 2획 중 2번째를 나눠 3획까지 보이고, 3번째 원래 획(4번째)은 계속 숨는다')
+})
+
+test('칼 분할: 아직 보이지 않던 획을 가르면 그 조각까지 보이게 한다', () => {
+  const { edit, work, state } = setup([bar(100), bar(300), bar(500)])
+  state.shown.value = 1
+  state.selectedStrokeIndex.value = 2
+  cutBar(edit, 500)
+  assert.equal(work().strokes.length, 4)
+  assert.equal(state.shown.value, 4, '2·3번째 획과 새 조각 둘이 모두 보인다')
+})
+
+test('칼 분할: 보이는 획 수는 전체 획 수를 넘지 않는다', () => {
+  const { edit, work, state } = setup([bar(100)])
+  state.shown.value = 1
+  state.selectedStrokeIndex.value = 0
+  cutBar(edit, 100)
+  assert.equal(work().strokes.length, 2)
+  assert.equal(state.shown.value, 2)
+})
+
 test('윤곽 연결: 3점 미만이면 오류, 3점이면 선택 획의 윤곽을 바꾼다', () => {
   const { edit, work, error } = setup([bar(100)])
   edit.applyConnectPoint([100, 100])

@@ -74,6 +74,12 @@ function pieceOf(stroke: StrokeRecord, path: string): StrokeRecord {
   }
 }
 
+// 획 하나(index번째, 0부터)를 pieceCount개 조각으로 나눈 뒤 단계 표시(shown)에 보일 획 수.
+// 이미 보이던 획은 계속 보이고 새 조각도 모두 보인다. 아직 보이지 않던 획을 나눴으면 그 조각까지만 보인다.
+export function shownAfterSplit(shown: number, index: number, pieceCount: number): number {
+  return index < shown ? shown + pieceCount - 1 : index + pieceCount
+}
+
 // 칼 선(점 둘 이상을 이은 꺾인 선)으로 획을 가른다. 선의 한쪽에서 떨어진 덩어리가 여럿이면 덩어리마다 획이 된다(ㅍ의 두 다리).
 // 가른 단면이 획의 끝(기필·수필)인 조각은 상대 조각 안쪽으로 모양 길이만큼 더 깊이 겹치게 하고, 그 끝에 기본 모양을 붙인다.
 // 예: ㅏ의 ㅡ는 기필, ㅓ의 ㅡ는 수필, ㅐ의 ㅡ는 양쪽 끝. 매끄러운 단면 대신 시작·끝 형태를 갖되 모양은 상대 조각 안에 숨는다.

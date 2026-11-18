@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { boxAlignTransform, moveItem, pointsToClosedPath, restrokeFromOutline, roundPt, separatePath, separateStroke, splitStrokeAtKnife, withCap, withMedianPoints } from '../src/lib/strokeOps.ts'
+import { boxAlignTransform, moveItem, pointsToClosedPath, restrokeFromOutline, roundPt, separatePath, separateStroke, shownAfterSplit, splitStrokeAtKnife, withCap, withMedianPoints } from '../src/lib/strokeOps.ts'
 import { pathBounds, rectPath, strokeOf } from './helpers.ts'
 
 test('roundPt·pointsToClosedPath: 소수 첫째 자리로 반올림해 닫힌 경로를 만든다', () => {
@@ -222,4 +222,16 @@ test('separatePath·separateStroke: 칼 모드는 자르기, extract 모드는 �
   assert.equal(separateStroke(stroke, guide, 'extract')?.length, 2)
   assert.ok(separateStroke(stroke, cutLine, 'cut'))
   assert.equal(separateStroke(stroke, [{ x: 0, y: 900 }, { x: 1000, y: 900 }], 'extract'), null)
+})
+
+test('획 분할 뒤 보일 획 수: 보이던 획은 그대로 보이고 새 조각도 모두 보인다', () => {
+  assert.equal(shownAfterSplit(5, 0, 2), 6, '전체가 보이던 5획 중 1획을 둘로 나누면 6획 모두')
+  assert.equal(shownAfterSplit(5, 4, 2), 6, '마지막 획을 나눠도 전체가 보인다')
+  assert.equal(shownAfterSplit(3, 1, 2), 4, '3획까지 보던 중 2획을 나누면 4획까지(앞 획 + 두 조각 + 뒤의 3번째)')
+  assert.equal(shownAfterSplit(5, 0, 3), 7, '세 조각으로 나뉘어도 늘어난 만큼 보인다')
+})
+
+test('획 분할 뒤 보일 획 수: 아직 보이지 않던 획을 나누면 그 조각까지만 보인다', () => {
+  assert.equal(shownAfterSplit(2, 3, 2), 5)
+  assert.equal(shownAfterSplit(0, 0, 2), 2)
 })

@@ -1,7 +1,7 @@
 import { isContourLayer } from '../../shared/layerKind.ts'
 import { LAYER_ID } from '../../shared/constants.ts'
 import type { Ref } from 'vue'
-import { separatePath, separateStroke } from '../lib/strokeOps.ts'
+import { separatePath, separateStroke, shownAfterSplit } from '../lib/strokeOps.ts'
 import type { KnifeMode, LayerRecord, Pt, StrokeRecord } from '../../shared/types.ts'
 import { cloneStroke } from './layerClone.ts'
 import type { LayerEditorState } from './layerEditorState.ts'
@@ -66,6 +66,7 @@ export function useKnifeTool(
       // 획 윤곽(OUTLINE) 레이어에서 나이프로 가른 조각은 사람이 만든 매핑이라 자동 매핑이 덮어쓰지 않는다.
       ...(target.kind === 'OUTLINE' ? { map_manual: 1 as const } : {}),
     }))
+    const shownBefore = shown.value
     const copy = target.strokes.map(cloneStroke)
     copy.splice(index, 1, ...pieces)
     const done = mode === 'extract'
@@ -73,7 +74,7 @@ export function useKnifeTool(
       : `${index + 1}획을 ${pieces.length}개로 분할했습니다. 단면이 획의 끝이면 기필·수필 모양이 붙습니다.`
     updateTargetStrokes(copy, `${done} ${SAVE_HINT}`)
     selectedStrokeIndex.value = index + 1
-    if (target.id === LAYER_ID.strokes) shown.value = index + pieces.length
+    if (target.id === LAYER_ID.strokes) shown.value = Math.min(copy.length, shownAfterSplit(shownBefore, index, pieces.length))
   }
 
   // 칼 점을 더한다. 일반 클릭은 끝점이라 바로 가르고, extend(Shift+클릭)는 꺾는 점을 더하고 계속한다.
