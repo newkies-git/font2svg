@@ -91,3 +91,30 @@ export const LAYER_BATCH_LIMIT = 64
 export const API_BODY_LIMIT_BYTES = 8 * 1024 * 1024
 // warnOnce가 한 프로세스(또는 페이지)에서 기록하는 서로 다른 경고의 최대 개수. 넘으면 더 기록하지 않는다.
 export const WARN_ONCE_LIMIT = 100
+// 이미지 가져오기(래스터 이미지 → 획 SVG)
+export const IMAGE_MIMES = ['image/png', 'image/jpeg', 'image/webp'] as const
+// 화면이 읽을 수 있는 원본 이미지 파일 크기 상한(바이트)
+export const IMAGE_MAX_BYTES = 10 * 1024 * 1024
+// 이진화 전에 긴 변을 이 크기(픽셀) 이하로 줄인다. 윤곽 추적 비용과 잡음을 함께 줄인다.
+export const IMAGE_MAX_SIDE = 640
+// 글자를 저장 좌표계(CANVAS)에 놓을 때 사방 여백
+export const IMAGE_FIT_MARGIN = 64
+// 윤곽 추적이 가장자리에서 끊기지 않도록 마스크에 두르는 빈 테두리(픽셀)
+export const IMAGE_MASK_PAD = 16
+// 전체 잉크 픽셀 대비 이 비율보다 작은 덩어리는 먼지·잡음으로 보고 버린다.
+export const IMAGE_MIN_COMPONENT_RATIO = 0.005
+// 한 글자로 받아들이는 덩어리(윤곽)의 최대 개수. 넘으면 이진화가 잘못된 것으로 본다.
+export const IMAGE_MAX_COMPONENTS = 24
+// 흑백 변환(ITU-R BT.601 휘도 가중치)과 투명 배경을 깔 흰색 값
+export const LUMA_RED = 0.299
+export const LUMA_GREEN = 0.587
+export const LUMA_BLUE = 0.114
+export const GRAY_MAX = 255
+export const GRAY_LEVELS = GRAY_MAX + 1
+// 잉크가 이 비율을 넘으면 배경이 어둡다고 보고 반전한다.
+export const IMAGE_INVERT_RATIO = 0.5
+export const IMAGE_NAME_MAX_LENGTH = 255
+export const IMAGE_SIDE_MAX = 100_000
+// 이미지 윤곽을 획으로 나누는 방식: AUTO는 길잡이 중심선(2획 이상)이 있으면 그것으로 나누고, COMPONENTS는 이어진 덩어리 하나를 획 하나로 본다.
+export const IMAGE_SPLITS = ['AUTO', 'COMPONENTS'] as const
+export type ImageSplit = (typeof IMAGE_SPLITS)[number]

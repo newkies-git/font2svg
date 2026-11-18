@@ -93,6 +93,12 @@ const ROUTES: Route[] = [
     pattern: 'characters/:unicode/import-svg',
     handler: async ({ ws, params, body }) => ws.importSvg(params.unicode, String((await body()).svg ?? '')),
   },
+  {
+    method: 'POST',
+    pattern: 'characters/:unicode/import-image',
+    handler: async ({ ws, params, body }) => ws.importImage(params.unicode, await body()),
+  },
+  { method: 'GET', pattern: 'characters/:unicode/conversions', handler: ({ ws, params }) => ws.listConversions(params.unicode) },
   { method: 'POST', pattern: 'characters/:unicode/approve', handler: ({ ws, params }) => ws.approve(params.unicode) },
   { method: 'POST', pattern: 'characters/:unicode/undo', handler: ({ ws, params }) => ws.undo(params.unicode) },
   { method: 'POST', pattern: 'characters/:unicode/reference', handler: ({ ws, params }) => ws.ensureReference(params.unicode) },

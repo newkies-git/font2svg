@@ -196,3 +196,28 @@ test('가장 옛 characters(korean_reading·issue_reason·updated_at)는 새 형
     assert.deepEqual(db.prepare('SELECT char, reason FROM issues').all().map((row) => ({ ...row })), [{ char: '丁', reason: 'Hanja에 없음' }], '빈 사유는 옮기지 않는다')
   }, { fresh: true })
 })
+
+test('v2 DB를 v3으로 올리면 변환 이력 테이블이 생기고 기존 데이터는 그대로이며 v2 백업이 남는다', () => {
+  const dir = tempDir()
+  try {
+    const file = path.join(dir, 'chusa1817.db')
+    const db = new DatabaseSync(file)
+    db.exec('PRAGMA foreign_keys = ON')
+    migrate(db, { backupBasePath: file })
+    db.exec(`INSERT INTO characters (unicode, char, reading, last_modified_by) VALUES ('U+4E01', '丁', '정', 'test')`)
+    // v2 시절의 DB: 변환 이력 테이블이 없다.
+    db.exec('DROP TABLE conversions')
+    db.exec('PRAGMA user_version = 2')
+
+    migrate(db, { backupBasePath: file })
+
+    assert.equal(userVersion(db), SCHEMA_VERSION)
+    assert.ok(db.prepare(`SELECT 1 FROM sqlite_master WHERE name = 'conversions'`).get())
+    assert.equal((db.prepare('SELECT COUNT(*) AS n FROM characters').get() as { n: number }).n, 1)
+    assert.equal(backups(dir).length, 1)
+    assert.match(backups(dir)[0], /^chusa1817\.before-v2-\d{8}-\d{6}\.db$/)
+    db.close()
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})

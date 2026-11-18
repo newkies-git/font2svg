@@ -1,7 +1,8 @@
 import type { Ref } from 'vue'
-import { LAYER_ID, MISSING_FETCH_LIMIT } from '../../shared/constants.ts'
+import { LAYER_ID, MISSING_FETCH_LIMIT, type ImageSplit } from '../../shared/constants.ts'
 import type { CharacterDetail, CharacterSummary } from '../../shared/types.ts'
 import { apiRequest, apiUrl, characterUrl } from '../lib/api.ts'
+import { buildImageImport } from '../lib/imageDecode.ts'
 import { issueLabel } from '../lib/labels.ts'
 import { createBusyRunner } from './useBusyAction.ts'
 import type { StudioState } from './useStudioState.ts'
@@ -18,7 +19,7 @@ type CharacterActionsDeps = {
   confirmReplace: () => Promise<boolean | undefined>
 }
 
-// 글자 단위 동작: 열기, 서버에서 레퍼런스 받기, 승인, SVG 가져오기, 네이버 적용, 되돌리기, 컴파일, 일괄 조회.
+// 글자 단위 동작: 열기, 서버에서 레퍼런스 받기, 승인, SVG·이미지 가져오기, 네이버 적용, 되돌리기, 컴파일, 일괄 조회.
 // 레이어 편집·저장은 useLayerWorkspace가 맡는다.
 export function useCharacterActions(studio: StudioState, deps: CharacterActionsDeps) {
   const { selected, message, error, busy } = studio
@@ -116,6 +117,30 @@ export function useCharacterActions(studio: StudioState, deps: CharacterActionsD
     }, 'SVG 가져오기 실패: 서버 상태를 확인하세요.')
   }
 
+  // 이미지(PNG·JPEG·WebP)를 읽어 윤곽을 뽑고 서버에서 획으로 나눠 저장한다. 변환 내용은 서버가 DB(conversions)에 기록한다.
+  // 이미 획이 있는 글자는 그 획을 교체하므로 먼저 확인을 받는다(바뀌기 전 획은 이력에 남아 실행 취소할 수 있다).
+  async function importImage(event: Event, split: ImageSplit) {
+    const input = event.target as HTMLInputElement
+    const file = input.files?.[0]
+    input.value = ''
+    const current = selected.value
+    if (!current || !file) return
+    if (!current.working && workStrokeCount() > 0) {
+      const confirmed = await confirmReplace()
+      if (!confirmed) return
+    }
+    await run(async () => {
+      const body = await buildImageImport(file)
+      await apiRequest(
+        characterUrl(current.unicode, 'import-image'),
+        '이미지 변환 실패: 이미지와 글자 위치를 확인하세요.',
+        { method: 'POST', body: { ...body, split } },
+      )
+      message.value = `${file.name}을(를) 획으로 변환했습니다. 확인 후 편집하세요.`
+      await reload()
+    }, '이미지 변환 실패: 이미지 형식과 서버 상태를 확인하세요.')
+  }
+
   async function applyNaver() {
     const current = selected.value
     if (!current) return
@@ -171,5 +196,5 @@ export function useCharacterActions(studio: StudioState, deps: CharacterActionsD
     }, '일괄 레퍼런스 조회 실패: 네트워크 상태를 확인하세요.')
   }
 
-  return { uploadInitial, openChar, openFirst, reload, pullReference, approve, importSvg, applyNaver, undo, compileChar, syncMissing }
+  return { uploadInitial, openChar, openFirst, reload, pullReference, approve, importSvg, importImage, applyNaver, undo, compileChar, syncMissing }
 }

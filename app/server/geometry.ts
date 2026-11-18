@@ -48,6 +48,21 @@ export function splitByContours(contours: string[], guide: Pt[][]): ImportedStro
   return { medians, outlines: split.strokes, widths, fontOutline: contours }
 }
 
+// 길잡이 중심선이 없을 때: 이어진 덩어리(윤곽) 하나를 획 하나로 보고 윤곽에서 중심선과 폭을 되찾는다.
+// 어느 덩어리든 중심선을 못 구하면 null이다(일부만 버리면 획이 조용히 사라지기 때문이다).
+export function strokesFromComponents(contours: string[]): ImportedStrokes | null {
+  const medians: Pt[][] = []
+  const widths: number[] = []
+  for (const outline of contours) {
+    const recovered = recoverMedian(outline).median
+    if (recovered.length < MEDIAN_MIN_POINTS) return null
+    const line = simplifyPolyline(recovered, MEDIAN_SIMPLIFY_TOLERANCE)
+    medians.push(line.map((point): Pt => [round1(point.x), round1(point.y)]))
+    widths.push(computeOptimalStrokeWidth(outline, line))
+  }
+  return { medians, outlines: contours, widths, fontOutline: contours }
+}
+
 export type OutlinePiece = {
   outline: string
   median: Pt[]

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { IMAGE_MIMES, type ImageSplit } from '../../shared/constants.ts'
 import { ISSUE_LABELS } from '../lib/labels.ts'
 import type { TransformMode } from '../lib/transformMath.ts'
 import type { CharacterDetail, EditorTool, KnifeMode, LayerRecord, Pt } from '../../shared/types.ts'
@@ -44,11 +45,20 @@ const emit = defineEmits<{
   naver: []
   reference: []
   importSvg: [event: Event]
+  importImage: [event: Event, split: ImageSplit]
   sync: []
 }>()
 
 const menuRef = ref<HTMLDetailsElement | null>(null)
 const svgFileInput = ref<HTMLInputElement | null>(null)
+const imageFileInput = ref<HTMLInputElement | null>(null)
+// 이미지 파일을 고르기 전에 정한 획 나누기 방식. 파일 선택 창이 닫힌 뒤 change 이벤트와 함께 보낸다.
+const imageSplit = ref<ImageSplit>('AUTO')
+
+function pickImage(split: ImageSplit) {
+  imageSplit.value = split
+  imageFileInput.value?.click()
+}
 
 function closeMenu() {
   if (menuRef.value) menuRef.value.open = false
@@ -195,6 +205,15 @@ function runMenuAction(fn: () => void) {
         accept="image/svg+xml,.svg"
         @change="emit('importSvg', $event)"
       />
+      <input
+        ref="imageFileInput"
+        class="visually-hidden"
+        tabindex="-1"
+        aria-hidden="true"
+        type="file"
+        :accept="IMAGE_MIMES.join(',')"
+        @change="emit('importImage', $event, imageSplit)"
+      />
 
       <details ref="menuRef" class="more-menu">
         <summary class="bar-btn more-summary" aria-label="데이터 동기화 및 가져오기 메뉴">
@@ -224,6 +243,24 @@ function runMenuAction(fn: () => void) {
             @click="runMenuAction(() => svgFileInput?.click())"
           >
             AnimCJK SVG 파일 가져오기…
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            :disabled="!selected || busy"
+            title="PNG·JPEG·WebP 글자 이미지를 윤곽으로 추적하고, 기존 중심선이 있으면 그것으로 획을 나눕니다"
+            @click="runMenuAction(() => pickImage('AUTO'))"
+          >
+            이미지를 획 SVG로 변환…
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            :disabled="!selected || busy"
+            title="이어진 덩어리 하나를 획 하나로 봅니다(기존 중심선을 쓰지 않음)"
+            @click="runMenuAction(() => pickImage('COMPONENTS'))"
+          >
+            이미지를 획 SVG로 변환 (덩어리=획)…
           </button>
           <hr />
           <button

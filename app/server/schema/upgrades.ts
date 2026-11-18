@@ -3,7 +3,7 @@ import { transaction } from '../db.ts'
 import { CANVAS, DEFAULT_STROKE_WIDTH, KANGXI_COUNT } from '../../shared/constants.ts'
 import { ACTION_FONT, ACTOR_FONT, ACTOR_MIGRATION, ACTOR_USER } from '../model.ts'
 import type { Pt } from '../../shared/types.ts'
-import { CHARACTER_LAYERS_DDL, ISSUES_DDL, ISSUE_IN_FONT_COLUMN, ISSUE_STATUS_COLUMN, STROKES_DDL, STROKES_HISTORY_DDL, WORKING_DATA_DDL, charactersDdl } from './ddl.ts'
+import { CHARACTER_LAYERS_DDL, CONVERSIONS_DDL, ISSUES_DDL, ISSUE_IN_FONT_COLUMN, ISSUE_STATUS_COLUMN, STROKES_DDL, STROKES_HISTORY_DDL, WORKING_DATA_DDL, charactersDdl } from './ddl.ts'
 
 function upgradeCharactersTable(db: DatabaseSync) {
   const columns = (db.prepare('PRAGMA table_info(characters)').all() as { name: string }[]).map((column) => column.name)
@@ -149,6 +149,11 @@ export function upgradeToV2(db: DatabaseSync) {
   splitRadicalNames(db)
   migrateEditHistory(db)
   introduceWorkingData(db)
+}
+
+// 변환 이력(conversions)을 추가한다. CREATE ... IF NOT EXISTS라 여러 번 실행해도 안전하다.
+export function upgradeToV3(db: DatabaseSync) {
+  db.exec(CONVERSIONS_DDL)
 }
 
 // 작업 데이터(working_data)를 도입하면서, strokes에 있던 IDS·Ollama·수작업 초안을 승인 대기 작업 데이터로 되돌린다.

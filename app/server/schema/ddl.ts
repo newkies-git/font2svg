@@ -1,4 +1,4 @@
-import { KANGXI_COUNT, SHA256_HEX_LENGTH } from '../../shared/constants.ts'
+import { GRAY_MAX, KANGXI_COUNT, SHA256_HEX_LENGTH } from '../../shared/constants.ts'
 
 export const NO_FONT_SHA256 = '0'.repeat(SHA256_HEX_LENGTH)
 
@@ -145,4 +145,48 @@ export type CharacterLayerRow = {
   paths_json: string | null
   modified: number
   updated_at: string
+}
+
+// 변환 이력: 외부 입력(래스터 이미지 등)을 획 SVG로 바꾼 기록. 원본 이미지 바이트는 두지 않고 SHA-256과 변환 설정, 결과 SVG만 남긴다.
+// mode: GUIDED는 이미 있는 중심선을 길잡이로 윤곽을 획별로 나눴고, COMPONENTS는 이어진 덩어리 하나를 획 하나로 본 것이다.
+// destination: STROKES는 이미 있던 획을 교체(이력에 남음), WORKING은 승인 전 작업 데이터.
+export const CONVERSIONS_DDL = `
+  CREATE TABLE IF NOT EXISTS conversions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    char TEXT NOT NULL REFERENCES characters(char) ON DELETE CASCADE,
+    kind TEXT NOT NULL CHECK (kind IN ('IMAGE_TO_SVG')),
+    source_name TEXT NOT NULL,
+    source_mime TEXT NOT NULL,
+    source_sha256 TEXT NOT NULL CHECK (length(source_sha256) = ${SHA256_HEX_LENGTH}),
+    source_width INTEGER NOT NULL CHECK (source_width > 0),
+    source_height INTEGER NOT NULL CHECK (source_height > 0),
+    threshold INTEGER NOT NULL CHECK (threshold BETWEEN 0 AND ${GRAY_MAX}),
+    invert INTEGER NOT NULL CHECK (invert IN (0, 1)),
+    mode TEXT NOT NULL CHECK (mode IN ('GUIDED', 'COMPONENTS')),
+    destination TEXT NOT NULL CHECK (destination IN ('STROKES', 'WORKING')),
+    stroke_count INTEGER NOT NULL CHECK (stroke_count >= 1),
+    result_svg TEXT NOT NULL,
+    created_by TEXT NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_conversions_char ON conversions(char, id DESC)
+`
+
+export type ConversionRow = {
+  id: number
+  char: string
+  kind: string
+  source_name: string
+  source_mime: string
+  source_sha256: string
+  source_width: number
+  source_height: number
+  threshold: number
+  invert: number
+  mode: string
+  destination: string
+  stroke_count: number
+  result_svg: string
+  created_by: string
+  created_at: string
 }

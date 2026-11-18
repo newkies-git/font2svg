@@ -32,6 +32,7 @@ import {
   naverUrl,
 } from './references.ts'
 import { migrate, seed } from './schema.ts'
+import { createConversions } from './conversions.ts'
 import { createStrokeStore } from './strokeStore.ts'
 
 export type Workspace = ReturnType<typeof createWorkspace>
@@ -75,6 +76,7 @@ export function createWorkspace(rootDir: string) {
     getFont: () => font.getFont(),
     fontOrGiven: font.fontOrGiven,
   })
+  const conversions = createConversions(db, { strokes, issues })
   const output = createCompileOutput(db, compiledDir, {
     getCharacter: catalog.getCharacter,
     setIssue: issues.setIssue,
@@ -92,6 +94,12 @@ export function createWorkspace(rootDir: string) {
 
   function importSvg(unicode: string, svg: string) {
     strokes.importSvg(unicode, svg)
+    return getCharacter(unicode)
+  }
+
+  // 래스터 이미지에서 뽑은 윤곽을 획 SVG로 바꿔 저장하고 변환 이력을 남긴다.
+  function importImage(unicode: string, raw: unknown) {
+    conversions.importImage(unicode, raw)
     return getCharacter(unicode)
   }
 
@@ -262,6 +270,8 @@ export function createWorkspace(rootDir: string) {
     duplicateLayer,
     deleteLayer,
     importSvg,
+    importImage,
+    listConversions: conversions.listConversions,
     approve,
     undo,
     applyNaver,

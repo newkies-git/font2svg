@@ -14,6 +14,8 @@ export const ACTION_ACJK = 'AnimCJK로 교체'
 export const ACTION_NAVER = '네이버 획순 적용'
 export const ACTION_APPROVE = '작업 데이터 승인'
 export const ACTION_SVG = 'SVG 가져오기'
+export const ACTION_IMAGE = '이미지 변환'
+export const CONVERSION_IMAGE_TO_SVG = 'IMAGE_TO_SVG'
 // 저장된 값이나 외부에서 온 값을 캡 종류로 정규화한다(모르는 값은 기본).
 export function normalizeCap(value: unknown): CapType {
   return CAP_TYPES.find((type) => type === value) ?? 'NONE'

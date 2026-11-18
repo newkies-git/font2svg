@@ -95,7 +95,7 @@ const {
   deleteActiveCustomLayer,
 } = useLayerWorkspace(studio, { onReloadList: loadList, stopPlayback: stop })
 
-const { uploadInitial, openChar, openFirst, undo, approve, compileChar, applyNaver, pullReference, importSvg, syncMissing } = useCharacterActions(studio, {
+const { uploadInitial, openChar, openFirst, undo, approve, compileChar, applyNaver, pullReference, importSvg, importImage, syncMissing } = useCharacterActions(studio, {
   chars,
   loadList,
   syncFromDetail,
@@ -207,6 +207,7 @@ onMounted(loadList)
         @naver="applyNaver"
         @reference="pullReference"
         @import-svg="importSvg"
+        @import-image="importImage"
         @sync="syncMissing"
       />
 
