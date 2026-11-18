@@ -103,3 +103,12 @@ export function pathCovers(path: string, point: { x: number; y: number }): boole
   }
   return winding !== 0
 }
+
+// size × size 이진 마스크를 칸마다 draw(x, y)로 채운다(이미지 추적 테스트용).
+export function maskWith(size: number, draw: (x: number, y: number) => boolean): Uint8Array {
+  const mask = new Uint8Array(size * size)
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) mask[y * size + x] = draw(x, y) ? 1 : 0
+  return mask
+}
+
+export const inBox = (x: number, y: number, x0: number, y0: number, x1: number, y1: number) => x >= x0 && x < x1 && y >= y0 && y < y1

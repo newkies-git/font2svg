@@ -5,7 +5,7 @@ import { CANVAS } from '../shared/constants.ts'
 import type { CompiledGlyphJson, Pt } from '../shared/types.ts'
 import { animatedSvg } from './animSvg.ts'
 import { markCharacterEdited } from './characterWrites.ts'
-import { ACTOR_USER } from './model.ts'
+import { ACTOR_USER, requireFound } from './model.ts'
 import { KANGXI_RADICALS } from './radicals.ts'
 
 export function validate(_char: string, strokes: { outline_path: string; median_points: Pt[]; is_radical: number }[]): string[] {
@@ -63,8 +63,7 @@ export function createCompileOutput(
   const { getCharacter, setIssue, clearIssue } = deps
 
   function compile(unicode: string): CompiledGlyphJson {
-    const detail = getCharacter(unicode)
-    if (!detail) throw new Error('등록되지 않은 글자입니다.')
+    const detail = requireFound(getCharacter(unicode))
     if (detail.working) throw new Error('승인 전 작업 데이터는 컴파일할 수 없습니다. 먼저 승인하세요.')
     const strokes = detail.strokes
     const problems = validate(String(detail.char), strokes)

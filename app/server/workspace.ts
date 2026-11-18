@@ -21,7 +21,7 @@ import {
   saveNonStrokeLayerContent,
 } from './layerWrites.ts'
 import { sanitizeLayerStrokes } from './layerData.ts'
-import { ORIGIN_MANUAL, type StrokeItem } from './model.ts'
+import { ORIGIN_MANUAL, requireFound, type StrokeItem } from './model.ts'
 import { createOutlineMapping } from './outlineMapping.ts'
 import { createReferencePipeline } from './referencePipeline.ts'
 import {
@@ -184,8 +184,7 @@ export function createWorkspace(rootDir: string) {
   }
 
   function applyLayerToStrokes(unicode: string, layerId: string, mode: 'direct' | 'fit_font' = 'direct') {
-    const detail = getCharacter(unicode)
-    if (!detail) throw new Error('등록되지 않은 글자입니다.')
+    const detail = requireFound(getCharacter(unicode))
     const layer = detail.layers.find((item) => item.id === layerId)
     if (!layer || layer.strokes.length === 0) throw new Error('적용할 획 데이터가 없는 레이어입니다.')
     const source = isReferenceKind(layer.kind) ? layer.kind : ORIGIN_MANUAL
@@ -221,8 +220,7 @@ export function createWorkspace(rootDir: string) {
   }
 
   function resegmentLayer(unicode: string, mediansRaw: unknown) {
-    const detail = getCharacter(unicode)
-    if (!detail) throw new Error('등록되지 않은 글자입니다.')
+    const detail = requireFound(getCharacter(unicode))
     const contours = fontContoursOf(detail)
     if (contours.length === 0) throw new Error('궁서체 윤곽이 없어 재분할할 수 없습니다.')
     const medians = parseResegmentMedians(mediansRaw)
@@ -238,8 +236,7 @@ export function createWorkspace(rootDir: string) {
   }
 
   function duplicateLayer(unicode: string, sourceLayerId?: string, name?: string) {
-    const detail = getCharacter(unicode)
-    if (!detail) throw new Error('등록되지 않은 글자입니다.')
+    const detail = requireFound(getCharacter(unicode))
     const createdId = createCustomLayer(db, detail.char, detail.layers, sourceLayerId, name)
     return { createdId, detail: getCharacter(unicode) }
   }

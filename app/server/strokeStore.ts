@@ -13,6 +13,7 @@ import {
   ACTOR_USER,
   normalizeCap,
   ORIGIN_MANUAL,
+  requireFound,
   type MedianLine,
   type StrokeItem,
   type StrokeOutline,
@@ -81,9 +82,7 @@ export function sanitizedItems(strokes: StrokeItem[]): StrokeItem[] {
 
 export function createStrokeStore(db: DatabaseSync) {
   function requireCharacter(unicode: string): { char: string } {
-    const character = db.prepare('SELECT char FROM characters WHERE unicode = ?').get(unicode) as { char: string } | undefined
-    if (!character) throw new Error('등록되지 않은 글자입니다.')
-    return character
+    return requireFound(db.prepare('SELECT char FROM characters WHERE unicode = ?').get(unicode) as { char: string } | undefined)
   }
 
   function readStrokeRow(unicode: string) {

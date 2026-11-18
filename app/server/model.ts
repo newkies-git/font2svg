@@ -23,6 +23,14 @@ export function normalizeCap(value: unknown): CapType {
 
 export const ORIGIN_MANUAL = 'MANUAL'
 
+const ERROR_UNKNOWN_CHARACTER = '등록되지 않은 글자입니다.'
+
+// 글자를 찾지 못했을 때(null·undefined) 던지고, 찾았으면 그대로 돌려준다.
+export function requireFound<T>(value: T | null | undefined): T {
+  if (!value) throw new Error(ERROR_UNKNOWN_CHARACTER)
+  return value
+}
+
 export type StrokeOutline = { order: number; path: string; radical: 0 | 1 }
 export type MedianLine = { order: number; points: Pt[]; width: number; start_cap: CapType; end_cap: CapType }
 

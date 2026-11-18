@@ -4,6 +4,7 @@ import type { LayerRecord, StrokeRecord } from '../shared/types.ts'
 import { contourIndicesOfOutline, contourLoopsOf, ribbonPath, splitOutlinePieces } from './geometry.ts'
 import { fontContoursOf, fontFingerprint } from './layers.ts'
 import { patchLayersMeta, saveNonStrokeLayerContent } from './layerWrites.ts'
+import { requireFound } from './model.ts'
 
 const OUTLINE_LAYER_ID = LAYER_ID.outline
 const SOURCE_FALLBACK_IDS = [LAYER_ID.naver, LAYER_ID.mmh, LAYER_ID.acjk] as const
@@ -34,11 +35,7 @@ function withCurrentMapping(stroke: StrokeRecord, contours: string[], hash: stri
 }
 
 export function createOutlineMapping(db: DatabaseSync, deps: { getCharacter: (unicode: string) => OutlineDetail | null }) {
-  const requireDetail = (unicode: string): OutlineDetail => {
-    const detail = deps.getCharacter(unicode)
-    if (!detail) throw new Error('등록되지 않은 글자입니다.')
-    return detail
-  }
+  const requireDetail = (unicode: string): OutlineDetail => requireFound(deps.getCharacter(unicode))
 
   // 궁서체 윤곽을 길잡이 중심선으로 획마다 나누고 각 획이 놓인 궁서체 윤곽 인덱스를 기록한다.
   // 사람이 직접 매핑한 획(map_manual)은 획 수가 같을 때 그대로 보존한다.

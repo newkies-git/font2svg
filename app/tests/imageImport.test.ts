@@ -9,21 +9,14 @@ import { createWorkspace } from '../server/workspace.ts'
 import { CANVAS } from '../shared/constants.ts'
 import { traceImageMask } from '../shared/imageTrace.ts'
 import { pathBBox } from '../shared/paths.ts'
-import { tempDir } from './helpers.ts'
+import { inBox, maskWith, tempDir } from './helpers.ts'
 
 const SIZE = 200
 const SHA = 'a'.repeat(64)
 
-function maskWith(draw: (x: number, y: number) => boolean): Uint8Array {
-  const mask = new Uint8Array(SIZE * SIZE)
-  for (let y = 0; y < SIZE; y++) for (let x = 0; x < SIZE; x++) mask[y * SIZE + x] = draw(x, y) ? 1 : 0
-  return mask
-}
-const inBox = (x: number, y: number, x0: number, y0: number, x1: number, y1: number) => x >= x0 && x < x1 && y >= y0 && y < y1
-
 // 이미지에서 뽑은 윤곽: 십자(덩어리 1개), 가로 막대(덩어리 1개)
-const cross = traceImageMask(maskWith((x, y) => inBox(x, y, 20, 90, 180, 110) || inBox(x, y, 90, 20, 110, 180)), SIZE, SIZE).contours
-const bar = traceImageMask(maskWith((x, y) => inBox(x, y, 20, 90, 180, 110)), SIZE, SIZE).contours
+const cross = traceImageMask(maskWith(SIZE, (x, y) => inBox(x, y, 20, 90, 180, 110) || inBox(x, y, 90, 20, 110, 180)), SIZE, SIZE).contours
+const bar = traceImageMask(maskWith(SIZE, (x, y) => inBox(x, y, 20, 90, 180, 110)), SIZE, SIZE).contours
 
 const imageOf = (overrides: Record<string, unknown> = {}) => ({
   name: 'scan.png', mime: 'image/png', sha256: SHA, width: SIZE, height: SIZE, threshold: 128, invert: false, ...overrides,
