@@ -33,7 +33,8 @@
 | :--- | :--- |
 | 기술 스택 | Vue 3 + Vite 화면, 같은 Vite 서버의 미들웨어가 제공하는 API(`app/server/`), `node:sqlite` DB. Node 24 이상 |
 | 도형 연산 | Paper.js·Boolean 연산·Web Worker를 쓰지 않는다. 윤곽을 격자로 옮겨(래스터) 계산한다(§4.2) |
-| 스키마 | `PRAGMA user_version = 2`. 레이어 저장용 `character_layers` 테이블이 있다(§3) |
+| 스키마 | `PRAGMA user_version = 3`. 레이어 저장용 `character_layers`, 변환 이력용 `conversions` 테이블이 있다(§3) |
+| 이미지 가져오기 | PNG·JPEG·WebP 글자 이미지를 윤곽으로 추적해 획으로 나누고 DB에 기록한다(§4.6) |
 | 화면 | 레이어 패널과 캔버스(편집 도구 5종), 필순 단계 재생. 독립된 뷰어 화면과 배경 가이드 3단계 토글은 없다(§5) |
 | 컴파일 검증 | §7.1의 일부(획 존재·중심선 2점 이상·경로 문법과 `Z` 닫힘)만 한다. §7.2 기하 검증과 획수 대조는 하지 않는다(§7) |
 | 레퍼런스 조회 | hanzi-writer-data는 글자마다 jsDelivr에서 받는다. 로컬에 일괄로 내려받아 두지 않는다(§4.5, §8.1) |
@@ -68,7 +69,7 @@
 PRAGMA foreign_keys = ON;
 PRAGMA journal_mode = WAL;
 PRAGMA busy_timeout = 5000;
-PRAGMA user_version = 2;  -- 스키마 버전. 마이그레이션 시 증가(§3.2)
+PRAGMA user_version = 3;  -- 스키마 버전. 마이그레이션 시 증가(§3.2)
 
 -- 1. 프로젝트 메타데이터
 CREATE TABLE project_meta (
@@ -216,6 +217,30 @@ CREATE TABLE character_layers (
     PRIMARY KEY (char, layer_id)
 );
 
+-- 8. 변환 이력 (외부 입력을 획 SVG로 바꾼 기록. §4.6). 원본 이미지 바이트는 저장하지 않는다.
+--    mode: GUIDED 기존 중심선으로 윤곽을 획별로 나눔 / COMPONENTS 이어진 덩어리 하나를 획 하나로 봄
+--    destination: STROKES 기존 획을 교체(strokes_history에 남음) / WORKING 승인 전 작업 데이터
+--    threshold·invert: 이진화 경계(0~255)와 반전 여부. result_svg: 결과의 애니메이션 SVG(컴파일이 만드는 것과 같은 형식)
+CREATE TABLE conversions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    char TEXT NOT NULL REFERENCES characters(char) ON DELETE CASCADE,
+    kind TEXT NOT NULL CHECK (kind IN ('IMAGE_TO_SVG')),
+    source_name TEXT NOT NULL,
+    source_mime TEXT NOT NULL,
+    source_sha256 TEXT NOT NULL CHECK (length(source_sha256) = 64),
+    source_width INTEGER NOT NULL CHECK (source_width > 0),
+    source_height INTEGER NOT NULL CHECK (source_height > 0),
+    threshold INTEGER NOT NULL CHECK (threshold BETWEEN 0 AND 255),
+    invert INTEGER NOT NULL CHECK (invert IN (0, 1)),
+    mode TEXT NOT NULL CHECK (mode IN ('GUIDED', 'COMPONENTS')),
+    destination TEXT NOT NULL CHECK (destination IN ('STROKES', 'WORKING')),
+    stroke_count INTEGER NOT NULL CHECK (stroke_count >= 1),
+    result_svg TEXT NOT NULL,
+    created_by TEXT NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX idx_conversions_char ON conversions(char, id DESC);
+
 CREATE INDEX idx_strokes_history_char ON strokes_history(char, id DESC);
 
 -- last_modified_at 자동 갱신 (DEFAULT는 INSERT에만 적용된다). last_modified_by는 쓰는 쪽이 UPDATE에 직접 넣는다.
@@ -250,7 +275,7 @@ END;
 
 ### 3.2. 마이그레이션
 
-- 스키마 버전은 `PRAGMA user_version`이 담고, 코드의 `MIGRATIONS`(`server/schema/migrate.ts`)가 버전별 변경을 순서대로 적용한다. v1은 버전 기록을 처음 도입한 시점이고, v2는 v1 이전 옛 형식 보정과 `OUTLINE` 레이어 종류 추가다. 각 단계는 이미 맞으면 건너뛰어 여러 번 실행해도 안전하다.
+- 스키마 버전은 `PRAGMA user_version`이 담고, 코드의 `MIGRATIONS`(`server/schema/migrate.ts`)가 버전별 변경을 순서대로 적용한다. v1은 버전 기록을 처음 도입한 시점이고, v2는 v1 이전 옛 형식 보정과 `OUTLINE` 레이어 종류 추가, v3은 변환 이력(`conversions`) 추가다. 각 단계는 이미 맞으면 건너뛰어 여러 번 실행해도 안전하다.
 - 적용할 마이그레이션이 있고 글자 데이터가 이미 있으면, 적용 전에 `database/chusa1817.before-v<이전 버전>-<시각>.db`로 자동 백업한다(§9.5).
 - 앱이 아는 버전보다 높은 DB는 열지 않고 오류를 낸다.
 - 새 스키마 변경은 `MIGRATIONS`에 버전을 올려 추가하고, 이미 적용된 항목은 고치지 않는다.
@@ -375,6 +400,21 @@ Hanja에 없는 글자는 `strokes`에 바로 쓰지 않는다. IDS 합성·Olla
 
 - 내려받은 원본은 변환 전에 `reference_data`에 그대로 저장한다. 변환 규칙을 고친 뒤 다시 내려받지 않고 재변환할 수 있게 하기 위해서다.
 - 404(글자 없음)도 `found = 0`으로 저장해 같은 글자를 반복 조회하지 않는다. 네트워크 오류는 저장하지 않고 재시도 대상으로 남긴다.
+
+### 4.6. 이미지 가져오기 (래스터 이미지 → 획 SVG)
+
+글자 이미지(PNG·JPEG·WebP)를 획 데이터로 바꾼다. 화면의 '데이터' 메뉴 → '이미지를 획 SVG로 변환…' 으로 쓰고, `POST /api/characters/{unicode}/import-image`가 받는다. AnimCJK의 `makeSvgsFromGraphics.php`·`makeGraphicsFromSvgs.php`는 이미지 변환기가 아니라 획 데이터와 SVG 파일을 오가는 스크립트여서 이미지 추적은 이 프로젝트에서 새로 만들었다. 두 스크립트와 겹치는 부분(경로 정리, y축 뒤집기)은 이미 구현된 `animSvg.ts`가 더 엄밀하므로(소수점 1자리 유지, 획별 폭, 반복 명령 보충) 그대로 두었고, 좌표 규칙도 시스템 것(§2.1)을 따른다.
+
+1. **화면(브라우저)**: 이미지를 디코딩해 긴 변 640픽셀 이하로 줄이고, 투명 부분은 흰 배경으로 합성해 흑백으로 바꾼 뒤 Otsu 방법으로 이진화한다. 어두운 쪽이 절반을 넘으면 반전한다. 이어진 덩어리를 찾아 잡음(전체 잉크의 0.5% 미만)을 버리고, 글자를 사방 64의 여백을 두고 저장 좌표계(0~1024, y축 위쪽) 가운데에 맞춰 덩어리마다 윤곽 경로(구멍 포함)를 만든다(`shared/imageTrace.ts`, `src/lib/imageDecode.ts`). 윤곽 추적·단순화는 §4.2와 같은 `strokeCut` 모듈이다. 덩어리는 읽는 순서(위→아래, 왼→오른)로 정렬한다.
+2. **서버**: 윤곽을 검증(허용 경로 문법, `Z`로 닫힘, 좌표 범위, 최대 24개)하고 획으로 나눈다(`server/conversions.ts`).
+   - `GUIDED`: 길잡이 중심선(이미 있는 `strokes` 또는 승인 전 `working_data`의 2획 이상)이 있으면 그 중심선으로 윤곽을 획별로 나눈다(`splitByContours`, §4.5의 품질 검사 포함). 부수 표시는 길잡이의 것을 따른다.
+   - `COMPONENTS`: 길잡이가 없거나(1획 포함) 요청이 `split: "COMPONENTS"`이면 이어진 덩어리 하나를 획 하나로 보고 윤곽에서 중심선·폭을 복원한다(`recoverMedian`). 중심선을 못 구한 덩어리가 하나라도 있으면 실패한다.
+   - 나뉘지 않으면(품질 검사 실패) 저장하지 않고 오류를 낸다.
+3. **저장**: `strokes`가 있는 글자는 획을 교체한다(`origin = 'MANUAL'`, `origin_url = 'image:sha256:<해시>'`, 바뀌기 전 행은 `strokes_history`의 '이미지 변환'으로 남아 실행 취소할 수 있다. 화면은 교체 전 확인을 받는다). 없는 글자는 승인 전 `working_data`(`source = 'MANUAL'`)에 두고 `issues`는 `DRAFT`('이미지 변환 초안')로 올린다. 사람이 §4.4 도구로 고친 뒤 승인한다.
+4. **기록**: 같은 트랜잭션에서 `conversions`에 원본 이름·형식·SHA-256·크기, 이진화 경계·반전, 방식(`mode`)·저장 위치(`destination`), 획 수, 결과 SVG를 남긴다. 원본 이미지 바이트는 저장·전송하지 않는다. 실패하면 저장도 기록도 남기지 않는다. 이력은 `GET /api/characters/{unicode}/conversions`로 읽는다(최근 것이 먼저).
+
+- **한계**: 한 장의 이미지에는 필순이 없으므로 `COMPONENTS`의 획 순서는 읽는 순서 추정이고, 획이 서로 붙은 글자는 덩어리 하나(1획)로 나온다. 이때는 `GUIDED`(기존 중심선)나 칼 분할로 나눈다. 결과 SVG는 컴파일이 만드는 SVG와 같은 형식이라, 그룹 변환으로 y를 뒤집어 그린다(이 SVG를 'AnimCJK SVG 가져오기'로 다시 읽으면 y가 뒤집혀 읽히므로 개수만 보장한다).
+- 이미지 크기는 10MB, 형식은 PNG·JPEG·WebP로 제한하며 요청 본문은 §9.2의 8MB 상한을 따른다.
 
 ## 5. 뷰어 및 디스플레이 모드 요구사항
 
