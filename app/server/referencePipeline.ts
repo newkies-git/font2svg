@@ -11,7 +11,6 @@ import {
 } from '../shared/constants.ts'
 import { isReferenceKind, type ReferenceKind } from '../shared/layerKind.ts'
 import type { Pt } from '../shared/types.ts'
-import { setCharacterStrokeCount } from './characterWrites.ts'
 import { transaction } from './db.ts'
 import type { FontFile } from './font.ts'
 import { roundPoints, splitByContours, type ImportedStrokes } from './geometry.ts'
@@ -156,13 +155,11 @@ export function createReferencePipeline(
   }
 
   function saveImported(unicode: string, source: string, url: string | null, radical: number[], glyph: ImportedStrokes, action = `${source} 가져오기`) {
-    const { medians, fontOutline } = glyph
+    const { fontOutline } = glyph
     // 궁서체 윤곽으로 나눠졌으면 궁서체 교체와 같은 상태다(이후 레퍼런스가 중심선을 되덮지 않는다).
     const by = fontOutline ? ACTOR_FONT : isReferenceKind(source) ? REFERENCE_ACTOR[source] : ACTOR_ACJK
     transaction(db, () => {
-      strokes.writeStrokes(unicode, toItems(glyph, new Set(radical)), by, action, { source, url }, fontOutline)
-      db.prepare('DELETE FROM working_data WHERE char = (SELECT char FROM characters WHERE unicode = ?)').run(unicode)
-      setCharacterStrokeCount(db, unicode, medians.length, by)
+      strokes.replaceStrokes(unicode, toItems(glyph, new Set(radical)), by, action, { source, url }, fontOutline)
       issues.clearIssue(unicode)
     })
   }

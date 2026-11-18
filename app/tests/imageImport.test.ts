@@ -128,6 +128,7 @@ test('길잡이 중심선(2획 이상)이 있으면 그 중심선으로 윤곽�
 test('이미 획이 있어도 덩어리 방식을 고르면 덩어리를 획으로 본다', () => {
   const detail = ws.importImage('U+5341', requestOf(cross, { split: 'COMPONENTS' }))!
   assert.equal(detail.strokes.length, 1, '십자는 이어진 덩어리 하나')
+  assert.equal((sideDb.prepare(`SELECT stroke_count AS n FROM characters WHERE unicode = 'U+5341'`).get() as { n: number }).n, 1, '글자의 획수도 새 획 수로 맞춘다')
   assert.equal(conversionsOf('U+5341')[0].mode, 'COMPONENTS')
 })
 

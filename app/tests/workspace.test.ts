@@ -44,6 +44,7 @@ function cacheReference(unicode: string, source: 'MMH' | 'NAVER', raw: unknown) 
     .run(unicode, source, JSON.stringify(raw))
 }
 const barGlyph = { strokes: [bar], medians: [barMedian] }
+const strokeCountOf = (unicode: string) => (sideDb.prepare('SELECT stroke_count AS n FROM characters WHERE unicode = ?').get(unicode) as { n: number }).n
 
 test('글자 목록: 글자·음·유니코드(대소문자 무시)로 거르고 없으면 빈 배열', () => {
   assert.equal(ws.listCharacters('').length, 5)
@@ -60,6 +61,10 @@ test('SVG 가져오기: 획이 없는 글자는 작업 데이터로 가져오고
   assert.equal(detail.strokes.length, 1)
   ws.approve('U+4E09')
   assert.throws(() => ws.importSvg('U+4E09', svg), /이미 있는 글자/)
+  // 승인은 획을 strokes로 옮기고 작업 데이터를 지우고 글자의 획수를 맞추며 issues를 '승인됨'으로 남긴다.
+  assert.equal(strokeCountOf('U+4E09'), 1)
+  assert.equal((sideDb.prepare(`SELECT COUNT(*) AS n FROM working_data WHERE char = '三'`).get() as { n: number }).n, 0)
+  assert.equal(ws.getCharacter('U+4E09')!.issue_status, 'APPROVED')
 })
 
 test('외부 수신: 네이버에 있으면 레이어를 표시하고, 없거나 지원 안 하는 레이어면 던진다', async () => {
@@ -84,6 +89,7 @@ test('레이어를 작업 획에 적용(direct): 레퍼런스 종류가 출처�
   assert.equal(detail.origin, 'MMH')
   assert.equal(detail.strokes.length, 1)
   assert.equal(detail.strokes[0].outline_path, bar)
+  assert.equal(strokeCountOf(unicode), 1, '레퍼런스를 적용하면 글자의 획수도 맞춘다')
 })
 
 test('레이어를 작업 획에 적용(fit_font): 궁서체 윤곽으로 나누고, 궁서체가 없으면 던진다', () => {

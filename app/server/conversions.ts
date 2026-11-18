@@ -1,5 +1,4 @@
 import type { DatabaseSync } from 'node:sqlite'
-import { setCharacterStrokeCount } from './characterWrites.ts'
 import { animatedSvg } from './animSvg.ts'
 import { transaction } from './db.ts'
 import { splitByContours, strokesFromComponents, type ImportedStrokes } from './geometry.ts'
@@ -58,9 +57,7 @@ export function createConversions(db: DatabaseSync, deps: { strokes: StrokeStore
 
     transaction(db, () => {
       if (destination === 'STROKES') {
-        strokes.writeStrokes(unicode, items, ACTOR_USER, ACTION_IMAGE, { source: ORIGIN_MANUAL, url }, glyph.fontOutline)
-        db.prepare('DELETE FROM working_data WHERE char = ?').run(char)
-        setCharacterStrokeCount(db, unicode, items.length, ACTOR_USER)
+        strokes.replaceStrokes(unicode, items, ACTOR_USER, ACTION_IMAGE, { source: ORIGIN_MANUAL, url }, glyph.fontOutline)
         issues.clearIssue(unicode)
       } else {
         strokes.writeWorking(unicode, { source: ORIGIN_MANUAL, url, fontOutline: glyph.fontOutline ?? request.contours, items }, ACTOR_USER)

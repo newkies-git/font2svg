@@ -160,6 +160,15 @@ export function createStrokeStore(db: DatabaseSync) {
     )
   }
 
+  // strokes를 새 획으로 바꾸고(바뀌기 전 행은 이력에 남는다), 같은 글자의 작업 데이터를 지우고, 글자의 획수를 맞춘다.
+  // issues 처리는 호출한 쪽이 정하고, 호출한 쪽이 트랜잭션으로 감싼다.
+  function replaceStrokes(unicode: string, items: StrokeItem[], by: string, action: string, origin?: { source: string; url: string | null }, fontOutline?: string[]) {
+    const character = requireCharacter(unicode)
+    writeStrokes(unicode, items, by, action, origin, fontOutline)
+    db.prepare('DELETE FROM working_data WHERE char = ?').run(character.char)
+    setCharacterStrokeCount(db, unicode, items.length, by)
+  }
+
   // 승인 전 작업 데이터. strokes와 같은 모양으로 쓰되 획이 없어도 된다.
   function writeWorking(unicode: string, work: { source: string; url: string | null; fontOutline: string[]; items: StrokeItem[] }, by: string) {
     const { outlines, lines } = outlinesAndLines(work.items)
@@ -223,10 +232,8 @@ export function createStrokeStore(db: DatabaseSync) {
     if (problems.length) throw new Error(problems.join(' '))
     const fontOutline = parseStringArray(working.font_outline, '궁서체 윤곽')
     transaction(db, () => {
-      writeStrokes(unicode, items, ACTOR_USER, ACTION_APPROVE, { source: working.source, url: working.source_url }, fontOutline.length > 0 ? fontOutline : undefined)
-      setCharacterStrokeCount(db, unicode, items.length, ACTOR_USER)
+      replaceStrokes(unicode, items, ACTOR_USER, ACTION_APPROVE, { source: working.source, url: working.source_url }, fontOutline.length > 0 ? fontOutline : undefined)
       db.prepare(`UPDATE issues SET status = 'APPROVED' WHERE char = ?`).run(character.char)
-      db.prepare('DELETE FROM working_data WHERE char = ?').run(character.char)
     })
   }
 
@@ -257,6 +264,7 @@ export function createStrokeStore(db: DatabaseSync) {
     readStrokes,
     itemsOf,
     writeStrokes,
+    replaceStrokes,
     writeWorking,
     updateStrokes,
     importSvg,
