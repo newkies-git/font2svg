@@ -59,10 +59,17 @@ test('animatedSvg 골든: 구조와 획별 속성', () => {
   assert.ok(svg.endsWith('</svg>\n'))
 })
 
-test('animatedSvg 결과를 parseAnimSvg가 다시 읽는다(왕복)', () => {
-  const svg = animatedSvg('U+4E00', ['M 0 0 L 1 0 L 1 1 Z'], [[[0, 0], [5, 5]]], [80])
-  // 저장 좌표는 y가 위쪽이고 이 SVG는 그룹 변환으로 뒤집으므로, 읽을 때의 y 뒤집기는 별개다. 개수만 보장한다.
+test('animatedSvg 결과를 parseAnimSvg가 같은 좌표로 다시 읽는다(왕복)', () => {
+  const outlines = ['M 100 400 L 900 400 L 900 520 L 100 520 Z', 'M 480 100 L 560 100 L 560 950 L 480 950 Z']
+  const medians: [number, number][][] = [[[150, 460], [870, 460]], [[520, 120], [520, 930.5]]]
+  const parsed = parseAnimSvg(animatedSvg('U+4E00', outlines, medians, [80, 90]), '一')
+  assert.deepEqual(parsed.outlines, outlines)
+  assert.deepEqual(parsed.medians, medians)
+})
+
+test('그룹 변환이 없는 AnimCJK 파일은 계속 y = 900 - SVG y로 읽는다', () => {
+  const svg = '<svg id="z19968"><path id="z19968d1" d="M 100 500 L 900 500 L 900 380 Z"/><path pathLength="3333" clip-path="url(#z19968c1)" d="M 100 450 L 900 450"/></svg>'
   const parsed = parseAnimSvg(svg, '一')
-  assert.equal(parsed.outlines.length, 1)
-  assert.equal(parsed.medians.length, 1)
+  assert.equal(parsed.outlines[0], 'M 100 400 L 900 400 L 900 520 Z')
+  assert.deepEqual(parsed.medians[0], [[100, 450], [900, 450]])
 })

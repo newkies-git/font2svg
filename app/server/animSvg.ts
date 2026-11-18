@@ -53,6 +53,11 @@ type Mapper = (x: number, y: number) => Pt
 // AnimCJK SVG는 y가 아래로 늘어나므로 뒤집는다.
 const flipY = (y: number) => round(ACJK_SVG_Y_ORIGIN - y)
 const fromAnimCjk: Mapper = (x, y) => [round(x), flipY(y)]
+// 우리가 내보내는 SVG(animatedSvg)는 경로에 저장 좌표(y축 위쪽)를 그대로 적고 이 변환으로 그룹을 뒤집어 그린다.
+// 이 변환이 있으면 경로의 숫자가 이미 저장 좌표이므로 다시 뒤집지 않는다.
+const STORED_COORDS_TRANSFORM = `translate(0 ${CANVAS}) scale(1 -1)`
+const fromStored: Mapper = (x, y) => [round(x), round(y)]
+const hasStoredCoords = (svg: string) => svg.includes(`transform="${STORED_COORDS_TRANSFORM}"`)
 
 function outlinePath(d: string, map: Mapper): string {
   return segmentsOf(d).map(({ command, values }) => {
@@ -69,7 +74,8 @@ function medianPoints(d: string, map: Mapper): Pt[] {
   })
 }
 
-// AnimCJK 형식 SVG(makeSvgsFromGraphics.php가 만드는 모양)에서 획 윤곽과 중심선을 읽는다.
+// AnimCJK 형식 SVG(makeSvgsFromGraphics.php가 만드는 모양)에서 획 윤곽과 중심선을 읽는다. 우리가 내보낸 SVG(animatedSvg)도 읽으며, 그때는 좌표를 뒤집지 않는다.
+// 좌표 규칙: 숫자가 SVG 좌표(y 아래쪽)인 AnimCJK 파일은 y = 900 - SVG y, 우리 파일은 숫자 그대로 저장 좌표다.
 // 윤곽은 id="z{코드}d{획}[a-z]" 경로, 중심선은 pathLength가 있는 경로이고 둘 다 문서 순서가 획 순서다.
 // 쪼개진 획(접미사 a, b)은 원본 스크립트처럼 각각 별개의 획으로 가져온다.
 export function parseAnimSvg(svg: string, char: string): { outlines: string[]; medians: Pt[][] } {
@@ -79,13 +85,14 @@ export function parseAnimSvg(svg: string, char: string): { outlines: string[]; m
   const rootId = attributes(root[0]).id
   if (rootId && rootId !== `z${codePoint}`) throw new Error(`SVG의 글자(${rootId})가 선택한 글자(${char})와 다릅니다.`)
 
+  const map = hasStoredCoords(svg) ? fromStored : fromAnimCjk
   const outlines: string[] = []
   const medians: Pt[][] = []
   for (const [tag] of svg.matchAll(/<path\b[^>]*>/gi)) {
     const attribute = attributes(tag)
     if (!attribute.d) continue
-    if (attribute.id && /^z\d+d\d+[a-z]?$/.test(attribute.id)) outlines.push(outlinePath(attribute.d, fromAnimCjk))
-    else if (attribute.pathLength) medians.push(medianPoints(attribute.d, fromAnimCjk))
+    if (attribute.id && /^z\d+d\d+[a-z]?$/.test(attribute.id)) outlines.push(outlinePath(attribute.d, map))
+    else if (attribute.pathLength) medians.push(medianPoints(attribute.d, map))
   }
   if (outlines.length === 0) throw new Error('SVG에서 획 윤곽(id="z…d…")을 찾지 못했습니다.')
   if (outlines.length !== medians.length) throw new Error(`획 윤곽 ${outlines.length}개와 중심선 ${medians.length}개의 수가 다릅니다.`)
@@ -149,7 +156,7 @@ svg.acjk path[clip-path] { --t:${ANIM_STROKE_SECONDS}s; animation:zk var(--t) li
 svg.acjk path[id] { fill:#ccc; }
 ]]>
 </style>
-<g transform="translate(0 ${CANVAS}) scale(1 -1)">
+<g transform="${STORED_COORDS_TRANSFORM}">
 ${fills}
 <defs>
 ${clips}

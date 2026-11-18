@@ -8,6 +8,7 @@ import { parseImageImport } from '../server/imageRequests.ts'
 import { createWorkspace } from '../server/workspace.ts'
 import { CANVAS } from '../shared/constants.ts'
 import { traceImageMask } from '../shared/imageTrace.ts'
+import { pathBBox } from '../shared/paths.ts'
 import { tempDir } from './helpers.ts'
 
 const SIZE = 200
@@ -90,13 +91,13 @@ test('획이 없는 글자: 덩어리를 획으로 보고 승인 전 작업 데�
   assert.match(record.result_svg, /id="z19968d1"/)
 })
 
-test('변환 결과 SVG는 컴파일이 만드는 것과 같은 애니메이션 SVG이고, SVG 가져오기가 구조를 읽는다', () => {
+test('변환 결과 SVG는 컴파일이 만드는 것과 같은 애니메이션 SVG이고, SVG 가져오기가 같은 좌표로 다시 읽는다', () => {
   const [record] = conversionsOf('U+4E00')
   const saved = ws.getCharacter('U+4E00')!.strokes[0]
   assert.equal(record.result_svg, animatedSvg('U+4E00', [saved.outline_path], [saved.median_points], [saved.stroke_width]))
-  // 이 SVG는 그룹 변환으로 y를 뒤집어 그리므로 읽을 때의 좌표 뒤집기는 별개다(animSvg.test.ts의 왕복 시험과 같이 개수만 보장한다).
-  const reread = ws.importSvg('U+4E00', record.result_svg)!
-  assert.equal(reread.strokes.length, 1)
+  const reread = ws.importSvg('U+4E00', record.result_svg)!.strokes[0]
+  assert.deepEqual(reread.median_points, saved.median_points)
+  assert.deepEqual(pathBBox(reread.outline_path), pathBBox(saved.outline_path))
 })
 
 test('같은 글자에 다시 변환하면 이력이 쌓이고 최근 것이 먼저다', () => {
