@@ -74,9 +74,10 @@ export function binarize(gray: Uint8Array, threshold: number, invert: boolean): 
 
 export type TracedGlyph = { contours: string[]; components: number }
 
-// 이진 마스크에서 글자 윤곽을 뽑는다. 이어진 덩어리 하나가 윤곽 경로 하나(안쪽 구멍 포함)이다.
-// 잡음 덩어리를 버리고, 남은 글자를 여백을 두고 저장 좌표계 한가운데에 맞춘다. 덩어리는 읽는 순서(위→아래, 왼→오른)로 돌려준다.
-export function traceImageMask(mask: Uint8Array, width: number, height: number): TracedGlyph {
+type Bounds = { minX: number; minY: number; width: number; height: number }
+
+// 이어진 덩어리 중 잡음(전체 잉크 대비 너무 작은 것)을 버린다. 잉크가 없거나 덩어리가 너무 많으면 던진다.
+function glyphComponents(mask: Uint8Array, width: number, height: number): number[][] {
   const all = connectedComponents(mask, width, height)
   const total = all.reduce((sum, pixels) => sum + pixels.length, 0)
   if (total === 0) throw new Error('이미지에서 글자를 찾지 못했습니다. 글자와 배경의 밝기 차이를 확인하세요.')
@@ -84,12 +85,16 @@ export function traceImageMask(mask: Uint8Array, width: number, height: number):
   if (kept.length > IMAGE_MAX_COMPONENTS) {
     throw new Error(`글자 덩어리가 ${kept.length}개로 너무 많습니다. 배경이 복잡하거나 흑백 구분이 잘못된 이미지입니다.`)
   }
+  return kept
+}
 
+// 남은 덩어리 전체가 차지하는 픽셀 범위.
+function boundsOf(components: number[][], width: number, height: number): Bounds {
   let minX = width
   let minY = height
   let maxX = -1
   let maxY = -1
-  for (const pixels of kept) {
+  for (const pixels of components) {
     for (const index of pixels) {
       const x = index % width
       const y = Math.floor(index / width)
@@ -99,37 +104,46 @@ export function traceImageMask(mask: Uint8Array, width: number, height: number):
       if (y > maxY) maxY = y
     }
   }
-  const glyphWidth = maxX - minX + 1
-  const glyphHeight = maxY - minY + 1
-  const maskWidth = glyphWidth + IMAGE_MASK_PAD * 2
-  const maskHeight = glyphHeight + IMAGE_MASK_PAD * 2
+  return { minX, minY, width: maxX - minX + 1, height: maxY - minY + 1 }
+}
 
-  // 글자의 긴 변이 (CANVAS - 2 × 여백)가 되게 늘리고 가운데에 놓는다. Raster.scale은 저장 좌표 1단위당 픽셀 수다.
-  const pixelsPerUnit = Math.max(glyphWidth, glyphHeight) / (CANVAS - 2 * IMAGE_FIT_MARGIN)
-  const raster: Raster = {
-    w: maskWidth,
-    h: maskHeight,
+// 글자의 긴 변이 (CANVAS - 2 × 여백)가 되게 늘리고 저장 좌표계 가운데에 놓는 좌표 변환. Raster.scale은 저장 좌표 1단위당 픽셀 수다.
+function fitRaster(bounds: Bounds): Raster {
+  const pixelsPerUnit = Math.max(bounds.width, bounds.height) / (CANVAS - 2 * IMAGE_FIT_MARGIN)
+  return {
+    w: bounds.width + IMAGE_MASK_PAD * 2,
+    h: bounds.height + IMAGE_MASK_PAD * 2,
     ink: new Uint8Array(0),
     pad: IMAGE_MASK_PAD,
     scale: pixelsPerUnit,
-    minX: (CANVAS - glyphWidth / pixelsPerUnit) / 2,
-    maxY: CANVAS - (CANVAS - glyphHeight / pixelsPerUnit) / 2,
+    minX: (CANVAS - bounds.width / pixelsPerUnit) / 2,
+    maxY: CANVAS - (CANVAS - bounds.height / pixelsPerUnit) / 2,
   }
+}
 
-  const pieces = kept.map((pixels) => {
-    const componentMask = new Uint8Array(maskWidth * maskHeight)
-    let sumX = 0
-    let sumY = 0
-    for (const index of pixels) {
-      const x = index % width
-      const y = Math.floor(index / width)
-      componentMask[(y - minY + IMAGE_MASK_PAD) * maskWidth + (x - minX + IMAGE_MASK_PAD)] = 1
-      sumX += x
-      sumY += y
-    }
-    return { path: outlineOfMask(componentMask, raster), centerX: sumX / pixels.length, centerY: sumY / pixels.length }
-  })
-  const contours = pieces
+// 덩어리 하나의 윤곽 경로(구멍 포함)와 정렬에 쓸 중심(이미지 픽셀 좌표).
+function componentPiece(pixels: number[], width: number, bounds: Bounds, raster: Raster) {
+  const mask = new Uint8Array(raster.w * raster.h)
+  let sumX = 0
+  let sumY = 0
+  for (const index of pixels) {
+    const x = index % width
+    const y = Math.floor(index / width)
+    mask[(y - bounds.minY + IMAGE_MASK_PAD) * raster.w + (x - bounds.minX + IMAGE_MASK_PAD)] = 1
+    sumX += x
+    sumY += y
+  }
+  return { path: outlineOfMask(mask, raster), centerX: sumX / pixels.length, centerY: sumY / pixels.length }
+}
+
+// 이진 마스크에서 글자 윤곽을 뽑는다. 이어진 덩어리 하나가 윤곽 경로 하나(안쪽 구멍 포함)이다.
+// 잡음 덩어리를 버리고, 남은 글자를 여백을 두고 저장 좌표계 한가운데에 맞춘다. 덩어리는 읽는 순서(위→아래, 왼→오른)로 돌려준다.
+export function traceImageMask(mask: Uint8Array, width: number, height: number): TracedGlyph {
+  const components = glyphComponents(mask, width, height)
+  const bounds = boundsOf(components, width, height)
+  const raster = fitRaster(bounds)
+  const contours = components
+    .map((pixels) => componentPiece(pixels, width, bounds, raster))
     .filter((piece): piece is { path: string; centerX: number; centerY: number } => piece.path !== null)
     .sort((a, b) => a.centerY - b.centerY || a.centerX - b.centerX)
     .map((piece) => piece.path)
