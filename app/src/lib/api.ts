@@ -1,4 +1,4 @@
-import type { AppliedCharacterDetail, ConversionRecord, OllamaIdsPreview, OllamaStatus } from '../../shared/types.ts'
+import type { AppliedCharacterDetail, ChatContext, ChatMessage, ChatMode, ChatReply, ConversionRecord, OllamaIdsPreview, OllamaStatus } from '../../shared/types.ts'
 
 const API_ROOT = '/api'
 
@@ -34,6 +34,13 @@ export async function apiRequest<T = unknown>(url: string, fallbackMessage: stri
 
 export function fetchOllamaStatus(): Promise<OllamaStatus> {
   return apiRequest<OllamaStatus>(apiUrl('ollama', 'status'), '로컬 Ollama 연결 상태를 확인하지 못했습니다.')
+}
+
+export function chatWithOllama(
+  payload: { model?: string; mode: ChatMode; messages: ChatMessage[]; context?: ChatContext },
+  signal?: AbortSignal,
+): Promise<ChatReply> {
+  return apiRequest<ChatReply>(apiUrl('ollama', 'chat'), 'Ollama 채팅에 실패했습니다.', { method: 'POST', body: payload, signal })
 }
 
 export function inferOllamaIds(

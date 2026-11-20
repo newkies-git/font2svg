@@ -30,6 +30,13 @@ export const KANGXI_COUNT = 214
 export const DB_BUSY_TIMEOUT_MS = 5_000
 export const FETCH_TIMEOUT_MS = 10_000
 export const OLLAMA_TIMEOUT_MS = 60_000
+// 로컬 Ollama 채팅: 한 번에 보내는 대화 수·메시지 길이·컨텍스트 획 수 상한, 응답 다양성(temperature)
+export const OLLAMA_CHAT_MAX_MESSAGES = 20
+export const OLLAMA_CHAT_MAX_CONTENT = 4000
+export const OLLAMA_CHAT_MAX_STROKES = 64
+export const OLLAMA_CHAT_TEMPERATURE = 0.3
+// 채팅 한 번의 응답에서 받아들이는 데이터 수정 제안의 최대 개수
+export const OLLAMA_CHAT_MAX_EDITS = 16
 export const MEDIAN_MIN_POINTS = 2
 export const MEDIAN_BBOX_INSET = 20
 export const MEDIAN_SIMPLIFY_TOLERANCE = 3

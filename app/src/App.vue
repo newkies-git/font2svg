@@ -3,11 +3,10 @@ import { computed, onMounted, ref } from 'vue'
 import CharacterSidebar from './components/CharacterSidebar.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
 import ConversionsDialog from './components/ConversionsDialog.vue'
+import OllamaChatDialog from './components/OllamaChatDialog.vue'
 import ImportChoiceDialog from './components/ImportChoiceDialog.vue'
 import LayerCanvas from './components/LayerCanvas.vue'
 import LayersPanel from './components/LayersPanel.vue'
-import OllamaIdsDialog from './components/OllamaIdsDialog.vue'
-import OllamaSplitDialog from './components/OllamaSplitDialog.vue'
 import StepControls from './components/StepControls.vue'
 import StrokeList from './components/StrokeList.vue'
 import StudioTopBar from './components/StudioTopBar.vue'
@@ -22,16 +21,24 @@ import { useStudioShortcuts } from './composables/useStudioShortcuts.ts'
 import { useStudioState } from './composables/useStudioState.ts'
 import { useTheme } from './composables/useTheme.ts'
 import { LAYER_ID } from '../shared/constants.ts'
+import type { ChatEditActions } from './lib/chatEdits.ts'
 import type { CapType } from '../shared/types.ts'
 
 const studio = useStudioState()
 const { selected, message, error, busy, shown, reveal } = studio
 const confirmDialog = ref<InstanceType<typeof ConfirmDialog> | null>(null)
 const conversionsDialog = ref<InstanceType<typeof ConversionsDialog> | null>(null)
+const ollamaChat = ref<InstanceType<typeof OllamaChatDialog> | null>(null)
 const importChoice = ref<InstanceType<typeof ImportChoiceDialog> | null>(null)
-const ollamaDialog = ref<InstanceType<typeof OllamaIdsDialog> | null>(null)
-const ollamaSplitDialog = ref<InstanceType<typeof OllamaSplitDialog> | null>(null)
 const { status: ollamaStatus, activeModelLabel, refreshStatus: refreshOllamaStatus } = useOllamaStatus()
+const chatActions: ChatEditActions = {
+  setRadical: (index, value) => setStrokeRadical(index, value),
+  setCap: (index, end, value) => setStrokeCap(index, end, value),
+  reverse: (index) => reverseActiveStrokeMedian(index),
+  move: (index, delta) => moveStrokeInActive(index, delta),
+  remove: (index) => deleteStrokeAt(index),
+  mergeNext: (index) => mergeStrokeWithNext(index),
+}
 const confirmImport = () => importChoice.value?.ask() ?? Promise.resolve(undefined)
 
 const { chars, query, statusFilter, filteredChars, statusCounts, loadList, clearSearch } = useCharacterList(error)
@@ -123,7 +130,7 @@ const {
   deleteActiveCustomLayer,
 } = useLayerWorkspace(studio, { onReloadList: loadList, stopPlayback: stop, confirmImport })
 
-const { uploadInitial, openChar, openFirst, undo, approve, compileChar, applyNaver, applyOllama, applyOllamaSplit, importSvg, importImage } = useCharacterActions(studio, {
+const { uploadInitial, openChar, openFirst, undo, approve, compileChar, applyNaver, importSvg, importImage } = useCharacterActions(studio, {
   chars,
   loadList,
   syncFromDetail,
@@ -264,8 +271,6 @@ onMounted(() => {
         @undo="undo"
         @compile="compileChar"
         @naver="applyNaver"
-        @ollama="ollamaDialog?.open()"
-        @ollama-split="ollamaSplitDialog?.open()"
         @conversions="conversionsDialog?.open()"
         @import-svg="importSvg"
         @import-image="importImage"
@@ -378,26 +383,7 @@ onMounted(() => {
                 <span class="ollama-dot" aria-hidden="true" />
                 <span>{{ activeModelLabel }}</span>
               </span>
-            </div>
-            <div class="inspector-ollama-actions">
-              <button
-                type="button"
-                class="ollama-dock-btn primary"
-                :disabled="!selected || busy"
-                title="로컬 Ollama로 현재 궁서체 윤곽을 네이버 또는 Hanzi 획순에 맞게 분리합니다"
-                @click="ollamaSplitDialog?.open()"
-              >
-                궁서체 획 분리
-              </button>
-              <button
-                type="button"
-                class="ollama-dock-btn"
-                :disabled="!selected || busy"
-                title="로컬 Ollama로 IDS 구조식을 추론하고 부품 획을 합성합니다"
-                @click="ollamaDialog?.open()"
-              >
-                IDS 합성
-              </button>
+              <button type="button" class="ollama-dock-btn" @click="ollamaChat?.open()">채팅</button>
             </div>
           </section>
         </aside>
@@ -430,18 +416,12 @@ onMounted(() => {
       작업 획에 이미 획이 있습니다.<br />
       지우고 가져온 획만 쓸지, 기존 획 뒤에 덧붙일지 고르세요.
     </ImportChoiceDialog>
-    <OllamaIdsDialog
-      ref="ollamaDialog"
+    <OllamaChatDialog
+      ref="ollamaChat"
       :selected="selected"
-      :busy="busy"
-      @apply="applyOllama"
-    />
-    <OllamaSplitDialog
-      ref="ollamaSplitDialog"
-      :selected="selected"
-      :font-contour-count="fontLayer?.paths.length ?? 0"
-      :busy="busy"
-      @split="applyOllamaSplit"
+      :layer="editableLayer"
+      :locked="isEditableLocked"
+      :actions="chatActions"
     />
     <ConversionsDialog
       ref="conversionsDialog"

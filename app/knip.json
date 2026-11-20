@@ -2,7 +2,9 @@
   "$schema": "https://unpkg.com/knip@5/schema.json",
   "entry": [
     "scripts/*.ts",
-    "tests/**/*.test.ts"
+    "tests/**/*.test.ts",
+    "src/components/OllamaIdsDialog.vue",
+    "src/components/OllamaSplitDialog.vue"
   ],
   "project": [
     "src/**/*.{ts,vue}",

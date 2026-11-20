@@ -44,7 +44,7 @@ export function resolveOllamaBaseUrl(rawHost = process.env.OLLAMA_HOST): string 
   return parsed.origin
 }
 
-export function ollamaUrl(endpoint: '/api/generate' | '/api/tags'): string {
+export function ollamaUrl(endpoint: '/api/generate' | '/api/tags' | '/api/chat'): string {
   return `${resolveOllamaBaseUrl()}${endpoint}`
 }
 

@@ -3,6 +3,7 @@ import type { LayerMetaPatch } from '../shared/types.ts'
 import { HTTP_BAD_REQUEST, HTTP_NOT_FOUND, HTTP_OK } from './http.ts'
 import { sanitizeLayerStrokes } from './layerData.ts'
 import { parseLayerSavePayload } from './layerRequests.ts'
+import { chatWithOllama, parseChatRequest } from './ollamaChat.ts'
 import type { Workspace } from './workspace.ts'
 
 export type ApiResult = { status: number; body: unknown }
@@ -46,6 +47,7 @@ const optionalText = (value: unknown): string | undefined => (typeof value === '
 const ROUTES: Route[] = [
   { method: 'GET', pattern: 'characters', handler: ({ ws, searchParams }) => ws.listCharacters(searchParams.get('q') ?? '') },
   { method: 'GET', pattern: 'radicals', handler: ({ ws }) => ws.listRadicals() },
+  { method: 'POST', pattern: 'ollama/chat', handler: async ({ body }) => chatWithOllama(parseChatRequest(await body())) },
   { method: 'GET', pattern: 'ollama/status', handler: ({ ws }) => ws.getOllamaStatus() },
   {
     method: 'POST',

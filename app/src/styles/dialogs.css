@@ -269,6 +269,126 @@
     outline-offset: var(--focus-ring-offset);
   }
 
+  /* ==== 6-1. Ollama Chat (non-modal floating panel) ==== */
+  dialog.ollama-chat[open] {
+    position: fixed;
+    inset: auto 16px 16px auto;
+    margin: 0;
+    inline-size: min(420px, calc(100vw - 32px));
+    block-size: min(620px, calc(100dvh - 32px));
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-lg);
+    background-color: var(--color-bg-surface);
+    color: var(--color-text-main);
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.25);
+    z-index: 20;
+  }
+
+  .ollama-chat-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .ollama-chat-head h3 {
+    margin: 0;
+    margin-inline-end: auto;
+    font-size: 0.95rem;
+  }
+
+  .ollama-chat-options {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    gap: 8px;
+    font-size: 0.75rem;
+  }
+
+  .ollama-chat-options label {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    color: var(--color-text-muted);
+  }
+
+  .ollama-chat-hint,
+  dialog.ollama-chat .ollama-warn {
+    margin: 0;
+    font-size: 0.75rem;
+    line-height: 1.4;
+    color: var(--color-text-muted);
+  }
+
+  .ollama-chat-log {
+    flex: 1;
+    min-block-size: 0;
+    margin: 0;
+    padding: 8px;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border-radius: var(--radius-md);
+    background-color: var(--color-bg-subtle);
+  }
+
+  .ollama-chat-empty {
+    color: var(--color-text-muted);
+    font-size: 0.8rem;
+    text-align: center;
+  }
+
+  .ollama-chat-turn {
+    max-inline-size: 90%;
+    padding: 8px 10px;
+    border-radius: var(--radius-md);
+    font-size: 0.82rem;
+    line-height: 1.5;
+    background-color: var(--color-bg-surface);
+    border: 1px solid var(--color-border-strong);
+  }
+
+  .ollama-chat-turn p {
+    margin: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .ollama-chat-turn.is-user {
+    align-self: flex-end;
+    background-color: var(--color-primary-subtle);
+  }
+
+  .ollama-chat-edits {
+    margin-block-start: 8px;
+    padding-block-start: 8px;
+    border-block-start: 1px dashed var(--color-border-strong);
+  }
+
+  .ollama-chat-edits ul {
+    margin: 4px 0 8px;
+    padding-inline-start: 18px;
+  }
+
+  .ollama-chat-form {
+    display: flex;
+    gap: 8px;
+    align-items: stretch;
+  }
+
+  .ollama-chat-form textarea {
+    flex: 1;
+    resize: none;
+    font: inherit;
+    font-size: 0.82rem;
+  }
+
   /* ==== 7. Raster Image Conversion History Dialog ==== */
   dialog.conversions-dialog:modal {
     max-inline-size: min(92vw, 560px);

@@ -143,6 +143,41 @@ export type OllamaIdsPreview = {
   strokeCount: number
 }
 
+type ChatRole = 'user' | 'assistant'
+export type ChatMessage = { role: ChatRole; content: string }
+export type ChatMode = 'chat' | 'edit'
+
+// 채팅 모델에 알려주는 현재 획 요약. 번호는 1부터.
+export type ChatStrokeSummary = {
+  order: number
+  points: number
+  width: number
+  is_radical: 0 | 1
+  start_cap: CapType
+  end_cap: CapType
+  start: Pt
+  end: Pt
+}
+
+export type ChatContext = {
+  char: string
+  reading?: string
+  meaning?: string
+  layerName: string
+  strokes: ChatStrokeSummary[]
+}
+
+// 모델이 제안하는 데이터 수정. stroke는 1부터 센 획 번호다.
+export type ChatEdit =
+  | { op: 'set_radical'; stroke: number; value: 0 | 1 }
+  | { op: 'set_cap'; stroke: number; end: 'start' | 'end'; value: CapType }
+  | { op: 'reverse'; stroke: number }
+  | { op: 'move'; stroke: number; delta: number }
+  | { op: 'delete'; stroke: number }
+  | { op: 'merge_next'; stroke: number }
+
+export type ChatReply = { reply: string; edits: ChatEdit[]; model: string }
+
 export type ConversionRecord = {
   id: number
   char: string

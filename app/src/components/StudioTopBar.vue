@@ -56,8 +56,6 @@ const emit = defineEmits<{
   undo: []
   compile: []
   naver: []
-  ollama: []
-  ollamaSplit: []
   conversions: []
   importSvg: [event: Event]
   importImage: [event: Event, split: ImageSplit]
@@ -292,24 +290,6 @@ function runMenuAction(fn: () => void) {
             @click="runMenuAction(() => emit('naver'))"
           >
             네이버 획순을 작업 획으로…
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            :disabled="!selected || busy"
-            title="로컬 Ollama 모델로 현재 궁서체 윤곽을 네이버 또는 Hanzi 획순에 맞게 분리합니다"
-            @click="runMenuAction(() => emit('ollamaSplit'))"
-          >
-            로컬 Ollama 궁서체 획 분리 (Naver / Hanzi)…
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            :disabled="!selected || busy"
-            title="로컬 Ollama 모델로 IDS 구조식을 추론하고 부품 획을 합성합니다"
-            @click="runMenuAction(() => emit('ollama'))"
-          >
-            로컬 Ollama IDS 획 합성…
           </button>
           <button
             type="button"
