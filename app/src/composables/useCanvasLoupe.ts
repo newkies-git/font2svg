@@ -72,12 +72,19 @@ export function placeLoupe(sx: number, sy: number, canvas = CANVAS): { cx: numbe
   return { cx: best[0], cy: best[1] }
 }
 
+function stepLoupeZoom(deltaY: number) {
+  loupeZoom.value = nextLoupeZoom(loupeZoom.value, deltaY)
+}
+
 export function useLoupeControls() {
+  const canZoomOut = computed(() => loupeZoom.value > LOUPE_ZOOM_MIN)
+  const canZoomIn = computed(() => loupeZoom.value < LOUPE_ZOOM_MAX)
+
   function toggleLoupe() {
     loupeOn.value = !loupeOn.value
   }
 
-  return { loupeOn, loupeZoom, toggleLoupe }
+  return { loupeOn, loupeZoom, canZoomOut, canZoomIn, toggleLoupe, stepLoupeZoom }
 }
 
 export function useCanvasLoupe(
@@ -128,5 +135,6 @@ export function useCanvasLoupe(
     LOUPE_RADIUS,
     onCanvasPointerMove,
     onCanvasPointerLeave,
+    stepLoupeZoom,
   }
 }

@@ -1,0 +1,86 @@
+/* 화면 폰트는 외부 CDN 대신 로컬 파일을 쓴다. CDN 응답이 걸리면 앱이 뜨지 않았다(스크립트 실행까지 막힘).
+   Pretendard(OFL-1.1) 가변 폰트: public/fonts/. --font-sans의 첫 이름과 같은 이름을 써서 스타일은 그대로다. */
+@font-face {
+  font-family: "Pretendard Variable";
+  font-weight: 45 920;
+  font-style: normal;
+  font-display: swap;
+  src: url("/fonts/PretendardVariable.woff2") format("woff2-variations");
+}
+
+@layer reset {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  html,
+  body,
+  #app {
+    margin: 0;
+    block-size: 100dvh;
+    inline-size: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+
+  button,
+  select,
+  input {
+    font: inherit;
+  }
+}
+
+@layer base {
+  body {
+    color: var(--color-text-main);
+    background-color: var(--color-bg-canvas);
+    font-family: var(--font-sans);
+    font-size-adjust: from-font;
+    font-synthesis: none;
+    line-height: 1.4;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  button {
+    border: 1px solid var(--color-border-strong);
+    background-color: var(--color-bg-surface);
+    color: var(--color-text-main);
+    border-radius: var(--radius-md);
+    padding-block: 5px;
+    padding-inline: 10px;
+    min-inline-size: 24px;
+    min-block-size: 26px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+  }
+
+  button:hover:not(:disabled) {
+    background-color: var(--color-bg-hover);
+  }
+
+  button:disabled {
+    opacity: 0.42;
+    cursor: not-allowed;
+  }
+
+  button.primary {
+    background-color: var(--color-primary);
+    border-color: var(--color-primary);
+    color: var(--color-text-inverse);
+  }
+
+  button.primary:hover:not(:disabled) {
+    background-color: var(--color-primary-hover);
+    border-color: var(--color-primary-hover);
+  }
+
+  :where(a:any-link, button, select, input, summary):focus-visible {
+    outline: 2px solid var(--focus-ring-color);
+    outline-offset: var(--focus-ring-offset);
+  }
+}

@@ -1,0 +1,508 @@
+@layer components {
+  /* Center Non-Scrolling Canvas Stage */
+  .canvas-stage {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 16px 12px;
+    gap: 10px;
+    background-color: var(--color-bg-canvas);
+    min-block-size: 0;
+    min-inline-size: 0;
+    overflow: hidden;
+  }
+
+  .canvas-viewport {
+    flex: 1 1 0;
+    min-block-size: 0;
+    inline-size: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    container-type: size;
+  }
+
+  .canvas-frame {
+    position: relative;
+    inline-size: min(100cqw, 100cqh);
+    block-size: min(100cqw, 100cqh);
+  }
+
+  .canvas-zoom-bar {
+    position: absolute;
+    inset-block-start: 8px;
+    inset-inline-start: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    z-index: 2;
+  }
+
+  .zoom-hint {
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--color-primary);
+    background-color: var(--color-bg-surface);
+    border: 1px solid var(--color-primary);
+    border-radius: var(--radius-sm);
+    padding: 3px 8px;
+  }
+
+  .zoom-marquee {
+    fill: rgba(37, 99, 235, 0.14);
+    stroke: #2563eb;
+    stroke-width: 2px;
+    pointer-events: none;
+  }
+
+  .layer-canvas-svg {
+    /* 뷰포트가 좁아도 정사각 유지: 짧은 변에 맞춤 */
+    inline-size: 100%;
+    block-size: 100%;
+    aspect-ratio: 1 / 1;
+    background-color: var(--color-bg-surface);
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-md);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+    touch-action: none;
+    cursor: default;
+    overflow: hidden;
+  }
+
+  .layer-canvas-svg[data-tool="knife"],
+  .layer-canvas-svg[data-tool="connect"] {
+    cursor: crosshair;
+  }
+
+  .layer-canvas-svg[data-tool="bezier"],
+  .layer-canvas-svg[data-tool="median"] {
+    cursor: crosshair;
+  }
+
+  .layer-canvas-svg[data-tool="select"] {
+    cursor: move;
+  }
+
+  .layer-canvas-svg[data-zoom="armed"] {
+    cursor: crosshair;
+  }
+
+  .layer-canvas-svg text {
+    user-select: none;
+    font-size: 36px;
+    font-weight: 700;
+    fill: var(--color-text-main);
+  }
+
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    color: var(--color-text-muted);
+    text-align: center;
+  }
+
+  .empty-svg-icon {
+    inline-size: 40px;
+    block-size: 40px;
+    opacity: 0.55;
+  }
+
+  .empty-state h3 {
+    margin: 0;
+    font-size: 0.95rem;
+    color: var(--color-text-main);
+  }
+
+  .empty-state p {
+    margin: 0;
+    font-size: 0.8rem;
+  }
+
+  /* Compact Single-Row Playback Transport Bar */
+  .transport-bar {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 6px;
+    background-color: var(--color-bg-surface);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  }
+
+  .transport-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+  }
+
+  .transport-btn {
+    border: none;
+    background: transparent;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 4px 8px;
+    min-block-size: 26px;
+    font-size: 0.74rem;
+    color: var(--color-text-main);
+    border-radius: var(--radius-sm);
+  }
+
+  .transport-btn svg {
+    inline-size: 13px;
+    block-size: 13px;
+  }
+
+  .step-counter {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 3px;
+    padding-inline: 10px;
+    font-variant-numeric: tabular-nums;
+    font-weight: 700;
+    font-size: 0.78rem;
+  }
+
+  .step-current {
+    color: var(--color-primary);
+    font-size: 0.88rem;
+  }
+
+  .step-divider,
+  .step-total,
+  .step-unit {
+    color: var(--color-text-muted);
+    font-size: 0.74rem;
+  }
+
+  .transport-play-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 12px;
+    min-block-size: 26px;
+    font-size: 0.75rem;
+    font-weight: 700;
+  }
+
+  .transport-play-btn svg {
+    inline-size: 12px;
+    block-size: 12px;
+  }
+
+  /* ==== 4. Canvas SVG Vector Rendering ==== */
+  .canvas-grid line {
+    stroke: var(--color-border-subtle);
+    stroke-width: 2px;
+    stroke-dasharray: 12 12;
+  }
+
+  .ink-stroke {
+    fill: var(--layer-fill, light-dark(rgba(148, 163, 184, 0.42), rgba(148, 163, 184, 0.32)));
+    stroke: var(--layer-accent, light-dark(#64748b, #94a3b8));
+    stroke-width: 1.75px;
+    vector-effect: non-scaling-stroke;
+  }
+
+  .ink-stroke.radical-stroke {
+    fill: light-dark(rgba(251, 113, 133, 0.38), rgba(251, 113, 133, 0.3));
+    stroke: var(--color-radical-border);
+    stroke-width: 2.5px;
+    stroke-dasharray: 14 8;
+  }
+
+  .anim-stroke {
+    fill: none;
+    stroke: var(--layer-accent, var(--color-svg-ink));
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .anim-stroke.radical {
+    stroke: var(--color-radical);
+  }
+
+  .num-badge {
+    fill: var(--color-bg-surface);
+    stroke: var(--color-text-main);
+    stroke-width: 2px;
+  }
+
+  .median-stroke {
+    fill: none;
+    stroke: var(--layer-accent, var(--color-svg-median));
+    stroke-width: 3.5px;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .font-contour {
+    fill: var(--layer-fill, var(--color-svg-outline-fill));
+    stroke: var(--layer-accent, var(--color-svg-outline-stroke));
+    stroke-width: 1.75px;
+    vector-effect: non-scaling-stroke;
+  }
+
+  .ref-outline {
+    fill: var(--layer-fill, rgba(56, 189, 248, 0.2));
+    stroke: var(--layer-accent, #0284c7);
+    stroke-width: 1.75px;
+    vector-effect: non-scaling-stroke;
+  }
+
+  .ref-outline.is-radical {
+    stroke-dasharray: 12 7;
+  }
+
+  .ref-median {
+    fill: none;
+    stroke: var(--layer-accent, #0284c7);
+    stroke-width: 3px;
+    stroke-dasharray: 12 8;
+    stroke-linecap: round;
+    pointer-events: none;
+  }
+
+  .ref-num-badge {
+    fill: var(--color-bg-surface);
+    stroke: var(--layer-accent, #0284c7);
+    stroke-width: 3px;
+  }
+
+  .layer-canvas-svg text.ref-num-text {
+    font-size: 24px;
+    fill: var(--layer-accent, #0284c7);
+  }
+
+  .font-contour.is-picked,
+  .ref-outline.is-picked,
+  .ink-stroke.is-picked {
+    stroke: var(--color-primary);
+    stroke-width: 2.75px;
+  }
+
+  .font-contour.is-mapped {
+    stroke: var(--color-danger);
+    stroke-width: 3px;
+  }
+
+  .ref-outline.is-unmapped {
+    stroke: var(--color-danger);
+    stroke-dasharray: 5 5;
+  }
+
+  .median-stroke.is-current-median {
+    stroke: #f59e0b;
+    stroke-width: 5px;
+  }
+
+  .bbox-move-zone {
+    fill: rgba(59, 130, 246, 0.04);
+    stroke: var(--color-primary);
+    stroke-width: 3px;
+    stroke-dasharray: 14 10;
+    cursor: move;
+  }
+
+  .bbox-handle {
+    fill: var(--color-bg-surface);
+    stroke: var(--color-primary);
+    stroke-width: 4px;
+    cursor: nwse-resize;
+  }
+
+  .bbox-handle[data-dir="n"],
+  .bbox-handle[data-dir="s"] {
+    cursor: ns-resize;
+  }
+  .bbox-handle[data-dir="e"],
+  .bbox-handle[data-dir="w"] {
+    cursor: ew-resize;
+  }
+  .bbox-handle[data-mode="rotate"] {
+    cursor: grab;
+  }
+  .bbox-handle[data-mode="skew"][data-dir="n"],
+  .bbox-handle[data-mode="skew"][data-dir="s"] {
+    cursor: ew-resize;
+  }
+  .bbox-handle[data-mode="skew"][data-dir="e"],
+  .bbox-handle[data-mode="skew"][data-dir="w"] {
+    cursor: ns-resize;
+  }
+  .bbox-handle[data-mode="distort"] {
+    cursor: crosshair;
+  }
+
+  .bbox-handle[data-dir="ne"],
+  .bbox-handle[data-dir="sw"] {
+    cursor: nesw-resize;
+  }
+
+  .bezier-arm {
+    stroke: #0ea5e9;
+    stroke-width: 3px;
+    pointer-events: none;
+  }
+
+  .bezier-ctrl-pt {
+    fill: #ffffff;
+    stroke: #0ea5e9;
+    stroke-width: 4px;
+    cursor: grab;
+  }
+
+  .bezier-anchor-pt {
+    fill: var(--color-primary);
+    stroke: #ffffff;
+    stroke-width: 3px;
+    cursor: grab;
+  }
+
+  .median-hit-line {
+    fill: none;
+    stroke: transparent;
+    stroke-width: 34px;
+    stroke-linecap: round;
+    cursor: copy;
+  }
+
+  .median-active-guide {
+    fill: none;
+    stroke: #f59e0b;
+    stroke-width: 6px;
+    stroke-linecap: round;
+    pointer-events: none;
+  }
+
+  .median-vertex {
+    fill: #f59e0b;
+    stroke: #ffffff;
+    stroke-width: 4px;
+    cursor: grab;
+  }
+
+  .median-vertex.is-start {
+    fill: #10b981;
+  }
+  .median-vertex.is-end {
+    fill: #f43f5e;
+  }
+
+  .layer-canvas-svg text.median-vertex-label {
+    font-size: 16px;
+    font-weight: 800;
+    fill: #ffffff;
+    pointer-events: none;
+  }
+
+  .knife-point {
+    fill: #ef4444;
+  }
+
+  .knife-path {
+    fill: none;
+    stroke: #ef4444;
+    stroke-width: 4;
+    stroke-dasharray: 10 6;
+    pointer-events: none;
+  }
+
+  .knife-point-pulse {
+    fill: rgba(239, 68, 68, 0.35);
+    animation: pulse 1.5s infinite ease-out;
+  }
+
+  @keyframes pulse {
+    0% {
+      r: 6px;
+      opacity: 1;
+    }
+    100% {
+      r: 18px;
+      opacity: 0;
+    }
+  }
+
+  .connect-guide {
+    fill: none;
+    stroke: #2563eb;
+    stroke-width: 5px;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    pointer-events: none;
+  }
+
+  .connect-close-hint {
+    stroke: #2563eb;
+    stroke-width: 3px;
+    stroke-dasharray: 8 6;
+    opacity: 0.55;
+    pointer-events: none;
+  }
+
+  .connect-vertex {
+    fill: #3b82f6;
+    stroke: #ffffff;
+    stroke-width: 3px;
+    pointer-events: none;
+  }
+
+  .connect-vertex.is-start {
+    fill: #10b981;
+  }
+
+  .connect-vertex.is-end {
+    fill: #f43f5e;
+  }
+
+  .layer-canvas-svg text.connect-vertex-label {
+    font-size: 14px;
+    font-weight: 800;
+    fill: #ffffff;
+    pointer-events: none;
+  }
+
+  .loupe-backdrop {
+    fill: var(--color-bg-surface);
+    stroke: none;
+  }
+
+  .loupe-ring {
+    fill: none;
+    stroke: #0f172a;
+    stroke-width: 3.5px;
+  }
+
+  .loupe-cross {
+    stroke: #ef4444;
+    stroke-width: 1.75px;
+    opacity: 0.85;
+  }
+
+  .loupe-leader {
+    stroke: #64748b;
+    stroke-width: 1.2px;
+    stroke-dasharray: 4 3;
+    opacity: 0.55;
+  }
+
+  .loupe-focus {
+    fill: none;
+    stroke: #ef4444;
+    stroke-width: 1.75px;
+  }
+
+  .layer-canvas-svg text.loupe-zoom {
+    font-size: 18px;
+    font-weight: 700;
+    fill: var(--color-text-main);
+  }
+}

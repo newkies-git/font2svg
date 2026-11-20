@@ -1,4 +1,4 @@
-import type { AppliedCharacterDetail, OllamaIdsPreview, OllamaStatus } from '../../shared/types.ts'
+import type { AppliedCharacterDetail, ConversionRecord, OllamaIdsPreview, OllamaStatus } from '../../shared/types.ts'
 
 const API_ROOT = '/api'
 
@@ -66,5 +66,12 @@ export function splitFontWithOllama(
     characterUrl(unicode, 'ollama-split'),
     'Ollama 궁서체 획 분리에 실패했습니다.',
     { method: 'POST', body: payload },
+  )
+}
+
+export function fetchConversions(unicode: string): Promise<ConversionRecord[]> {
+  return apiRequest<ConversionRecord[]>(
+    characterUrl(unicode, 'conversions'),
+    '이미지 변환 이력을 불러오지 못했습니다.',
   )
 }

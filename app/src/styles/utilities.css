@@ -1,0 +1,61 @@
+@layer utilities {
+  .visually-hidden:where(:not(:focus-within, :active)) {
+    position: absolute !important;
+    clip-path: inset(50%) !important;
+    overflow: hidden !important;
+    inline-size: 1px !important;
+    block-size: 1px !important;
+    margin: -1px !important;
+    padding: 0 !important;
+    border: 0 !important;
+    white-space: nowrap !important;
+  }
+
+  .skip-link {
+    position: fixed;
+    inset-block-start: 8px;
+    inset-inline-start: 8px;
+    z-index: 1000;
+    padding: 6px 12px;
+    background-color: var(--color-primary);
+    color: var(--color-text-inverse);
+    border-radius: var(--radius-md);
+    text-decoration: none;
+    font-weight: 700;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    button {
+      transition: none;
+    }
+    progress.loading-spinner:indeterminate {
+      animation-duration: 3s;
+    }
+  }
+
+  @media (forced-colors: active) {
+    :where(a:any-link, button, input, select, summary):focus-visible,
+    .source-choice-btn:has(:focus-visible) {
+      outline: 2px solid Highlight;
+    }
+    button.primary,
+    .char.active,
+    .tab-btn.active,
+    .layer-row.is-active,
+    .source-choice-btn:has(:checked) {
+      outline: 2px solid Highlight;
+    }
+  }
+
+  @media (max-width: 860px) {
+    .app {
+      grid-template-columns: 200px minmax(0, 1fr);
+    }
+    .studio-body {
+      grid-template-columns: 40px minmax(0, 1fr) 268px;
+    }
+    .status-shortcuts {
+      display: none;
+    }
+  }
+}

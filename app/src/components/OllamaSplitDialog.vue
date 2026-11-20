@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { LAYER_ID } from '../../shared/constants.ts'
-import type { CharacterDetail, OllamaStatus } from '../../shared/types.ts'
-import { fetchOllamaStatus } from '../lib/api.ts'
+import type { CharacterDetail } from '../../shared/types.ts'
+import { useOllamaStatus } from '../composables/useOllamaStatus.ts'
 
 const props = defineProps<{
   selected: CharacterDetail | null
@@ -12,49 +12,22 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   split: [payload: { source: 'NAVER' | 'MMH'; model?: string }]
-  statusUpdated: [status: OllamaStatus]
 }>()
 
 const dialog = ref<HTMLDialogElement | null>(null)
-const status = ref<OllamaStatus | null>(null)
-const checking = ref(false)
+const { status, checking, selectedModel, availableModels, statusError, refreshStatus } = useOllamaStatus()
 const selectedSource = ref<'NAVER' | 'MMH'>('NAVER')
-const selectedModel = ref('')
-const localError = ref('')
-
-const availableModels = computed(() => {
-  const list = status.value?.models ?? []
-  const fallback = status.value?.defaultModel || 'qwen3.5:9b'
-  return list.length > 0 ? list : [fallback]
-})
 
 const naverStrokeCount = computed(() => props.selected?.layers.find((l) => l.id === LAYER_ID.naver)?.strokes.length ?? 0)
 const mmhStrokeCount = computed(() => props.selected?.layers.find((l) => l.id === LAYER_ID.mmh)?.strokes.length ?? 0)
 
-async function refreshStatus() {
-  checking.value = true
-  localError.value = ''
-  try {
-    const res = await fetchOllamaStatus()
-    status.value = res
-    if (!selectedModel.value || (res.models.length > 0 && !res.models.includes(selectedModel.value))) {
-      selectedModel.value = res.defaultModel
-    }
-    emit('statusUpdated', res)
-  } catch (cause) {
-    localError.value = cause instanceof Error ? cause.message : 'Ollama 상태를 확인하지 못했습니다.'
-  } finally {
-    checking.value = false
-  }
-}
-
 async function open() {
-  localError.value = ''
   if (naverStrokeCount.value === 0 && mmhStrokeCount.value > 0) {
     selectedSource.value = 'MMH'
   } else {
     selectedSource.value = 'NAVER'
   }
+  if (dialog.value) dialog.value.returnValue = ''
   dialog.value?.showModal()
   await refreshStatus()
 }
@@ -157,7 +130,7 @@ defineExpose({ open })
         </div>
       </div>
 
-      <p v-if="localError" class="error" role="alert">{{ localError }}</p>
+      <p v-if="statusError" class="error" role="alert">{{ statusError }}</p>
 
       <form method="dialog" class="dialog-actions">
         <button type="submit" value="cancel">닫기</button>

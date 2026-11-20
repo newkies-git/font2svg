@@ -143,3 +143,22 @@ export type OllamaIdsPreview = {
   strokeCount: number
 }
 
+export type ConversionRecord = {
+  id: number
+  char: string
+  kind: string
+  source_name: string
+  source_mime: string
+  source_sha256: string
+  source_width: number
+  source_height: number
+  threshold: number
+  invert: number
+  mode: string
+  destination: string
+  stroke_count: number
+  result_svg: string
+  created_by: string
+  created_at: string
+}
+

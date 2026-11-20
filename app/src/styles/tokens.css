@@ -1,0 +1,100 @@
+@layer theme {
+  :root {
+    color-scheme: light dark;
+
+    &:has(> head > meta[name="color-scheme"][content="dark"]),
+    &[data-theme="dark"] {
+      color-scheme: dark;
+    }
+
+    &:has(> head > meta[name="color-scheme"][content="light"]),
+    &[data-theme="light"] {
+      color-scheme: light;
+    }
+
+    --font-sans: "Pretendard Variable", "Pretendard", -apple-system, BlinkMacSystemFont, system-ui, Roboto, "Noto Sans KR", sans-serif;
+
+    --color-bg-canvas: light-dark(#eef2f6, #090d14);
+    --color-bg-surface: light-dark(#ffffff, #121824);
+    --color-bg-subtle: light-dark(#f3f6fa, #192131);
+    --color-bg-hover: light-dark(#e6ecf4, #222e43);
+    --color-bg-active: light-dark(#d6e0ed, #2c3c57);
+
+    --color-text-main: light-dark(#0f172a, #f1f5f9);
+    --color-text-muted: light-dark(#475569, #94a3b8);
+    --color-text-subtle: light-dark(#64748b, #64748b);
+    --color-text-inverse: light-dark(#ffffff, #090d14);
+
+    --color-border-subtle: light-dark(#dfe6ef, #1e293b);
+    --color-border-strong: light-dark(#cbd5e1, #2e3d56);
+
+    --color-primary: light-dark(#1d4ed8, #3b82f6);
+    --color-primary-hover: light-dark(#1e40af, #60a5fa);
+    --color-primary-subtle: light-dark(rgba(29, 78, 216, 0.09), rgba(59, 130, 246, 0.18));
+
+    --color-success: light-dark(#15803d, #22c55e);
+    --color-danger: light-dark(#b91c1c, #ef4444);
+    --color-danger-subtle: light-dark(rgba(185, 28, 28, 0.1), rgba(239, 68, 68, 0.16));
+    --color-radical: light-dark(#e11d48, #f43f5e);
+    --color-radical-border: light-dark(#9f1239, #fb7185);
+
+    --color-status-approved: light-dark(#15803d, #22c55e);
+    --color-status-approved-bg: light-dark(rgba(21, 128, 61, 0.1), rgba(34, 197, 94, 0.18));
+    --color-status-draft: light-dark(#b45309, #f59e0b);
+    --color-status-draft-bg: light-dark(rgba(180, 83, 9, 0.12), rgba(245, 158, 11, 0.2));
+    --color-status-open: light-dark(#475569, #94a3b8);
+    --color-status-open-bg: light-dark(rgba(71, 85, 105, 0.1), rgba(148, 163, 184, 0.18));
+
+    --color-svg-outline-fill: light-dark(rgba(15, 23, 42, 0.07), rgba(248, 250, 252, 0.08));
+    --color-svg-outline-stroke: light-dark(#334155, #94a3b8);
+    --color-svg-ink: light-dark(#0f172a, #f8fafc);
+    --color-svg-median: light-dark(rgba(15, 23, 42, 0.58), rgba(255, 255, 255, 0.68));
+
+    --focus-ring-color: light-dark(#1d4ed8, #60a5fa);
+    --focus-ring-offset: 1px;
+
+    --radius-sm: 4px;
+    --radius-md: 6px;
+    --radius-lg: 8px;
+
+    accent-color: var(--color-primary);
+    scrollbar-color: var(--color-border-strong) transparent;
+  }
+}
+
+@layer components {
+  /* ====Layer Color Tokens==== */
+  /* 작업 획 기본색: 파스텔 슬레이트 — 단색 먹색이면 외곽선·중심선이 가려진다 */
+  [data-color="ink"] {
+    --layer-accent: light-dark(#64748b, #94a3b8);
+    --layer-fill: light-dark(rgba(148, 163, 184, 0.42), rgba(148, 163, 184, 0.32));
+  }
+  [data-color="slate"] {
+    --layer-accent: light-dark(#475569, #94a3b8);
+    --layer-fill: light-dark(rgba(71, 85, 105, 0.18), rgba(148, 163, 184, 0.22));
+  }
+  [data-color="blue"] {
+    --layer-accent: light-dark(#0284c7, #38bdf8);
+    --layer-fill: light-dark(rgba(2, 132, 199, 0.2), rgba(56, 189, 248, 0.22));
+  }
+  [data-color="violet"] {
+    --layer-accent: light-dark(#7c3aed, #a78bfa);
+    --layer-fill: light-dark(rgba(124, 58, 237, 0.2), rgba(167, 139, 250, 0.22));
+  }
+  [data-color="green"] {
+    --layer-accent: light-dark(#059669, #34d399);
+    --layer-fill: light-dark(rgba(5, 150, 105, 0.2), rgba(52, 211, 153, 0.22));
+  }
+  [data-color="amber"] {
+    --layer-accent: light-dark(#d97706, #fbbf24);
+    --layer-fill: light-dark(rgba(217, 119, 6, 0.2), rgba(251, 191, 36, 0.22));
+  }
+  [data-color="rose"] {
+    --layer-accent: light-dark(#e11d48, #fb7185);
+    --layer-fill: light-dark(rgba(225, 29, 72, 0.2), rgba(251, 113, 133, 0.22));
+  }
+  [data-color="none"] {
+    --layer-accent: var(--color-text-muted);
+    --layer-fill: transparent;
+  }
+}

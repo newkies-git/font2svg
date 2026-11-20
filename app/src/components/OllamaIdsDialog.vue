@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue'
-import type { CharacterDetail, OllamaIdsPreview, OllamaStatus } from '../../shared/types.ts'
-import { fetchOllamaStatus, inferOllamaIds } from '../lib/api.ts'
+import { nextTick, ref } from 'vue'
+import type { CharacterDetail, OllamaIdsPreview } from '../../shared/types.ts'
+import { useOllamaStatus } from '../composables/useOllamaStatus.ts'
+import { inferOllamaIds } from '../lib/api.ts'
 
 const IDS_OPERATORS = ['⿰', '⿱', '⿲', '⿳', '⿴', '⿵', '⿶', '⿷', '⿸', '⿹', '⿺', '⿻'] as const
 const IME_PROCESSING_KEY_CODE = 229
@@ -13,47 +14,22 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   apply: [payload: { model?: string; ids?: string }]
-  statusUpdated: [status: OllamaStatus]
 }>()
 
 const dialog = ref<HTMLDialogElement | null>(null)
 const idsInputEl = ref<HTMLInputElement | null>(null)
 
-const status = ref<OllamaStatus | null>(null)
-const checking = ref(false)
+const { status, checking, selectedModel, availableModels, statusError, refreshStatus } = useOllamaStatus()
 const inferring = ref(false)
-const selectedModel = ref('')
 const idsInput = ref('')
 const preview = ref<OllamaIdsPreview | null>(null)
 const localError = ref('')
-
-const availableModels = computed(() => {
-  const list = status.value?.models ?? []
-  const fallback = status.value?.defaultModel || 'qwen3.5:9b'
-  return list.length > 0 ? list : [fallback]
-})
-
-async function refreshStatus() {
-  checking.value = true
-  localError.value = ''
-  try {
-    const res = await fetchOllamaStatus()
-    status.value = res
-    if (!selectedModel.value || (res.models.length > 0 && !res.models.includes(selectedModel.value))) {
-      selectedModel.value = res.defaultModel
-    }
-    emit('statusUpdated', res)
-  } catch (cause) {
-    localError.value = cause instanceof Error ? cause.message : 'Ollama 상태를 확인하지 못했습니다.'
-  } finally {
-    checking.value = false
-  }
-}
 
 async function open() {
   localError.value = ''
   preview.value = null
   idsInput.value = ''
+  if (dialog.value) dialog.value.returnValue = ''
   dialog.value?.showModal()
   await refreshStatus()
   await nextTick()
@@ -248,7 +224,7 @@ defineExpose({ open })
         </template>
       </div>
 
-      <p v-if="localError" class="error" role="alert">{{ localError }}</p>
+      <p v-if="localError || statusError" class="error" role="alert">{{ localError || statusError }}</p>
 
       <form method="dialog" class="dialog-actions">
         <button type="submit" value="cancel">닫기</button>

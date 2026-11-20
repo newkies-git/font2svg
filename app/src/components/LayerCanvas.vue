@@ -60,6 +60,7 @@ const {
   LOUPE_RADIUS,
   onCanvasPointerMove,
   onCanvasPointerLeave,
+  stepLoupeZoom,
 } = useCanvasLoupe(() => props.tool, fontToScreen, eventToFont)
 
 const svgEl = ref<SVGSVGElement | null>(null)
@@ -148,6 +149,11 @@ function onZoomPointerDown(event: PointerEvent) {
 }
 
 function onCanvasWheel(event: WheelEvent) {
+  if (event.altKey && loupeEnabled.value && !zoomed.value && !zoomArmed.value) {
+    event.preventDefault()
+    stepLoupeZoom(event.deltaY)
+    return
+  }
   const at = clientToSvg(event)
   if (!at) return
   event.preventDefault()

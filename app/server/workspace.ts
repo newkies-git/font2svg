@@ -316,28 +316,20 @@ export function createWorkspace(rootDir: string) {
       return { ...saved, fit_status: status, unmatched_strokes: unmatched.map((order) => order + offset) }
     }
 
+    const contours = fontContoursOf(detail)
     if (mode === 'fit_font' || isReferenceKind(layer.kind)) {
-      const contours = fontContoursOf(detail)
       if (contours.length === 0) {
         if (mode === 'fit_font') throw new Error('궁서체 윤곽이 없어 자동 분할을 적용할 수 없습니다.')
       } else {
         const fitted = fitGuideToFont(contours, guide)
-        if (!fitted) {
-          if (mode === 'fit_font' && !isReferenceKind(layer.kind)) {
-            throw new Error('궁서체 윤곽 자동 분할 품질 검사를 통과하지 못했습니다. 중심선·위치를 조정하거나 [그대로 적용]을 사용하세요.')
-          }
-        } else {
+        if (fitted) {
           const glyph = { medians: fitted.medians, outlines: fitted.outlines, widths: fitted.widths, fontOutline: fitted.fontOutline }
-          const saved = commit(toItems(glyph, new Set(radicals)), `${layer.name} 획을 궁서체에 맞춤`, isReferenceKind(layer.kind) || mode === 'fit_font' ? glyph : null)
+          const saved = commit(toItems(glyph, new Set(radicals)), `${layer.name} 획을 궁서체에 맞춤`, glyph)
           return attachFit(saved, fitted.unmatched.length > 0 ? 'partial' : 'fitted', fitted.unmatched)
         }
-      }
-      if (mode === 'fit_font') {
-        const split = splitByContours(fontContoursOf(detail), guide)
-        if (!split) {
+        if (mode === 'fit_font') {
           throw new Error('궁서체 윤곽 자동 분할 품질 검사를 통과하지 못했습니다. 중심선·위치를 조정하거나 [그대로 적용]을 사용하세요.')
         }
-        return commit(toItems(split, new Set(radicals)), `${layer.name} 중심선으로 궁서체 분할 적용`, split)
       }
     }
 
@@ -349,7 +341,7 @@ export function createWorkspace(rootDir: string) {
     if (source !== ORIGIN_MANUAL) {
       const saved = commit(toItems(glyph, new Set(radicals)), `${layer.name} 레이어 적용`, glyph)
       const orders = layer.strokes.map((_, index) => index + 1)
-      return attachFit(saved, fontContoursOf(detail).length > 0 ? 'copied' : 'no-font', orders)
+      return attachFit(saved, contours.length > 0 ? 'copied' : 'no-font', orders)
     }
     return commit(layer.strokes, `${layer.name} 레이어 적용`, null)
   }

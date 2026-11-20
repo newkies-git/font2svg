@@ -49,11 +49,12 @@ const emit = defineEmits<{
   naver: []
   ollama: []
   ollamaSplit: []
+  conversions: []
   importSvg: [event: Event]
   importImage: [event: Event, split: ImageSplit]
 }>()
 
-const { loupeOn, loupeZoom, toggleLoupe } = useLoupeControls()
+const { loupeOn, loupeZoom, canZoomOut, canZoomIn, toggleLoupe, stepLoupeZoom } = useLoupeControls()
 const menuRef = ref<HTMLDetailsElement | null>(null)
 const svgFileInput = ref<HTMLInputElement | null>(null)
 const imageFileInput = ref<HTMLInputElement | null>(null)
@@ -162,17 +163,40 @@ function runMenuAction(fn: () => void) {
         @cancel-knife="emit('cancelKnife')"
       />
 
-      <button
-        v-if="isLoupeTool(tool)"
-        type="button"
-        class="bar-btn"
-        :class="{ on: loupeOn }"
-        :aria-pressed="loupeOn"
-        title="커서 옆을 확대합니다. 렌즈는 커서를 가리지 않습니다. 영역을 크게 보려면 캔버스의 영역 확대를 씁니다."
-        @click="toggleLoupe"
-      >
-        돋보기 {{ loupeOn ? `${formatLoupeZoom(loupeZoom)}×` : '꺼짐' }}
-      </button>
+      <div v-if="isLoupeTool(tool)" class="loupe-control" role="group" aria-label="돋보기 설정">
+        <button
+          type="button"
+          class="bar-btn"
+          :class="{ on: loupeOn }"
+          :aria-pressed="loupeOn"
+          title="커서 옆을 확대합니다(Alt+휠로 배율 조절). 렌즈는 커서를 가리지 않습니다."
+          @click="toggleLoupe"
+        >
+          돋보기 {{ loupeOn ? `${formatLoupeZoom(loupeZoom)}×` : '꺼짐' }}
+        </button>
+        <template v-if="loupeOn">
+          <button
+            type="button"
+            class="bar-btn loupe-step-btn"
+            :disabled="!canZoomOut"
+            aria-label="돋보기 축소"
+            title="돋보기 배율 줄이기"
+            @click="stepLoupeZoom(1)"
+          >
+            −
+          </button>
+          <button
+            type="button"
+            class="bar-btn loupe-step-btn"
+            :disabled="!canZoomIn"
+            aria-label="돋보기 확대"
+            title="돋보기 배율 키우기"
+            @click="stepLoupeZoom(-1)"
+          >
+            +
+          </button>
+        </template>
+      </div>
     </div>
 
     <!-- 우측: 단일 통합 문서 작업 바 -->
@@ -293,6 +317,16 @@ function runMenuAction(fn: () => void) {
             @click="runMenuAction(() => pickImage('COMPONENTS'))"
           >
             이미지를 획 SVG로 변환 (덩어리=획)…
+          </button>
+          <hr />
+          <button
+            type="button"
+            role="menuitem"
+            :disabled="!selected || busy"
+            title="현재 한자의 이미지 → 획 SVG 변환 기록을 봅니다"
+            @click="runMenuAction(() => emit('conversions'))"
+          >
+            이미지 변환 이력 보기…
           </button>
         </div>
       </details>

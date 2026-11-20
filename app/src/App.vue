@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import CharacterSidebar from './components/CharacterSidebar.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
+import ConversionsDialog from './components/ConversionsDialog.vue'
 import ImportChoiceDialog from './components/ImportChoiceDialog.vue'
 import LayerCanvas from './components/LayerCanvas.vue'
 import LayersPanel from './components/LayersPanel.vue'
@@ -11,34 +12,27 @@ import StepControls from './components/StepControls.vue'
 import StrokeList from './components/StrokeList.vue'
 import StudioTopBar from './components/StudioTopBar.vue'
 import ToolRail from './components/ToolRail.vue'
-import { fetchOllamaStatus } from './lib/api.ts'
 import { useCharacterActions } from './composables/useCharacterActions.ts'
 import { useCharacterList } from './composables/useCharacterList.ts'
 import { useLayerWorkspace } from './composables/useLayerWorkspace.ts'
+import { useOllamaStatus } from './composables/useOllamaStatus.ts'
 import { usePlayback } from './composables/usePlayback.ts'
 import { useStrokeStepper } from './composables/useStrokeStepper.ts'
 import { useStudioShortcuts } from './composables/useStudioShortcuts.ts'
 import { useStudioState } from './composables/useStudioState.ts'
 import { useTheme } from './composables/useTheme.ts'
 import { LAYER_ID } from '../shared/constants.ts'
-import type { CapType, OllamaStatus } from '../shared/types.ts'
+import type { CapType } from '../shared/types.ts'
 
 const studio = useStudioState()
 const { selected, message, error, busy, shown, reveal } = studio
 const confirmDialog = ref<InstanceType<typeof ConfirmDialog> | null>(null)
+const conversionsDialog = ref<InstanceType<typeof ConversionsDialog> | null>(null)
 const importChoice = ref<InstanceType<typeof ImportChoiceDialog> | null>(null)
 const ollamaDialog = ref<InstanceType<typeof OllamaIdsDialog> | null>(null)
 const ollamaSplitDialog = ref<InstanceType<typeof OllamaSplitDialog> | null>(null)
-const ollamaStatus = ref<OllamaStatus | null>(null)
+const { status: ollamaStatus, activeModelLabel, refreshStatus: refreshOllamaStatus } = useOllamaStatus()
 const confirmImport = () => importChoice.value?.ask() ?? Promise.resolve(undefined)
-
-async function refreshOllamaStatus() {
-  try {
-    ollamaStatus.value = await fetchOllamaStatus()
-  } catch {
-    ollamaStatus.value = null
-  }
-}
 
 const { chars, query, statusFilter, filteredChars, statusCounts, loadList, clearSearch } = useCharacterList(error)
 const { themeMode, setTheme } = useTheme()
@@ -237,6 +231,7 @@ onMounted(() => {
         @naver="applyNaver"
         @ollama="ollamaDialog?.open()"
         @ollama-split="ollamaSplitDialog?.open()"
+        @conversions="conversionsDialog?.open()"
         @import-svg="importSvg"
         @import-image="importImage"
       />
@@ -334,10 +329,10 @@ onMounted(() => {
               <span
                 class="ollama-status-pill"
                 :class="ollamaStatus?.connected ? 'is-ok' : 'is-off'"
-                :title="ollamaStatus?.connected ? `연결됨 (${ollamaStatus.defaultModel})` : '로컬 Ollama 미연결'"
+                :title="ollamaStatus?.connected ? `연결됨 (${activeModelLabel})` : '로컬 Ollama 미연결'"
               >
                 <span class="ollama-dot" aria-hidden="true" />
-                <span>{{ ollamaStatus?.connected ? ollamaStatus.defaultModel : '꺼짐' }}</span>
+                <span>{{ activeModelLabel }}</span>
               </span>
             </div>
             <div class="inspector-ollama-actions">
@@ -396,7 +391,6 @@ onMounted(() => {
       :selected="selected"
       :busy="busy"
       @apply="applyOllama"
-      @status-updated="ollamaStatus = $event"
     />
     <OllamaSplitDialog
       ref="ollamaSplitDialog"
@@ -404,7 +398,10 @@ onMounted(() => {
       :font-contour-count="fontLayer?.paths.length ?? 0"
       :busy="busy"
       @split="applyOllamaSplit"
-      @status-updated="ollamaStatus = $event"
+    />
+    <ConversionsDialog
+      ref="conversionsDialog"
+      :selected="selected"
     />
   </div>
 </template>
