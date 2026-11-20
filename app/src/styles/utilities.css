@@ -42,6 +42,7 @@
     .char.active,
     .tab-btn.active,
     .layer-row.is-active,
+    .path-point-badge,
     .source-choice-btn:has(:checked) {
       outline: 2px solid Highlight;
     }

@@ -53,7 +53,8 @@
   .zoom-marquee {
     fill: rgba(37, 99, 235, 0.14);
     stroke: #2563eb;
-    stroke-width: 2px;
+    stroke-width: 1.5px;
+    vector-effect: non-scaling-stroke;
     pointer-events: none;
   }
 
@@ -200,8 +201,9 @@
   /* ==== 4. Canvas SVG Vector Rendering ==== */
   .canvas-grid line {
     stroke: var(--color-border-subtle);
-    stroke-width: 2px;
-    stroke-dasharray: 12 12;
+    stroke-width: 1px;
+    stroke-dasharray: 6 6;
+    vector-effect: non-scaling-stroke;
   }
 
   .ink-stroke {
@@ -225,6 +227,11 @@
     stroke-linejoin: round;
   }
 
+  .anim-stroke.is-path-editing {
+    opacity: 0.16;
+    pointer-events: none;
+  }
+
   .anim-stroke.radical {
     stroke: var(--color-radical);
   }
@@ -238,9 +245,10 @@
   .median-stroke {
     fill: none;
     stroke: var(--layer-accent, var(--color-svg-median));
-    stroke-width: 3.5px;
+    stroke-width: 2.25px;
     stroke-linecap: round;
     stroke-linejoin: round;
+    vector-effect: non-scaling-stroke;
   }
 
   .font-contour {
@@ -264,9 +272,10 @@
   .ref-median {
     fill: none;
     stroke: var(--layer-accent, #0284c7);
-    stroke-width: 3px;
-    stroke-dasharray: 12 8;
+    stroke-width: 2px;
+    stroke-dasharray: 6 4;
     stroke-linecap: round;
+    vector-effect: non-scaling-stroke;
     pointer-events: none;
   }
 
@@ -300,21 +309,23 @@
 
   .median-stroke.is-current-median {
     stroke: #f59e0b;
-    stroke-width: 5px;
+    stroke-width: 3px;
   }
 
   .bbox-move-zone {
     fill: rgba(59, 130, 246, 0.04);
     stroke: var(--color-primary);
-    stroke-width: 3px;
-    stroke-dasharray: 14 10;
+    stroke-width: 1.5px;
+    stroke-dasharray: 6 4;
+    vector-effect: non-scaling-stroke;
     cursor: move;
   }
 
   .bbox-handle {
     fill: var(--color-bg-surface);
     stroke: var(--color-primary);
-    stroke-width: 4px;
+    stroke-width: 1.75px;
+    vector-effect: non-scaling-stroke;
     cursor: nwse-resize;
   }
 
@@ -348,44 +359,90 @@
 
   .bezier-arm {
     stroke: #0ea5e9;
-    stroke-width: 3px;
+    stroke-width: 1.25px;
+    opacity: 0.75;
+    vector-effect: non-scaling-stroke;
     pointer-events: none;
+  }
+
+  .bezier-outline-highlight {
+    fill: none;
+    stroke: var(--color-primary);
+    stroke-width: 1.75px;
+    vector-effect: non-scaling-stroke;
+    pointer-events: none;
+  }
+
+  .bezier-hit-path {
+    fill: none;
+    stroke: transparent;
+    stroke-width: 14px;
+    vector-effect: non-scaling-stroke;
+    cursor: copy;
   }
 
   .bezier-ctrl-pt {
     fill: #ffffff;
     stroke: #0ea5e9;
-    stroke-width: 4px;
+    stroke-width: 1.75px;
+    opacity: 0.85;
+    vector-effect: non-scaling-stroke;
     cursor: grab;
+  }
+
+  .bezier-ctrl-pt.is-selected {
+    fill: #fef3c7;
+    stroke: #f59e0b;
+    opacity: 1;
   }
 
   .bezier-anchor-pt {
     fill: var(--color-primary);
     stroke: #ffffff;
-    stroke-width: 3px;
+    stroke-width: 1.5px;
+    vector-effect: non-scaling-stroke;
     cursor: grab;
+  }
+
+  .bezier-anchor-pt.is-selected {
+    fill: #f59e0b;
+    stroke: #ffffff;
+    stroke-width: 2px;
+    vector-effect: non-scaling-stroke;
+  }
+
+  .point-marquee {
+    fill: rgba(245, 158, 11, 0.14);
+    stroke: #f59e0b;
+    stroke-width: 1.5px;
+    stroke-dasharray: 6 4;
+    vector-effect: non-scaling-stroke;
+    pointer-events: none;
   }
 
   .median-hit-line {
     fill: none;
     stroke: transparent;
-    stroke-width: 34px;
+    stroke-width: 18px;
     stroke-linecap: round;
+    vector-effect: non-scaling-stroke;
     cursor: copy;
   }
 
   .median-active-guide {
     fill: none;
     stroke: #f59e0b;
-    stroke-width: 6px;
+    stroke-width: 3px;
     stroke-linecap: round;
+    vector-effect: non-scaling-stroke;
     pointer-events: none;
   }
 
   .median-vertex {
     fill: #f59e0b;
     stroke: #ffffff;
-    stroke-width: 4px;
+    stroke-width: 2px;
+    vector-effect: non-scaling-stroke;
     cursor: grab;
   }
 
@@ -410,23 +467,26 @@
   .knife-path {
     fill: none;
     stroke: #ef4444;
-    stroke-width: 4;
-    stroke-dasharray: 10 6;
+    stroke-width: 2px;
+    stroke-dasharray: 6 4;
+    vector-effect: non-scaling-stroke;
     pointer-events: none;
   }
 
   .knife-point-pulse {
     fill: rgba(239, 68, 68, 0.35);
+    transform-box: fill-box;
+    transform-origin: center;
     animation: pulse 1.5s infinite ease-out;
   }
 
   @keyframes pulse {
     0% {
-      r: 6px;
+      transform: scale(0.45);
       opacity: 1;
     }
     100% {
-      r: 18px;
+      transform: scale(1.6);
       opacity: 0;
     }
   }
@@ -434,24 +494,27 @@
   .connect-guide {
     fill: none;
     stroke: #2563eb;
-    stroke-width: 5px;
+    stroke-width: 2.5px;
     stroke-linecap: round;
     stroke-linejoin: round;
+    vector-effect: non-scaling-stroke;
     pointer-events: none;
   }
 
   .connect-close-hint {
     stroke: #2563eb;
-    stroke-width: 3px;
-    stroke-dasharray: 8 6;
+    stroke-width: 1.75px;
+    stroke-dasharray: 5 4;
     opacity: 0.55;
+    vector-effect: non-scaling-stroke;
     pointer-events: none;
   }
 
   .connect-vertex {
     fill: #3b82f6;
     stroke: #ffffff;
-    stroke-width: 3px;
+    stroke-width: 1.75px;
+    vector-effect: non-scaling-stroke;
     pointer-events: none;
   }
 

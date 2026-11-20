@@ -103,3 +103,31 @@ test('Esc는 칼 점이 있으면 칼을, 없고 연결 점이 있으면 연결�
   none.press('Escape')
   assert.deepEqual(none.calls, [])
 })
+
+test('정점 편집(bezier)에서 Delete·Backspace는 정점 삭제, Shift+방향키는 미세 이동, Esc는 선택 해제로 이어진다', () => {
+  const calls: string[] = []
+  const bezier = setup({
+    activeTool: ref<EditorTool>('bezier'),
+    hasSelectedPathPoints: () => true,
+    deletePathPoints: () => calls.push('deletePathPoints'),
+    clearPathPoints: () => calls.push('clearPathPoints'),
+    nudgePathPoints: (dx, dy) => calls.push(`nudgePathPoints:${dx},${dy}`),
+  })
+  assert.equal(bezier.press('Delete'), true)
+  assert.equal(bezier.press('Backspace'), true)
+  assert.equal(bezier.press('ArrowRight', { shiftKey: true }), true)
+  assert.equal(bezier.press('Escape'), false)
+  assert.deepEqual(calls, ['deletePathPoints', 'deletePathPoints', `nudgePathPoints:${NUDGE_STEP},0`, 'clearPathPoints'])
+
+  // 선택된 정점이 없으면 Shift+방향키와 Delete가 동작하지 않는다
+  const emptyCalls: string[] = []
+  const emptySelection = setup({
+    activeTool: ref<EditorTool>('bezier'),
+    hasSelectedPathPoints: () => false,
+    deletePathPoints: () => emptyCalls.push('deletePathPoints'),
+    nudgePathPoints: (dx, dy) => emptyCalls.push(`nudgePathPoints:${dx},${dy}`),
+  })
+  emptySelection.press('Delete')
+  emptySelection.press('ArrowRight', { shiftKey: true })
+  assert.deepEqual(emptyCalls, [])
+})

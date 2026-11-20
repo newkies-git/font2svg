@@ -59,6 +59,8 @@ export function useCanvasFit(
     }
   })
 
+  const contentScale = computed(() => contentFit.value.scale)
+
   const worldTransform = computed(() => {
     const { scale, ox, oy } = contentFit.value
     if (scale === 1 && ox === 0 && oy === 0) return `translate(0 ${CANVAS}) scale(1 -1)`
@@ -79,5 +81,5 @@ export function useCanvasFit(
     return [pt.x, pt.y]
   }
 
-  return { worldTransform, fontToScreen, eventToFont }
+  return { worldTransform, contentScale, fontToScreen, eventToFont }
 }

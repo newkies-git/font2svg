@@ -3,7 +3,7 @@ import { polylinePoints } from '../../lib/canvasGeometry.ts'
 import { MEDIAN_END_RADIUS, MEDIAN_MID_RADIUS } from '../../lib/canvasMetrics.ts'
 import type { Pt } from '../../../shared/types.ts'
 
-defineProps<{ points: Pt[] }>()
+defineProps<{ points: Pt[]; scale: number }>()
 
 const emit = defineEmits<{
   linePointerDown: [event: PointerEvent]
@@ -31,7 +31,7 @@ const emit = defineEmits<{
       @contextmenu.prevent="emit('deleteVertex', ptIdx)"
     >
       <circle
-        :r="ptIdx === 0 || ptIdx === points.length - 1 ? MEDIAN_END_RADIUS : MEDIAN_MID_RADIUS"
+        :r="(ptIdx === 0 || ptIdx === points.length - 1 ? MEDIAN_END_RADIUS : MEDIAN_MID_RADIUS) * scale"
         class="median-vertex"
         :class="{
           'is-start': ptIdx === 0,
@@ -40,7 +40,7 @@ const emit = defineEmits<{
       />
       <text
         v-if="ptIdx === 0 || ptIdx === points.length - 1"
-        transform="scale(1 -1)"
+        :transform="`scale(${scale} ${-scale})`"
         class="median-vertex-label"
         text-anchor="middle"
         dominant-baseline="central"

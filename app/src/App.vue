@@ -57,6 +57,7 @@ const {
   transformScope,
   transformMode,
   selectedStrokeIndex,
+  selectedPathPoints,
   knifePoints,
   knifeMode,
   connectPoints,
@@ -85,6 +86,17 @@ const {
   autoFitToFont,
   resetActiveEdits,
   updateSinglePathInActive,
+  canDeleteSelectedPathPoints,
+  setPathPointSelection,
+  togglePathPointSelection,
+  clearPathPointSelection,
+  nudgeSelectedPathPoints,
+  insertPathPointAtPos,
+  insertPathPointFromSelection,
+  toggleSelectedPathCurve,
+  simplifySelectedPathPoints,
+  deletePathPointAt,
+  deleteSelectedPathPoints,
   moveMedianVertex,
   addMedianVertex,
   deleteMedianVertex,
@@ -130,6 +142,12 @@ const outlineGuideLayers = computed(() => layers.value
   .filter((l) => l.id !== LAYER_ID.outline && l.strokes.length > 0)
   .sort((a, b) => Number(b.id === LAYER_ID.strokes) - Number(a.id === LAYER_ID.strokes) || a.z_index - b.z_index))
 
+const canEditPathPoints = computed(() => {
+  const ed = editableLayer.value
+  if (!ed) return false
+  return Boolean(ed.kind === 'FONT' ? ed.paths[selectedStrokeIndex.value] : ed.strokes[selectedStrokeIndex.value]?.outline_path)
+})
+
 // 기필/수필을 '직접 그리기'로 고르면 꼭짓점(베지어) 편집 도구로 넘어가 그 끝의 윤곽을 손으로 고친다.
 function onSetCap(index: number, end: 'start' | 'end', value: CapType) {
   setStrokeCap(index, end, value)
@@ -155,11 +173,15 @@ useStudioShortcuts({
   playing,
   hasKnifePoints: () => knifePoints.value.length > 0,
   hasConnectPoints: () => connectPoints.value.length > 0,
+  hasSelectedPathPoints: () => selectedPathPoints.value.size > 0,
   save: () => void saveAllDirtyLayers(),
   undo: () => void undo(),
   selectTool,
   commitConnect: commitConnectOutline,
   undoConnectPoint,
+  deletePathPoints: deleteSelectedPathPoints,
+  clearPathPoints: clearPathPointSelection,
+  nudgePathPoints: nudgeSelectedPathPoints,
   nudge: (move) => applyAffineToActive(move, 1),
   stepPrev: prevStroke,
   stepNext: nextStroke,
@@ -211,10 +233,19 @@ onMounted(() => {
         :layer-dirty="editableLayer ? dirtyIds.has(editableLayer.id) : false"
         :work-stroke-count="workStrokeCount"
         :busy="busy"
+        :selected-path-point-count="selectedPathPoints.size"
+        :can-edit-path-points="canEditPathPoints"
+        :can-delete-path-points="canDeleteSelectedPathPoints"
         @change-scope="transformScope = $event"
         @change-transform-mode="transformMode = $event"
+        @select-tool="selectTool"
         @auto-fit="autoFitToFont"
         @reset-edits="resetActiveEdits"
+        @insert-path-point="insertPathPointFromSelection"
+        @toggle-path-curve="toggleSelectedPathCurve"
+        @simplify-path-points="simplifySelectedPathPoints"
+        @delete-path-points="deleteSelectedPathPoints"
+        @clear-path-points="clearPathPointSelection"
         @reverse-median="reverseActiveStrokeMedian()"
         @resegment="resegmentActiveByFont"
         @change-knife-mode="knifeMode = $event"
@@ -251,6 +282,7 @@ onMounted(() => {
               :scope="transformScope"
               :transform-mode="transformMode"
               :selected-index="selectedStrokeIndex"
+              :selected-path-points="selectedPathPoints"
               :shown="shown"
               :reveal="reveal"
               :knife-points="knifePoints"
@@ -262,6 +294,10 @@ onMounted(() => {
               @restore-snapshot="restoreActiveSnapshot"
               @transform-by="applyAffineToActive"
               @update-path="updateSinglePathInActive"
+              @select-path-points="setPathPointSelection"
+              @toggle-path-point="togglePathPointSelection"
+              @delete-path-point="deletePathPointAt"
+              @insert-path-point-at="insertPathPointAtPos"
               @move-median-vertex="moveMedianVertex"
               @add-median-vertex="addMedianVertex"
               @delete-median-vertex="deleteMedianVertex"

@@ -329,8 +329,8 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
-    padding-inline: 12px;
+    gap: 8px;
+    padding-inline: 10px;
     background-color: var(--color-bg-surface);
     border-block-end: 1px solid var(--color-border-subtle);
     min-inline-size: 0;
@@ -417,8 +417,21 @@
   .topbar-options {
     display: flex;
     align-items: center;
-    gap: 6px;
-    flex-shrink: 0;
+    gap: 4px;
+    flex: 0 1 auto;
+    min-inline-size: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .topbar-options::-webkit-scrollbar {
+    display: none;
+  }
+
+  .topbar-options .bar-btn {
+    padding: 3px 7px;
+    min-block-size: 26px;
+    font-size: 0.72rem;
   }
 
   .loupe-control {
@@ -445,7 +458,7 @@
   .seg-control button {
     border: none;
     background: transparent;
-    padding: 3px 8px;
+    padding: 3px 6px;
     min-block-size: 22px;
     font-size: 0.72rem;
     color: var(--color-text-muted);
@@ -467,6 +480,14 @@
     min-block-size: 26px;
     font-size: 0.72rem;
     font-weight: 700;
+  }
+
+  .path-point-badge {
+    background-color: var(--color-status-draft-bg);
+    border-color: var(--color-status-draft);
+    color: var(--color-status-draft);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
   }
 
   .knife-inline-pill {

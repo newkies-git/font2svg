@@ -20,6 +20,7 @@ export function useLayerSession(
     activeTool,
     selectedStrokeIndex,
     selectedMedianPointIndex,
+    selectedPathPoints,
     knifePoints,
     connectPoints,
     dirtyIds,
@@ -42,6 +43,7 @@ export function useLayerSession(
     knifePoints.value = []
     connectPoints.value = []
     selectedMedianPointIndex.value = null
+    selectedPathPoints.value = new Set()
     if (!layers.value.some((l) => l.id === activeLayerId.value)) {
       activeLayerId.value = LAYER_ID.strokes
     }
@@ -82,6 +84,7 @@ export function useLayerSession(
     }
     const count = restored.kind === 'FONT' ? restored.paths.length : restored.strokes.length
     if (selectedStrokeIndex.value >= count) selectedStrokeIndex.value = Math.max(0, count - 1)
+    selectedPathPoints.value = new Set()
     message.value = `'${restored.name}' 레이어를 불러온 상태로 초기화했습니다.`
   }
 
@@ -101,6 +104,7 @@ export function useLayerSession(
     knifePoints.value = []
     connectPoints.value = []
     selectedMedianPointIndex.value = null
+    selectedPathPoints.value = new Set()
     const picked = layers.value.find((l) => l.id === layerId)
     if (picked?.kind === 'MEDIANS') {
       activeTool.value = 'median'
@@ -120,8 +124,11 @@ export function useLayerSession(
     knifePoints.value = []
     connectPoints.value = []
     selectedMedianPointIndex.value = null
+    selectedPathPoints.value = new Set()
     if (tool === 'connect') {
       message.value = '윤곽 연결: 시작점 → 중간점(여러 개) → 끝점을 클릭한 뒤 Enter로 연결하세요.'
+    } else if (tool === 'bezier') {
+      message.value = '정점 편집: 점을 드래그하거나 영역을 드래그해 여러 점을 함께 옮기세요. 윤곽선 더블클릭으로 정점 추가, Delete·Alt+클릭으로 삭제합니다.'
     }
   }
 
@@ -129,6 +136,7 @@ export function useLayerSession(
     stopPlayback()
     selectedStrokeIndex.value = index
     selectedMedianPointIndex.value = null
+    selectedPathPoints.value = new Set()
     if (editableLayer.value?.id === LAYER_ID.strokes) {
       shown.value = index + 1
       reveal.value = 1

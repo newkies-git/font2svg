@@ -13,11 +13,15 @@ export type StudioShortcutDeps = {
   playing: Ref<boolean>
   hasKnifePoints: () => boolean
   hasConnectPoints: () => boolean
+  hasSelectedPathPoints?: () => boolean
   save: () => void
   undo: () => void
   selectTool: (tool: EditorTool) => void
   commitConnect: () => void
   undoConnectPoint: () => void
+  deletePathPoints?: () => void
+  clearPathPoints?: () => void
+  nudgePathPoints?: (dx: number, dy: number) => void
   nudge: (move: (x: number, y: number) => Pt) => void
   stepPrev: () => void
   stepNext: () => void
@@ -41,7 +45,7 @@ export function useStudioShortcuts(deps: StudioShortcutDeps) {
       alt: event.altKey,
       shift: event.shiftKey,
       activeTool: deps.activeTool.value,
-      canNudge: !deps.isEditableLocked.value,
+      canNudge: !deps.isEditableLocked.value && (deps.activeTool.value === 'select' || Boolean(deps.hasSelectedPathPoints?.())),
     })
     if (!action) return
     // Esc는 브라우저 기본 동작(전체화면 해제 등)을 그대로 둔다.
@@ -63,8 +67,12 @@ export function useStudioShortcuts(deps: StudioShortcutDeps) {
       case 'undoConnectPoint':
         deps.undoConnectPoint()
         break
+      case 'deletePathPoints':
+        if (!deps.isEditableLocked.value && deps.hasSelectedPathPoints?.()) deps.deletePathPoints?.()
+        break
       case 'nudge':
-        deps.nudge((x, y) => [x + action.dx, y + action.dy])
+        if (deps.activeTool.value === 'bezier') deps.nudgePathPoints?.(action.dx, action.dy)
+        else deps.nudge((x, y) => [x + action.dx, y + action.dy])
         break
       case 'stepPrev':
         deps.stepPrev()
@@ -79,6 +87,7 @@ export function useStudioShortcuts(deps: StudioShortcutDeps) {
       case 'cancel':
         if (deps.hasKnifePoints()) deps.cancelKnife()
         else if (deps.hasConnectPoints()) deps.cancelConnect()
+        else if (deps.hasSelectedPathPoints?.()) deps.clearPathPoints?.()
         break
     }
   }

@@ -15,6 +15,7 @@ export type LayerEditorState = {
   transformMode: Ref<TransformMode>
   selectedStrokeIndex: Ref<number>
   selectedMedianPointIndex: Ref<number | null>
+  selectedPathPoints: Ref<Set<number>>
   knifePoints: Ref<Pt[]>
   knifeMode: Ref<KnifeMode>
   connectPoints: Ref<Pt[]>
@@ -44,6 +45,7 @@ export function createLayerEditorState(
   const transformMode = ref<TransformMode>('scale')
   const selectedStrokeIndex = ref<number>(0)
   const selectedMedianPointIndex = ref<number | null>(null)
+  const selectedPathPoints = ref<Set<number>>(new Set())
   const knifePoints = ref<Pt[]>([])
   const knifeMode = ref<KnifeMode>('cut')
   const connectPoints = ref<Pt[]>([])
@@ -91,6 +93,7 @@ export function createLayerEditorState(
     transformMode,
     selectedStrokeIndex,
     selectedMedianPointIndex,
+    selectedPathPoints,
     knifePoints,
     knifeMode,
     connectPoints,

@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { LAYER_ID } from '../../../shared/constants.ts'
 import type { TransformMode } from '../../lib/transformMath.ts'
-import type { LayerRecord } from '../../../shared/types.ts'
+import type { EditorTool, LayerRecord } from '../../../shared/types.ts'
 
-defineProps<{
+const props = defineProps<{
+  tool: EditorTool
   scope: 'layer' | 'stroke'
   transformMode: TransformMode
   editableLayer: LayerRecord | null
@@ -11,6 +12,9 @@ defineProps<{
   hasFont: boolean
   dirty: boolean
   busy: boolean
+  selectedPathPointCount: number
+  canEditPathPoints: boolean
+  canDeletePathPoints: boolean
 }>()
 
 const TRANSFORM_MODES: { mode: TransformMode; label: string; hint: string }[] = [
@@ -23,13 +27,24 @@ const TRANSFORM_MODES: { mode: TransformMode; label: string; hint: string }[] = 
 const emit = defineEmits<{
   changeScope: [scope: 'layer' | 'stroke']
   changeTransformMode: [mode: TransformMode]
+  selectTool: [tool: EditorTool]
   autoFit: []
   resetEdits: []
+  insertPathPoint: []
+  togglePathCurve: []
+  simplifyPathPoints: []
+  deletePathPoints: []
+  clearPathPoints: []
 }>()
+
+function pickTransformMode(mode: TransformMode) {
+  emit('changeTransformMode', mode)
+  if (props.tool !== 'select') emit('selectTool', 'select')
+}
 </script>
 
 <template>
-  <div class="seg-control" role="group" aria-label="변환 대상 범위">
+  <div v-if="tool === 'select'" class="seg-control" role="group" aria-label="변환 대상 범위">
     <button
       type="button"
       :class="{ on: scope === 'layer' }"
@@ -52,26 +67,84 @@ const emit = defineEmits<{
       v-for="m in TRANSFORM_MODES"
       :key="m.mode"
       type="button"
-      :class="{ on: transformMode === m.mode }"
-      :aria-pressed="transformMode === m.mode"
+      :class="{ on: tool === 'select' && transformMode === m.mode }"
+      :aria-pressed="tool === 'select' && transformMode === m.mode"
       :title="m.hint"
-      @click="emit('changeTransformMode', m.mode)"
+      @click="pickTransformMode(m.mode)"
     >
       {{ m.label }}
     </button>
+    <button
+      type="button"
+      :class="{ on: tool === 'bezier' }"
+      :aria-pressed="tool === 'bezier'"
+      title="SVG 패스 정점을 활성화해 특정 영역의 점들을 드래그 선택·이동·추가·삭제·곡선 변환합니다 (A)"
+      @click="emit('selectTool', 'bezier')"
+    >
+      정점
+    </button>
   </div>
-  <button
-    v-if="hasFont && editableLayer && editableLayer.id !== LAYER_ID.font"
-    type="button"
-    class="bar-btn"
-    :disabled="locked || busy"
-    :title="scope === 'stroke'
-      ? '선택한 획의 윤곽을 그 획이 맡은 궁서체 모양으로 바꿉니다. 중심선 점은 그 모양을 따르게 다시 잡습니다. 궁서체 자체는 움직이지 않습니다.'
-      : '각 획의 윤곽을 그 획이 맡은 궁서체 모양으로 바꿉니다. 중심선 점은 그 모양을 따르게 다시 잡습니다. 궁서체 자체는 움직이지 않습니다.'"
-    @click="emit('autoFit')"
-  >
-    자동 맞춤
-  </button>
+  <template v-if="tool === 'select'">
+    <button
+      v-if="hasFont && editableLayer && editableLayer.id !== LAYER_ID.font"
+      type="button"
+      class="bar-btn"
+      :disabled="locked || busy"
+      :title="scope === 'stroke'
+        ? '선택한 획의 윤곽을 그 획이 맡은 궁서체 모양으로 바꿉니다. 중심선 점은 그 모양을 따르게 다시 잡습니다. 궁서체 자체는 움직이지 않습니다.'
+        : '각 획의 윤곽을 그 획이 맡은 궁서체 모양으로 바꿉니다. 중심선 점은 그 모양을 따르게 다시 잡습니다. 궁서체 자체는 움직이지 않습니다.'"
+      @click="emit('autoFit')"
+    >
+      자동 맞춤
+    </button>
+  </template>
+  <template v-else-if="tool === 'bezier'">
+    <button
+      v-if="selectedPathPointCount > 0"
+      type="button"
+      class="bar-btn path-point-badge"
+      title="선택된 패스 정점 해제 (Esc)"
+      @click="emit('clearPathPoints')"
+    >
+      {{ selectedPathPointCount }}점 ×
+    </button>
+    <button
+      type="button"
+      class="bar-btn"
+      :disabled="locked || busy || !canEditPathPoints"
+      title="선택 정점 구간(또는 가장 긴 구간)에 새 정점을 추가합니다. 윤곽선 더블클릭으로도 원하는 위치에 추가할 수 있습니다."
+      @click="emit('insertPathPoint')"
+    >
+      + 점
+    </button>
+    <button
+      type="button"
+      class="bar-btn"
+      :disabled="locked || busy || selectedPathPointCount === 0"
+      title="선택한 정점 구간의 직선(L)과 베지어 곡선(C)을 전환합니다"
+      @click="emit('togglePathCurve')"
+    >
+      곡선
+    </button>
+    <button
+      type="button"
+      class="bar-btn"
+      :disabled="locked || busy || !canEditPathPoints"
+      title="선택 영역(3점 이상) 또는 전체 획의 촘촘한 직선 정점을 정리합니다(곡선은 유지)"
+      @click="emit('simplifyPathPoints')"
+    >
+      단순화
+    </button>
+    <button
+      type="button"
+      class="bar-btn"
+      :disabled="locked || busy || !canDeletePathPoints"
+      title="선택한 패스 정점을 삭제합니다 (Delete / Alt+클릭 / 우클릭)"
+      @click="emit('deletePathPoints')"
+    >
+      삭제
+    </button>
+  </template>
   <button
     v-if="editableLayer && editableLayer.id !== LAYER_ID.font"
     type="button"

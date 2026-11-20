@@ -26,14 +26,23 @@ defineProps<{
   layerDirty: boolean
   workStrokeCount: number
   busy: boolean
+  selectedPathPointCount: number
+  canEditPathPoints: boolean
+  canDeletePathPoints: boolean
 }>()
 
 const emit = defineEmits<{
   changeScope: [scope: 'layer' | 'stroke']
   changeTransformMode: [mode: TransformMode]
+  selectTool: [tool: EditorTool]
   changeKnifeMode: [mode: KnifeMode]
   autoFit: []
   resetEdits: []
+  insertPathPoint: []
+  togglePathCurve: []
+  simplifyPathPoints: []
+  deletePathPoints: []
+  clearPathPoints: []
   reverseMedian: []
   resegment: []
   cancelKnife: []
@@ -123,7 +132,8 @@ function runMenuAction(fn: () => void) {
       </button>
 
       <SelectToolOptions
-        v-if="tool === 'select'"
+        v-if="tool === 'select' || tool === 'bezier'"
+        :tool="tool"
         :scope="scope"
         :transform-mode="transformMode"
         :editable-layer="editableLayer"
@@ -131,10 +141,19 @@ function runMenuAction(fn: () => void) {
         :has-font="hasFont"
         :dirty="layerDirty"
         :busy="busy"
+        :selected-path-point-count="selectedPathPointCount"
+        :can-edit-path-points="canEditPathPoints"
+        :can-delete-path-points="canDeletePathPoints"
         @change-scope="emit('changeScope', $event)"
         @change-transform-mode="emit('changeTransformMode', $event)"
+        @select-tool="emit('selectTool', $event)"
         @auto-fit="emit('autoFit')"
         @reset-edits="emit('resetEdits')"
+        @insert-path-point="emit('insertPathPoint')"
+        @toggle-path-curve="emit('togglePathCurve')"
+        @simplify-path-points="emit('simplifyPathPoints')"
+        @delete-path-points="emit('deletePathPoints')"
+        @clear-path-points="emit('clearPathPoints')"
       />
       <MedianToolOptions
         v-else-if="tool === 'median'"

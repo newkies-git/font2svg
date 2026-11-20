@@ -50,3 +50,10 @@ test('재생·획 이동·취소 키', () => {
   assert.deepEqual(press(' '), { type: 'togglePlay' })
   assert.deepEqual(press('Escape'), { type: 'cancel' })
 })
+
+test('베지어 정점(bezier) 모드에서 Delete·Backspace·Shift+방향키가 동작한다', () => {
+  assert.deepEqual(press('Delete', { activeTool: 'bezier' }), { type: 'deletePathPoints' })
+  assert.deepEqual(press('Backspace', { activeTool: 'bezier' }), { type: 'deletePathPoints' })
+  assert.deepEqual(press('ArrowUp', { activeTool: 'bezier', shift: true, canNudge: true }), { type: 'nudge', dx: 0, dy: NUDGE_STEP })
+  assert.equal(press('ArrowUp', { activeTool: 'bezier', shift: true, canNudge: false }), null)
+})

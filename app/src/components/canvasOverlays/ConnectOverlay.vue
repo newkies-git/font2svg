@@ -4,7 +4,7 @@ import { CONNECT_END_RADIUS, CONNECT_MID_RADIUS } from '../../lib/canvasMetrics.
 import type { Pt } from '../../../shared/types.ts'
 import { MIN_CONNECT_POINTS } from '../../composables/useConnectTool.ts'
 
-defineProps<{ connectPoints: Pt[] }>()
+defineProps<{ connectPoints: Pt[]; scale: number }>()
 </script>
 
 <template>
@@ -28,14 +28,14 @@ defineProps<{ connectPoints: Pt[] }>()
       :transform="`translate(${pt[0]} ${pt[1]})`"
     >
       <circle
-        :r="ptIdx === 0 || ptIdx === connectPoints.length - 1 ? CONNECT_END_RADIUS : CONNECT_MID_RADIUS"
+        :r="(ptIdx === 0 || ptIdx === connectPoints.length - 1 ? CONNECT_END_RADIUS : CONNECT_MID_RADIUS) * scale"
         class="connect-vertex"
         :class="{
           'is-start': ptIdx === 0,
           'is-end': ptIdx === connectPoints.length - 1 && ptIdx > 0,
         }"
       />
-      <text transform="scale(1 -1)" class="connect-vertex-label" text-anchor="middle" dominant-baseline="central">
+      <text :transform="`scale(${scale} ${-scale})`" class="connect-vertex-label" text-anchor="middle" dominant-baseline="central">
         {{ connectLabel(ptIdx, connectPoints.length) }}
       </text>
     </g>

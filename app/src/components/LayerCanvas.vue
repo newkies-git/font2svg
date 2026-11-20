@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { isContourLayer, isReferenceKind } from '../../shared/layerKind.ts'
 import { computed, ref, watch } from 'vue'
-import { useCanvasDrag, type ResizeDir } from '../composables/useCanvasDrag.ts'
+import { useCanvasDrag, type PointMarquee, type ResizeDir } from '../composables/useCanvasDrag.ts'
 import { useCanvasFit, visibleWorkStrokes } from '../composables/useCanvasFit.ts'
 import { useCanvasLoupe } from '../composables/useCanvasLoupe.ts'
 import { BADGE_RADIUS, CANVAS } from '../../shared/constants.ts'
@@ -27,6 +27,7 @@ const props = defineProps<{
   scope: 'layer' | 'stroke'
   transformMode: TransformMode
   selectedIndex: number
+  selectedPathPoints: Set<number>
   shown: number
   reveal: number
   knifePoints: Pt[]
@@ -41,13 +42,17 @@ const emit = defineEmits<{
   transformBy: [fn: (x: number, y: number) => Pt, scaleFactor: number]
   restoreSnapshot: [strokes: StrokeRecord[], paths: string[]]
   updatePath: [index: number, path: string]
+  selectPathPoints: [indices: number[]]
+  togglePathPoint: [segIndex: number]
+  deletePathPoint: [segIndex: number]
+  insertPathPointAt: [index: number, at: Pt]
   moveMedianVertex: [strokeIdx: number, ptIdx: number, to: Pt]
   addMedianVertex: [strokeIdx: number, at: Pt]
   deleteMedianVertex: [strokeIdx: number, ptIdx: number]
 }>()
 
 const worldGroup = ref<SVGGElement | null>(null)
-const { worldTransform, fontToScreen, eventToFont } = useCanvasFit(
+const { worldTransform, contentScale, fontToScreen, eventToFont } = useCanvasFit(
   () => props.orderedLayers,
   () => props.shown,
   worldGroup,
@@ -67,13 +72,16 @@ const svgEl = ref<SVGSVGElement | null>(null)
 const view = ref<CanvasView>({ ...FULL_CANVAS_VIEW })
 const zoomArmed = ref(false)
 const marquee = ref<{ x0: number; y0: number; x1: number; y1: number } | null>(null)
+const pointMarquee = ref<PointMarquee | null>(null)
 const zoomed = computed(() => !isFullView(view.value))
 const viewBoxAttr = computed(() => `${view.value.x} ${view.value.y} ${view.value.w} ${view.value.h}`)
+const overlayScale = computed(() => Math.max(view.value.w, view.value.h) / (CANVAS * contentScale.value))
 
 watch(() => props.selected?.char, () => {
   view.value = { ...FULL_CANVAS_VIEW }
   zoomArmed.value = false
   marquee.value = null
+  pointMarquee.value = null
 })
 
 function clientToSvg(event: PointerEvent | WheelEvent): { x: number; y: number } | null {
@@ -229,6 +237,8 @@ const targetMedianPoints = computed<Pt[]>(() => {
 const {
   startMoveDrag,
   startHandleDrag,
+  startBezierAnchorDrag,
+  startPointMarqueeDrag,
   startBezierHandleDrag,
   onMedianVertexPointerDown,
   onMedianLinePointerDown,
@@ -239,11 +249,19 @@ const {
   activeBBox: () => activeBBox.value,
   transformMode: () => props.transformMode,
   targetBezierPath: () => targetBezierPath.value,
+  selectedPathPoints: () => props.selectedPathPoints,
+  overlayScale: () => overlayScale.value,
+  setPointMarquee: (box) => {
+    pointMarquee.value = box
+  },
   eventToFont,
   emit: {
     restoreSnapshot: (strokes, paths) => emit('restoreSnapshot', strokes, paths),
     transformBy: (fn, scaleFactor) => emit('transformBy', fn, scaleFactor),
     updatePath: (index, path) => emit('updatePath', index, path),
+    selectPathPoints: (indices) => emit('selectPathPoints', indices),
+    togglePathPoint: (segIndex) => emit('togglePathPoint', segIndex),
+    deletePathPoint: (segIndex) => emit('deletePathPoint', segIndex),
     moveMedianVertex: (strokeIdx, ptIdx, to) => emit('moveMedianVertex', strokeIdx, ptIdx, to),
     addMedianVertex: (strokeIdx, at) => emit('addMedianVertex', strokeIdx, at),
     deleteMedianVertex: (strokeIdx, ptIdx) => emit('deleteMedianVertex', strokeIdx, ptIdx),
@@ -252,6 +270,10 @@ const {
 
 function onCanvasPointerDown(event: PointerEvent) {
   if (event.button !== 0) return
+  if (props.tool === 'bezier' && !props.locked && targetBezierPath.value) {
+    startPointMarqueeDrag(event)
+    return
+  }
   const pt = eventToFont(event)
   if (!pt) return
   if (props.tool === 'knife') {
@@ -261,6 +283,12 @@ function onCanvasPointerDown(event: PointerEvent) {
   if (props.tool === 'connect' && !props.locked) {
     emit('connectPoint', pt)
   }
+}
+
+function onBezierEdgeDblClick(event: MouseEvent) {
+  if (props.tool !== 'bezier' || props.locked) return
+  const pt = eventToFont(event)
+  if (pt) emit('insertPathPointAt', props.selectedIndex, pt)
 }
 
 function onCanvasDblClick(event: MouseEvent) {
@@ -273,6 +301,7 @@ function onShapePointerDown(layerId: string, index: number, event: PointerEvent)
   if (event.button !== 0) return
   if (props.tool === 'knife' || props.tool === 'connect') return // 칼·연결 도구는 상위 SVG 클릭으로 전달
   if (props.editableLayer?.id !== layerId) return
+  if (props.tool === 'bezier' && index === props.selectedIndex) return // 선택된 획 위에서도 영역 드래그 선택 가능하게 전달
   event.stopPropagation()
   emit('selectItem', index)
   // 궁서체는 기준 레이어라 드래그로 위치·크기를 바꾸지 않는다.
@@ -413,7 +442,10 @@ function onShapePointerDown(layerId: string, index: number, event: PointerEvent)
             :key="`work-anim-${stroke.stroke_order}`"
             :clip-path="`url(#clip-${stroke.stroke_order})`"
             class="anim-stroke"
-            :class="{ radical: stroke.is_radical }"
+            :class="{
+              radical: stroke.is_radical,
+              'is-path-editing': tool === 'bezier' && editableLayer?.id === layer.id,
+            }"
             :points="polylinePoints(stroke.median_points)"
             :stroke-width="stroke.stroke_width"
             :stroke-dasharray="strokeDash(stroke, index, shown, reveal).array"
@@ -463,6 +495,7 @@ function onShapePointerDown(layerId: string, index: number, event: PointerEvent)
         :bbox="activeBBox"
         :handles="resizeHandles"
         :transform-mode="transformMode"
+        :scale="overlayScale"
         @start-move="startMoveDrag"
         @start-handle="startHandleDrag"
       />
@@ -470,24 +503,32 @@ function onShapePointerDown(layerId: string, index: number, event: PointerEvent)
       <!-- B. 베지어 정점 직접 편집(bezier) 핸들 -->
       <BezierOverlay
         v-if="tool === 'bezier' && !locked && targetBezierPath"
+        :path="targetBezierPath"
         :nodes="bezierNodes"
-        @start-drag="startBezierHandleDrag"
+        :selected-indices="selectedPathPoints"
+        :marquee="pointMarquee"
+        :scale="overlayScale"
+        @start-anchor-drag="startBezierAnchorDrag"
+        @start-control-drag="startBezierHandleDrag"
+        @delete-anchor="emit('deletePathPoint', $event)"
+        @insert-on-edge="onBezierEdgeDblClick"
       />
 
       <!-- C. 중심선 정점 편집(median) 핸들 -->
       <MedianEditOverlay
         v-if="tool === 'median' && !locked && targetMedianPoints.length > 0"
         :points="targetMedianPoints"
+        :scale="overlayScale"
         @line-pointer-down="onMedianLinePointerDown"
         @vertex-pointer-down="onMedianVertexPointerDown"
         @delete-vertex="emit('deleteMedianVertex', selectedIndex, $event)"
       />
 
       <!-- D. 칼 분할(knife) 점·꺾인 선 표시 -->
-      <KnifeOverlay v-if="knifePoints.length > 0" :knife-points="knifePoints" />
+      <KnifeOverlay v-if="knifePoints.length > 0" :knife-points="knifePoints" :scale="overlayScale" />
 
       <!-- E. 윤곽 연결(connect) 점·미리보기 -->
-      <ConnectOverlay v-if="tool === 'connect' && connectPoints.length > 0" :connect-points="connectPoints" />
+      <ConnectOverlay v-if="tool === 'connect' && connectPoints.length > 0" :connect-points="connectPoints" :scale="overlayScale" />
     </g>
 
     <rect

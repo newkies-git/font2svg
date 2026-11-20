@@ -1,4 +1,5 @@
 import { onBeforeUnmount } from 'vue'
+import { anchorIndicesInBox, moveEditableAnchors } from '../lib/pathPointEdit.ts'
 import {
   moveEditableHandle,
   parseEditablePath,
@@ -12,13 +13,18 @@ import type { LayerRecord, Pt, StrokeRecord } from '../../shared/types.ts'
 import { cloneStroke } from './layerClone.ts'
 
 const cloneStrokesOf = (list: StrokeRecord[]): StrokeRecord[] => list.map(cloneStroke)
+const MARQUEE_MIN_DRAG = 4
 
 export type ResizeDir = HandleDir
+export type PointMarquee = { x0: number; y0: number; x1: number; y1: number }
 
 type DragEmit = {
   restoreSnapshot: (strokes: StrokeRecord[], paths: string[]) => void
   transformBy: (fn: (x: number, y: number) => Pt, scaleFactor: number) => void
   updatePath: (index: number, path: string) => void
+  selectPathPoints?: (indices: number[]) => void
+  togglePathPoint?: (segIndex: number) => void
+  deletePathPoint?: (segIndex: number) => void
   moveMedianVertex: (strokeIdx: number, ptIdx: number, to: Pt) => void
   addMedianVertex: (strokeIdx: number, at: Pt) => void
   deleteMedianVertex: (strokeIdx: number, ptIdx: number) => void
@@ -31,10 +37,25 @@ export function useCanvasDrag(options: {
   activeBBox: () => BBox | null
   transformMode: () => TransformMode
   targetBezierPath: () => string | null
+  selectedPathPoints?: () => Set<number>
+  overlayScale?: () => number
+  setPointMarquee?: (box: PointMarquee | null) => void
   eventToFont: (event: PointerEvent | MouseEvent) => Pt | null
   emit: DragEmit
 }) {
-  const { editableLayer, locked, selectedIndex, activeBBox, transformMode, targetBezierPath, eventToFont, emit } = options
+  const {
+    editableLayer,
+    locked,
+    selectedIndex,
+    activeBBox,
+    transformMode,
+    targetBezierPath,
+    selectedPathPoints = () => new Set<number>(),
+    overlayScale = () => 1,
+    setPointMarquee = () => {},
+    eventToFont,
+    emit,
+  } = options
 
   let cleanupDrag: (() => void) | null = null
 
@@ -46,9 +67,12 @@ export function useCanvasDrag(options: {
   onBeforeUnmount(stopActiveDrag)
 
   // 포인터를 놓을 때까지 창 전체에서 움직임을 받는다. 시작 전에 진행 중이던 드래그는 정리한다.
-  function beginDrag(onMove: (moveEvent: PointerEvent) => void) {
+  function beginDrag(onMove: (moveEvent: PointerEvent) => void, onFinish?: () => void) {
     stopActiveDrag()
-    const onUp = () => stopActiveDrag()
+    const onUp = () => {
+      onFinish?.()
+      stopActiveDrag()
+    }
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp, { once: true })
     cleanupDrag = () => {
@@ -96,6 +120,69 @@ export function useCanvasDrag(options: {
     })
   }
 
+  function startBezierAnchorDrag(segIndex: number, event: PointerEvent) {
+    event.stopPropagation()
+    if (event.button !== 0 || locked()) return
+    if (event.altKey) {
+      emit.deletePathPoint?.(segIndex)
+      return
+    }
+    if (event.shiftKey) {
+      emit.togglePathPoint?.(segIndex)
+      return
+    }
+    const d = targetBezierPath()
+    const startPt = eventToFont(event)
+    if (!d || !startPt) return
+    const initialSegs: EditableSeg[] = parseEditablePath(d)
+    const moving = selectedPathPoints().has(segIndex) ? new Set(selectedPathPoints()) : new Set([segIndex])
+    if (!selectedPathPoints().has(segIndex)) {
+      emit.selectPathPoints?.([segIndex])
+    }
+    const targetIdx = selectedIndex()
+
+    beginDrag((moveEvent) => {
+      const cur = eventToFont(moveEvent)
+      if (!cur) return
+      const updated = moveEditableAnchors(initialSegs, moving, cur[0] - startPt[0], cur[1] - startPt[1])
+      emit.updatePath(targetIdx, serializeEditablePath(updated))
+    })
+  }
+
+  function startPointMarqueeDrag(event: PointerEvent) {
+    const d = targetBezierPath()
+    const origin = eventToFont(event)
+    if (!d || !origin || locked()) return
+    const additive = event.shiftKey
+    const base = additive ? new Set(selectedPathPoints()) : new Set<number>()
+    const segs = parseEditablePath(d)
+    const minDrag = MARQUEE_MIN_DRAG * overlayScale()
+    let moved = false
+
+    beginDrag(
+      (moveEvent) => {
+        const cur = eventToFont(moveEvent)
+        if (!cur) return
+        if (!moved && Math.hypot(cur[0] - origin[0], cur[1] - origin[1]) >= minDrag) {
+          moved = true
+        }
+        if (!moved) return
+        setPointMarquee({ x0: origin[0], y0: origin[1], x1: cur[0], y1: cur[1] })
+        const inBox = anchorIndicesInBox(segs, {
+          minX: Math.min(origin[0], cur[0]),
+          minY: Math.min(origin[1], cur[1]),
+          maxX: Math.max(origin[0], cur[0]),
+          maxY: Math.max(origin[1], cur[1]),
+        })
+        emit.selectPathPoints?.([...new Set([...base, ...inBox])])
+      },
+      () => {
+        setPointMarquee(null)
+        if (!moved && !additive) emit.selectPathPoints?.([])
+      },
+    )
+  }
+
   function startBezierHandleDrag(handle: HandleRef, event: PointerEvent) {
     event.stopPropagation()
     const d = targetBezierPath()
@@ -136,6 +223,8 @@ export function useCanvasDrag(options: {
   return {
     startMoveDrag,
     startHandleDrag,
+    startBezierAnchorDrag,
+    startPointMarqueeDrag,
     startBezierHandleDrag,
     onMedianVertexPointerDown,
     onMedianLinePointerDown,

@@ -8,6 +8,7 @@ export type KeyAction =
   | { type: 'tool'; tool: EditorTool }
   | { type: 'commitConnect' }
   | { type: 'undoConnectPoint' }
+  | { type: 'deletePathPoints' }
   | { type: 'nudge'; dx: number; dy: number }
   | { type: 'stepPrev' }
   | { type: 'stepNext' }
@@ -53,8 +54,12 @@ export function resolveKeyAction(context: KeyContext): KeyAction | null {
     if (key === 'Backspace') return { type: 'undoConnectPoint' }
   }
 
+  if (activeTool === 'bezier' && (key === 'Backspace' || key === 'Delete')) {
+    return { type: 'deletePathPoints' }
+  }
+
   const direction = NUDGE_DIRECTIONS[key]
-  if (direction && context.shift && activeTool === 'select' && context.canNudge) {
+  if (direction && context.shift && (activeTool === 'select' || activeTool === 'bezier') && context.canNudge) {
     return { type: 'nudge', dx: direction[0] * NUDGE_STEP, dy: direction[1] * NUDGE_STEP }
   }
 

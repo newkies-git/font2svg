@@ -16,6 +16,7 @@ import type { LayerEditorState } from './layerEditorState.ts'
 import { useConnectTool } from './useConnectTool.ts'
 import { useKnifeTool } from './useKnifeTool.ts'
 import { useMedianEdit } from './useMedianEdit.ts'
+import { usePathPointEdit } from './usePathPointEdit.ts'
 
 export function useStrokeEdit(
   state: LayerEditorState,
@@ -242,10 +243,11 @@ export function useStrokeEdit(
     editStroke(index, (stroke) => withMedianPoints({ ...stroke, outline_path: nextPath }, stroke.median_points))
   }
 
-  // 중심선 정점 이동 / 추가 / 삭제
+  // 중심선·패스 정점 편집 / 칼 / 연결
   const { cancelKnife, applyKnifePoint } = useKnifeTool(state, message, error, guardUnlocked, updateTargetStrokes, updateTargetPaths)
   const { cancelConnect, undoConnectPoint, applyConnectPoint, commitConnectOutline, commitConnectBridge } = useConnectTool(state, message, error, guardUnlocked, updateTargetPaths, editStroke)
   const { moveMedianVertex, addMedianVertex, deleteMedianVertex } = useMedianEdit(state, error, editStroke)
+  const pathPoints = usePathPointEdit(state, message, error, updateSinglePathInActive)
 
   return {
     updateTargetStrokes,
@@ -260,6 +262,7 @@ export function useStrokeEdit(
     applyAffineToActive,
     autoFitToFont,
     updateSinglePathInActive,
+    ...pathPoints,
     moveMedianVertex,
     addMedianVertex,
     deleteMedianVertex,
