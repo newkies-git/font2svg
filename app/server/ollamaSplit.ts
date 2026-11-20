@@ -1,5 +1,4 @@
 import {
-  AREA_FLATNESS,
   CANVAS,
   DEFAULT_STROKE_WIDTH,
   MEDIAN_MIN_POINTS,
@@ -8,11 +7,22 @@ import {
   OLLAMA_TIMEOUT_MS,
 } from '../shared/constants.ts'
 import { warnOnce } from '../shared/log.ts'
-import { flattenContours, polygonArea } from '../shared/paths.ts'
+import { round1 } from '../shared/paths.ts'
 import { computeOptimalStrokeWidth, recoverMedian, segmentOutlineByMedians, simplifyPolyline } from '../shared/strokeCut.ts'
 import type { Pt, StrokeRecord } from '../shared/types.ts'
-import { contourIndicesOfOutline, contourLoopsOf, ribbonPath, type ImportedStrokes } from './geometry.ts'
-import { OLLAMA_BASE_URL, OLLAMA_MODEL } from './ids.ts'
+import {
+  boundsOf,
+  contourArea,
+  contourIndicesOfOutline,
+  contourLoopsOf,
+  fitMediansToOutline,
+  orientLike,
+  pathPoints,
+  ribbonPath,
+  toPoints,
+  type ImportedStrokes,
+} from './geometry.ts'
+import { OLLAMA_MODEL, ollamaUrl } from './ids.ts'
 
 export type OllamaSplitSource = 'NAVER' | 'MMH'
 
@@ -22,7 +32,6 @@ type OllamaSplitStrokePlan = {
   median: Pt[]
 }
 
-const OLLAMA_GENERATE_URL = `${OLLAMA_BASE_URL}/api/generate`
 const OLLAMA_SEED = 1
 
 const OLLAMA_SPLIT_SCHEMA = {
@@ -45,43 +54,6 @@ const OLLAMA_SPLIT_SCHEMA = {
     },
   },
   required: ['strokes'],
-}
-
-const round1 = (value: number) => Math.round(value * 10) / 10
-const toPoints = (line: Pt[]) => line.map(([x, y]) => ({ x, y }))
-
-function contourArea(d: string): number {
-  return flattenContours(d, AREA_FLATNESS).reduce((sum, loop) => sum + polygonArea(loop), 0)
-}
-
-function pathPoints(d: string): Pt[] {
-  const numbers = (d.match(/-?\d+(?:\.\d+)?/g) ?? []).map(Number)
-  const points: Pt[] = []
-  for (let index = 0; index + 1 < numbers.length; index += 2) {
-    points.push([numbers[index], numbers[index + 1]])
-  }
-  return points
-}
-
-function boundsOf(points: Pt[]) {
-  const xs = points.map(([x]) => x)
-  const ys = points.map(([, y]) => y)
-  if (xs.length === 0) return { minX: 0, minY: 0, maxX: 0, maxY: 0 }
-  return {
-    minX: Math.min(...xs),
-    minY: Math.min(...ys),
-    maxX: Math.max(...xs),
-    maxY: Math.max(...ys),
-  }
-}
-
-function orientLike(points: { x: number; y: number }[], reference: Pt[]) {
-  if (points.length < 2 || reference.length < 2) return points
-  const [start, end] = [reference[0], reference[reference.length - 1]]
-  const d = (a: { x: number; y: number }, b: Pt) => Math.hypot(a.x - b[0], a.y - b[1])
-  const same = d(points[0], start) + d(points[points.length - 1], end)
-  const flipped = d(points[0], end) + d(points[points.length - 1], start)
-  return flipped < same ? points.slice().reverse() : points
 }
 
 function sanitizeMedian(raw: unknown): Pt[] | null {
@@ -146,7 +118,7 @@ async function askOllamaForStrokeSplit(params: {
   ].join('\n')
 
   try {
-    const response = await fetch(OLLAMA_GENERATE_URL, {
+    const response = await fetch(ollamaUrl('/api/generate'), {
       method: 'POST',
       signal: AbortSignal.timeout(OLLAMA_TIMEOUT_MS),
       headers: { 'Content-Type': 'application/json' },
@@ -203,10 +175,12 @@ export async function splitFontByOllamaGuide(params: {
     throw new Error('로컬 Ollama에서 궁서체 획 분리 응답을 받지 못했습니다. Ollama 실행 상태와 모델을 확인하세요.')
   }
 
+  const rawGuideMedians = params.guideStrokes.map((stroke) => stroke.median_points)
+  const fittedFallback = fitMediansToOutline(rawGuideMedians, params.contours)
   const byOrder = new Map(plans.map((plan) => [plan.strokeOrder, plan]))
   const targetMedians = params.guideStrokes.map((stroke, idx) => {
     const order = stroke.stroke_order || idx + 1
-    return byOrder.get(order)?.median ?? stroke.median_points
+    return byOrder.get(order)?.median ?? fittedFallback[idx]
   })
 
   // 어느 contour가 하나의 획에만 단독으로 매핑되었는지 추적 (분할 실패 시 보정용)

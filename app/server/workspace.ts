@@ -25,7 +25,7 @@ import {
 } from './layerWrites.ts'
 import { sanitizeLayerStrokes } from './layerData.ts'
 import { toItems } from './strokeStore.ts'
-import { ORIGIN_MANUAL, requireFound, type StrokeItem } from './model.ts'
+import { ACTOR_USER, ORIGIN_MANUAL, requireFound, type StrokeItem } from './model.ts'
 import { createOutlineMapping } from './outlineMapping.ts'
 import { createReferencePipeline } from './referencePipeline.ts'
 import {
@@ -187,7 +187,19 @@ export function createWorkspace(rootDir: string) {
       }
     }
 
-    references.saveImported(unicode, options.source, guideLayer.source_url, radicals, fitted, action)
+    // 참고 획순(NAVER·MMH)으로 궁서체를 나눈 결과는 applyNaver·applyLayerToStrokes와 같게 strokes에 반영하되,
+    // 사람이 요청한 AI 분리이므로 last_modified_by는 ACTOR_USER로 남겨 일괄 배치 덮어쓰기를 막고 이력을 보존한다.
+    transaction(db, () => {
+      strokes.replaceStrokes(
+        unicode,
+        items,
+        ACTOR_USER,
+        action,
+        { source: options.source, url: guideLayer.source_url },
+        fitted.fontOutline,
+      )
+      issues.clearIssue(unicode)
+    })
     const next = getCharacter(unicode)
     return next && {
       ...next,

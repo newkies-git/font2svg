@@ -1,4 +1,5 @@
-import { DEFAULT_STROKE_WIDTH, MIN_STROKE_WIDTH, STROKE_WIDTH_CAP_RATIO, STROKE_WIDTH_MARGIN } from '../constants.ts'
+import { strokeWidthCap } from '../clamp.ts'
+import { DEFAULT_STROKE_WIDTH, MIN_STROKE_WIDTH, STROKE_WIDTH_MARGIN } from '../constants.ts'
 import { warnOnce } from '../log.ts'
 import { flattenContours, pointSegmentDistance, samplePath, type Pt } from '../paths.ts'
 import { count, GeometryError, pixelToFont, rasterize, type Raster } from './raster.ts'
@@ -61,7 +62,7 @@ export function computeOptimalStrokeWidth(path: string, median: Pt[], defaultStr
     if (minD2 > dMax) dMax = minD2
   }
   const computed = Math.ceil(dMax * 2 + STROKE_WIDTH_MARGIN)
-  const cap = Math.floor(defaultStrokeWidth * STROKE_WIDTH_CAP_RATIO)
+  const cap = strokeWidthCap(defaultStrokeWidth)
   return Math.max(MIN_STROKE_WIDTH, Math.min(cap, computed))
 }
 

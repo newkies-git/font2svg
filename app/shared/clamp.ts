@@ -1,8 +1,12 @@
 import { DEFAULT_STROKE_WIDTH, MIN_STROKE_WIDTH, OPACITY_STEPS, STROKE_WIDTH_CAP_RATIO } from './constants.ts'
 
-// 획 폭을 최소~상한(기본 폭의 STROKE_WIDTH_CAP_RATIO배) 사이 정수로 맞춘다. 0이나 숫자가 아니면 기본 폭이다.
+export function strokeWidthCap(defaultStrokeWidth = DEFAULT_STROKE_WIDTH): number {
+  return Math.floor(defaultStrokeWidth * STROKE_WIDTH_CAP_RATIO)
+}
+
+// 획 폭을 최소~상한(기본 폭의 STROKE_WIDTH_CAP_RATIO배 내림) 사이 정수로 맞춘다. 0이나 숫자가 아니면 기본 폭이다.
 export function clampStrokeWidth(value: number): number {
-  const max = Math.round(DEFAULT_STROKE_WIDTH * STROKE_WIDTH_CAP_RATIO)
+  const max = strokeWidthCap()
   return Math.max(MIN_STROKE_WIDTH, Math.min(max, Math.round(value) || DEFAULT_STROKE_WIDTH))
 }
 

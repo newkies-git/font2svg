@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { DEFAULT_STROKE_WIDTH, MIN_STROKE_WIDTH, OPACITY_STEPS, STROKE_WIDTH_CAP_RATIO } from '../shared/constants.ts'
-import { clampStrokeWidth, snapOpacity } from '../shared/clamp.ts'
+import { clampStrokeWidth, snapOpacity, strokeWidthCap } from '../shared/clamp.ts'
 
 test('획 폭은 최소~기본 폭의 상한 배율 사이로 맞추고 소수는 반올림한다', () => {
-  const cap = Math.round(DEFAULT_STROKE_WIDTH * STROKE_WIDTH_CAP_RATIO)
+  const cap = strokeWidthCap()
+  assert.equal(cap, Math.floor(DEFAULT_STROKE_WIDTH * STROKE_WIDTH_CAP_RATIO))
   assert.equal(clampStrokeWidth(MIN_STROKE_WIDTH - 1), MIN_STROKE_WIDTH)
   assert.equal(clampStrokeWidth(cap + 1), cap)
   assert.equal(clampStrokeWidth(100.4), 100)

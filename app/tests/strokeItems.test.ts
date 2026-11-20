@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { DEFAULT_STROKE_WIDTH, MIN_STROKE_WIDTH, STROKE_WIDTH_CAP_RATIO } from '../shared/constants.ts'
+import { strokeWidthCap } from '../shared/clamp.ts'
+import { DEFAULT_STROKE_WIDTH, MIN_STROKE_WIDTH } from '../shared/constants.ts'
 import type { StrokeItem } from '../server/model.ts'
 import { itemsOf, sanitizedItems } from '../server/strokeStore.ts'
 
@@ -16,7 +17,7 @@ const item = (overrides: Partial<StrokeItem> = {}): StrokeItem => ({
 
 test('획 폭은 허용 범위로 맞추고 0이나 숫자가 아닌 값은 기본 폭이 된다', () => {
   const widths = [1, 100000, 0, Number.NaN].map((stroke_width) => sanitizedItems([item({ stroke_width })])[0].stroke_width)
-  assert.deepEqual(widths, [MIN_STROKE_WIDTH, Math.round(DEFAULT_STROKE_WIDTH * STROKE_WIDTH_CAP_RATIO), DEFAULT_STROKE_WIDTH, DEFAULT_STROKE_WIDTH])
+  assert.deepEqual(widths, [MIN_STROKE_WIDTH, strokeWidthCap(), DEFAULT_STROKE_WIDTH, DEFAULT_STROKE_WIDTH])
 })
 
 test('알 수 없는 끝 모양은 NONE이 되고 부수 표시는 0/1로 정리된다', () => {

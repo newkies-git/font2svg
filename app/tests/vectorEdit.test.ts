@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { DEFAULT_STROKE_WIDTH, MIN_STROKE_WIDTH, STROKE_WIDTH_CAP_RATIO } from '../shared/constants.ts'
+import { strokeWidthCap } from '../shared/clamp.ts'
+import { MIN_STROKE_WIDTH } from '../shared/constants.ts'
 import {
   insertMedianPoint,
   mergeTwoStrokes,
@@ -87,7 +88,7 @@ test('획 변환: 윤곽·중심선을 옮기고 폭은 배율로 키우되 한�
   const doubled = transformStroke(stroke, (x, y) => [x * 2, y * 2], 2)
   assert.deepEqual(doubled.median_points, [[2, 2], [18, 18]])
   assert.equal(doubled.stroke_width, 200)
-  const cap = Math.round(DEFAULT_STROKE_WIDTH * STROKE_WIDTH_CAP_RATIO)
+  const cap = strokeWidthCap()
   assert.equal(transformStroke(stroke, (x, y) => [x, y], 1000).stroke_width, cap)
   assert.equal(transformStroke(stroke, (x, y) => [x, y], 0.0001).stroke_width, MIN_STROKE_WIDTH)
   assert.equal(stroke.stroke_width, 100, '원본 불변')

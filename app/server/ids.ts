@@ -3,7 +3,6 @@ import path from 'node:path'
 import { OLLAMA_TIMEOUT_MS } from '../shared/constants.ts'
 import type { Box } from './geometry.ts'
 
-const IDS_URL = 'https://www.babelstone.co.uk/CJK/IDS.TXT'
 export const IDS_FILE = path.join('database', 'IDS.TXT')
 
 // 공개 IDS에 없는 글자를 사람이 직접 적어 두는 곳.
@@ -16,10 +15,9 @@ export const LEAF_FORMS: Record<string, string> = {
   亻: '人', 氵: '水', 忄: '心', 扌: '手', 犭: '犬', 礻: '示', 衤: '衣', 刂: '刀', 釒: '金', 艹: '艸', 灬: '火', 辶: '辵', 糹: '糸', 飠: '食',
 }
 
-
-export const OLLAMA_BASE_URL = 'http://127.0.0.1:11434'
-const OLLAMA_URL = `${OLLAMA_BASE_URL}/api/generate`
-const OLLAMA_TAGS_URL = `${OLLAMA_BASE_URL}/api/tags`
+const DEFAULT_OLLAMA_BASE_URL = 'http://127.0.0.1:11434'
+const DEFAULT_OLLAMA_PORT = '11434'
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1', '[::1]'])
 export const OLLAMA_MODEL = 'qwen3.5:9b'
 const OLLAMA_SEED = 1
 const OLLAMA_STATUS_TIMEOUT_MS = 3000
@@ -27,6 +25,27 @@ const OLLAMA_IDS_SCHEMA = {
   type: 'object',
   properties: { ids: { type: 'string' } },
   required: ['ids'],
+}
+
+export function resolveOllamaBaseUrl(rawHost = process.env.OLLAMA_HOST): string {
+  const trimmed = rawHost?.trim()
+  if (!trimmed) return DEFAULT_OLLAMA_BASE_URL
+  const candidate = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`
+  let parsed: URL
+  try {
+    parsed = new URL(candidate)
+  } catch {
+    throw new Error('OLLAMA_HOST 형식이 올바르지 않습니다. loopback 주소(127.0.0.1·localhost·[::1])만 허용됩니다.')
+  }
+  if ((parsed.protocol !== 'http:' && parsed.protocol !== 'https:') || parsed.username || parsed.password || !LOOPBACK_HOSTS.has(parsed.hostname.toLowerCase())) {
+    throw new Error('보안 정책상 로컬 Ollama는 loopback 주소(127.0.0.1·localhost·[::1])만 허용됩니다.')
+  }
+  if (!parsed.port) parsed.port = DEFAULT_OLLAMA_PORT
+  return parsed.origin
+}
+
+export function ollamaUrl(endpoint: '/api/generate' | '/api/tags'): string {
+  return `${resolveOllamaBaseUrl()}${endpoint}`
 }
 
 export const WHOLE_BOX: Box = [0, 0, 1, 1]
@@ -48,12 +67,6 @@ export const IDS_LAYOUTS: Record<string, Box[]> = {
 }
 
 export type IdsNode = { leaf: string } | { op: string; children: IdsNode[] }
-export type IdsSource = 'MANUAL' | 'IDS' | 'OLLAMA'
-export const IDS_ORIGINS: Record<IdsSource, [string, string | null]> = {
-  MANUAL: ['MANUAL', null],
-  IDS: ['IDS', IDS_URL],
-  OLLAMA: ['OLLAMA_IDS', OLLAMA_URL],
-}
 export const IDS_OPERATOR = /[\u2FF0-\u2FFF]/
 const IDS_UNSUPPORTED = /[{}\\&;]/
 
@@ -103,8 +116,10 @@ export type OllamaStatusResult = {
 }
 
 export async function listOllamaStatus(): Promise<OllamaStatusResult> {
+  let baseUrl = DEFAULT_OLLAMA_BASE_URL
   try {
-    const response = await fetch(OLLAMA_TAGS_URL, {
+    baseUrl = resolveOllamaBaseUrl()
+    const response = await fetch(`${baseUrl}/api/tags`, {
       method: 'GET',
       signal: AbortSignal.timeout(OLLAMA_STATUS_TIMEOUT_MS),
     })
@@ -113,7 +128,7 @@ export async function listOllamaStatus(): Promise<OllamaStatusResult> {
         connected: false,
         models: [],
         defaultModel: OLLAMA_MODEL,
-        url: OLLAMA_BASE_URL,
+        url: baseUrl,
         error: `Ollama 서버 응답 오류 (HTTP ${response.status})`,
       }
     }
@@ -127,22 +142,23 @@ export async function listOllamaStatus(): Promise<OllamaStatusResult> {
       connected: true,
       models,
       defaultModel: models.includes(OLLAMA_MODEL) ? OLLAMA_MODEL : (models[0] ?? OLLAMA_MODEL),
-      url: OLLAMA_BASE_URL,
+      url: baseUrl,
     }
-  } catch {
+  } catch (error) {
+    const isPolicyError = error instanceof Error && (error.message.includes('loopback') || error.message.includes('OLLAMA_HOST'))
     return {
       connected: false,
       models: [],
       defaultModel: OLLAMA_MODEL,
-      url: OLLAMA_BASE_URL,
-      error: `로컬 Ollama(${OLLAMA_BASE_URL})에 연결할 수 없습니다. Ollama가 실행 중인지 확인하세요.`,
+      url: baseUrl,
+      error: isPolicyError ? error.message : `로컬 Ollama(${baseUrl})에 연결할 수 없습니다. Ollama가 실행 중인지 확인하세요.`,
     }
   }
 }
 
 export async function askOllama(char: string, model = OLLAMA_MODEL): Promise<string | null> {
   try {
-    const response = await fetch(OLLAMA_URL, {
+    const response = await fetch(ollamaUrl('/api/generate'), {
       method: 'POST',
       signal: AbortSignal.timeout(OLLAMA_TIMEOUT_MS),
       headers: { 'Content-Type': 'application/json' },

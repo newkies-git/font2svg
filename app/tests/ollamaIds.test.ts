@@ -107,6 +107,27 @@ test('ollama-ids 라우트: 추론 미리보기(infer)와 작업 획 적용(appl
     assert.equal(appendRes.status, HTTP_OK)
     const appended = appendRes.body as { strokes: unknown[] }
     assert.equal(appended.strokes.length, 4)
+
+    // 5. 승인(strokes 행 존재) 후 write='replace'로 다시 적용하면 origin='OLLAMA_IDS', last_modified_by='user'와 이력이 기록됨
+    ws.approve('U+4E8C')
+    ws.updateStrokes('U+4E8C', [
+      {
+        outline_path: 'M 100 450 L 900 450 L 900 550 L 100 550 Z',
+        median_points: [[100, 500], [900, 500]],
+        stroke_width: 90,
+        is_radical: 0,
+        start_cap_type: 'NONE',
+        end_cap_type: 'NONE',
+      },
+    ], '수작업 초기화')
+    const replacedRes = await handleApi(ws, request('POST', '/api/characters/U%2B4E8C/ollama-ids', { mode: 'apply', ids: '⿱一一', write: 'replace' }))
+    assert.equal(replacedRes.status, HTTP_OK, JSON.stringify(replacedRes.body))
+    const replaced = replacedRes.body as { working: boolean; origin: string; last_modified_by: string; strokes: unknown[]; history_count: number }
+    assert.equal(replaced.working, false)
+    assert.equal(replaced.origin, 'OLLAMA_IDS')
+    assert.equal(replaced.last_modified_by, 'user')
+    assert.equal(replaced.strokes.length, 2)
+    assert.ok(replaced.history_count >= 1)
   } finally {
     ws.close()
     fs.rmSync(dir, { recursive: true, force: true })

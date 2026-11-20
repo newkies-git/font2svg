@@ -1,4 +1,5 @@
-import { COORD_DECIMALS, DEFAULT_STROKE_WIDTH, MEDIAN_MIN_POINTS, MIN_STROKE_WIDTH, STROKE_WIDTH_CAP_RATIO } from '../../shared/constants.ts'
+import { strokeWidthCap } from '../../shared/clamp.ts'
+import { COORD_DECIMALS, MEDIAN_MIN_POINTS, MIN_STROKE_WIDTH } from '../../shared/constants.ts'
 import { warnOnce } from '../../shared/log.ts'
 import { parseCommands, pathBBox, round1 } from '../../shared/paths.ts'
 import { computeOptimalStrokeWidth, recoverMedian } from '../../shared/strokeCut.ts'
@@ -124,7 +125,7 @@ export function transformPath(d: string, fn: (x: number, y: number) => Pt): stri
 }
 
 export function transformStroke(stroke: StrokeRecord, fn: (x: number, y: number) => Pt, scaleFactor = 1): StrokeRecord {
-  const maxWidth = Math.round(DEFAULT_STROKE_WIDTH * STROKE_WIDTH_CAP_RATIO)
+  const maxWidth = strokeWidthCap()
   const scaledWidth = Math.max(MIN_STROKE_WIDTH, Math.min(maxWidth, Math.round(stroke.stroke_width * scaleFactor)))
   return {
     ...stroke,

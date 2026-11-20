@@ -5,12 +5,14 @@ import { DEFAULT_STROKE_WIDTH } from '../shared/constants.ts'
 import type { Pt } from '../shared/types.ts'
 import { transaction } from './db.ts'
 import { ribbonPath, type ImportedStrokes } from './geometry.ts'
-import { askOllama, IDS_BOOK, IDS_FILE, IDS_ORIGINS, OLLAMA_MODEL, parseIds, parseIdsFile } from './ids.ts'
+import { askOllama, IDS_BOOK, IDS_FILE, OLLAMA_MODEL, ollamaUrl, parseIds, parseIdsFile } from './ids.ts'
 import { composeFrom, type IdsLookup } from './idsCompose.ts'
 import { parseStringArray } from './storedJson.ts'
 import { ACTOR_USER } from './model.ts'
 import { hanjaStrokes, parseHanja } from './references.ts'
 import { toItems, type StrokeStore } from './strokeStore.ts'
+
+const ORIGIN_OLLAMA_IDS = 'OLLAMA_IDS'
 
 type IssueWriter = {
   setIssue: (unicode: string, reason: string, by: string, status?: 'OPEN' | 'DRAFT', inFont?: boolean) => void
@@ -150,6 +152,8 @@ export function createOllamaIdsPipeline(
     const fitted = fitOrGiven(character.char, medians, outlines)
     const items = toItems(fitted.glyph, new Set())
     const existing = currentWorkItems(unicode)
+    const originUrl = ollamaUrl('/api/generate')
+    const fontOutline = fitted.glyph.fontOutline ?? currentFontOutline(unicode)
 
     if (write === 'append' && existing.length > 0) {
       strokes.updateStrokes(unicode, [...existing, ...items], 'Ollama IDS 추가')
@@ -157,16 +161,23 @@ export function createOllamaIdsPipeline(
     }
 
     if (strokes.readStrokeRow(unicode)) {
-      strokes.updateStrokes(unicode, items, 'Ollama IDS 적용')
+      transaction(db, () => {
+        strokes.replaceStrokes(
+          unicode,
+          items,
+          ACTOR_USER,
+          'Ollama IDS 적용',
+          { source: ORIGIN_OLLAMA_IDS, url: originUrl },
+          fontOutline.length > 0 ? fontOutline : undefined,
+        )
+      })
       return { ...fitted, ids: rawIds, model }
     }
 
-    const [originSource, originUrl] = IDS_ORIGINS.OLLAMA
-    const fontOutline = fitted.glyph.fontOutline ?? currentFontOutline(unicode)
     transaction(db, () => {
       strokes.writeWorking(
         unicode,
-        { source: originSource, url: originUrl, fontOutline, items },
+        { source: ORIGIN_OLLAMA_IDS, url: originUrl, fontOutline, items },
         ACTOR_USER,
       )
       issues.setIssue(unicode, `Ollama IDS 합성 (${rawIds})`, ACTOR_USER, 'DRAFT', fontOutline.length > 0)

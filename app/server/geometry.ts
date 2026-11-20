@@ -7,18 +7,20 @@ export type Box = [number, number, number, number]
 
 export type ImportedStrokes = { medians: Pt[][]; outlines: string[]; widths?: number[]; fontOutline?: string[] }
 
-const toPoints = (line: Pt[]): Point[] => line.map(([x, y]) => ({ x, y }))
+export const toPoints = (line: Pt[]): Point[] => line.map(([x, y]) => ({ x, y }))
 
-function contourArea(d: string): number {
+export function contourArea(d: string): number {
   return flattenContours(d, AREA_FLATNESS).reduce((sum, contour) => sum + polygonArea(contour), 0)
 }
 
-// 길잡이 중심선의 시작점에 가까운 쪽을 시작으로 맞춘다.
-function orientLike(line: Point[], guide: Pt[]): Point[] {
-  const [gx, gy] = guide[0]
-  const first = Math.hypot(line[0].x - gx, line[0].y - gy)
-  const last = Math.hypot(line[line.length - 1].x - gx, line[line.length - 1].y - gy)
-  return last < first ? line.slice().reverse() : line
+// 길잡이 중심선의 시작·끝점에 가장 가까운 방향이 되도록 순서를 맞춘다.
+export function orientLike(line: Point[], guide: Pt[]): Point[] {
+  if (line.length < 2 || guide.length < 2) return line
+  const [start, end] = [guide[0], guide[guide.length - 1]]
+  const dist = (a: Point, b: Pt) => Math.hypot(a.x - b[0], a.y - b[1])
+  const same = dist(line[0], start) + dist(line[line.length - 1], end)
+  const flipped = dist(line[0], end) + dist(line[line.length - 1], start)
+  return flipped < same ? line.slice().reverse() : line
 }
 
 // 글자 윤곽(contours)을 길잡이 중심선(guide)으로 획마다 나누고, 획마다 중심선을 새 윤곽에서 다시 구한다.
@@ -132,9 +134,12 @@ export function splitOutlinePieces(contours: string[], guide: Pt[][]): OutlinePi
 }
 
 // 합성한 중심선 묶음의 bbox를 글자 윤곽의 bbox(중심선이 윤곽 안쪽에 있으므로 INSET만큼 줄인 것)에 맞춰 늘이고 옮긴다.
-function fitMediansToOutline(medians: Pt[][], contours: string[]): Pt[][] {
-  const outline = boundsOf(contours.flatMap(pathPoints))
-  const source = boundsOf(medians.flat())
+export function fitMediansToOutline(medians: Pt[][], contours: string[]): Pt[][] {
+  const flatMedians = medians.flat()
+  const outlinePts = contours.flatMap(pathPoints)
+  if (contours.length === 0 || outlinePts.length === 0 || flatMedians.length === 0) return medians
+  const outline = boundsOf(outlinePts)
+  const source = boundsOf(flatMedians)
   const scaleX = (outline.maxX - outline.minX - 2 * MEDIAN_BBOX_INSET) / Math.max(1, source.maxX - source.minX)
   const scaleY = (outline.maxY - outline.minY - 2 * MEDIAN_BBOX_INSET) / Math.max(1, source.maxY - source.minY)
   return medians.map((line) => line.map(([x, y]): Pt => [
@@ -143,14 +148,15 @@ function fitMediansToOutline(medians: Pt[][], contours: string[]): Pt[][] {
   ]))
 }
 
-function pathPoints(d: string): Pt[] {
+export function pathPoints(d: string): Pt[] {
   const numbers = (d.match(/-?\d+(?:\.\d+)?/g) ?? []).map(Number)
   const points: Pt[] = []
   for (let index = 0; index + 1 < numbers.length; index += 2) points.push([numbers[index], numbers[index + 1]])
   return points
 }
 
-function boundsOf(points: Pt[]) {
+export function boundsOf(points: Pt[]) {
+  if (points.length === 0) return { minX: 0, maxX: 0, minY: 0, maxY: 0 }
   const xs = points.map(([x]) => x)
   const ys = points.map(([, y]) => y)
   return { minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) }
