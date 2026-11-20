@@ -1,5 +1,6 @@
 import {
   DEFAULT_STROKE_WIDTH,
+  FIT_CORNER_ANGLE,
   FIT_END_OVERLAP_MAX_RATIO,
   FIT_END_OVERLAP_MIN_RATIO,
   FIT_FLATNESS,
@@ -214,6 +215,25 @@ function transformedStroke(stroke: StrokeRecord, p: FitParams, center: Pt): Stro
   return transformStroke(stroke, mapFor(p, center), scaleFactor)
 }
 
+// 평탄화한 윤곽에서 방향이 FIT_CORNER_ANGLE 이상 꺾이는 정점 수.
+function cornerCount(loops: Loop[]): number {
+  let count = 0
+  for (const loop of loops) {
+    const n = loop.length
+    for (let i = 0; i < n; i++) {
+      const prev = loop[(i + n - 1) % n]
+      const cur = loop[i]
+      const next = loop[(i + 1) % n]
+      const inAngle = Math.atan2(cur.y - prev.y, cur.x - prev.x)
+      const outAngle = Math.atan2(next.y - cur.y, next.x - cur.x)
+      let turn = Math.abs(outAngle - inAngle)
+      if (turn > Math.PI) turn = 2 * Math.PI - turn
+      if (turn >= FIT_CORNER_ANGLE) count++
+    }
+  }
+  return count
+}
+
 function strokeLoops(stroke: StrokeRecord): Loop[] {
   return flattenContours(stroke.outline_path, FIT_FLATNESS)
 }
@@ -331,6 +351,8 @@ function snapStroke(
     if (median) {
       const snapped: StrokeRecord = { ...stroke, outline_path: path, median_points: median.points, stroke_width: median.width }
       const after = iou(pieceMask ?? fillMask(strokeLoops(snapped)), region)
+      // 접합부에서 잘린 조각은 모서리가 새로 생기므로, 원본보다 꺾임이 늘면 원본 윤곽을 변형해 맞춘다.
+      if (preserveGuideMedian && cornerCount(loopsOf([path])) > cornerCount(strokeLoops(stroke))) return refineStroke(stroke, region)
       if (after > before + FIT_MIN_GAIN) return { stroke: snapped, before, after }
       if (after >= before - 0.05) return { stroke, before, after: before }
     }
