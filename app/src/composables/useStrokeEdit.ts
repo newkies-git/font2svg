@@ -2,6 +2,7 @@ import { isContourLayer } from '../../shared/layerKind.ts'
 import { LAYER_ID } from '../../shared/constants.ts'
 import type { Ref } from 'vue'
 import { autoFitLayer, autoFitStroke } from '../lib/autoFit.ts'
+import { pruneHiddenIndices, remapHiddenAfterDelete, remapHiddenAfterMerge, remapHiddenAfterMove } from '../lib/hiddenItems.ts'
 import { moveItem, withCap, withMedianPoints } from '../lib/strokeOps.ts'
 import { toPercent } from '../lib/percent.ts'
 import {
@@ -33,13 +34,28 @@ export function useStrokeEdit(
     fontLayer,
     transformScope,
     selectedStrokeIndex,
+    hiddenItemsByLayer,
   } = state
+
+  function updateHidden(layerId: string, transform: (set: ReadonlySet<number>) => Set<number>) {
+    const cur = hiddenItemsByLayer.value[layerId]
+    if (!cur || cur.size === 0) return
+    const next = transform(cur)
+    if (next.size === 0) {
+      const rest = { ...hiddenItemsByLayer.value }
+      delete rest[layerId]
+      hiddenItemsByLayer.value = rest
+      return
+    }
+    hiddenItemsByLayer.value = { ...hiddenItemsByLayer.value, [layerId]: next }
+  }
 
   function updateTargetStrokes(nextStrokes: StrokeRecord[], statusMsg?: string) {
     const target = guardUnlocked()
     if (!target) return
     target.strokes = nextStrokes.map((s, idx) => ({ ...s, stroke_order: idx + 1 }))
     markDirty(target.id)
+    updateHidden(target.id, (set) => pruneHiddenIndices(set, nextStrokes.length))
     if (target.id === LAYER_ID.strokes) {
       shown.value = Math.max(1, Math.min(target.strokes.length, shown.value || target.strokes.length))
     }
@@ -54,6 +70,7 @@ export function useStrokeEdit(
     if (!target) return
     target.paths = nextPaths.slice()
     markDirty(target.id)
+    updateHidden(target.id, (set) => pruneHiddenIndices(set, nextPaths.length))
     if (selectedStrokeIndex.value >= target.paths.length) {
       selectedStrokeIndex.value = Math.max(0, target.paths.length - 1)
     }
@@ -79,12 +96,14 @@ export function useStrokeEdit(
     if (isContourLayer(target)) {
       const moved = moveItem(target.paths, index, delta)
       if (!moved) return
+      updateHidden(target.id, (set) => remapHiddenAfterMove(set, index, delta))
       updateTargetPaths(moved, '윤곽 순서를 변경했습니다.')
       selectedStrokeIndex.value = next
       return
     }
     const moved = moveItem(target.strokes, index, delta)
     if (!moved) return
+    updateHidden(target.id, (set) => remapHiddenAfterMove(set, index, delta))
     updateTargetStrokes(moved, `${index + 1}획을 ${next + 1}획 위치로 이동했습니다.`)
     selectedStrokeIndex.value = next
   }
@@ -123,6 +142,7 @@ export function useStrokeEdit(
         return
       }
       const copy = target.paths.filter((_, i) => i !== index)
+      updateHidden(target.id, (set) => remapHiddenAfterDelete(set, index))
       updateTargetPaths(copy, `${index + 1}번 윤곽을 삭제했습니다.`)
       return
     }
@@ -131,6 +151,7 @@ export function useStrokeEdit(
       return
     }
     const copy = target.strokes.filter((_, i) => i !== index)
+    updateHidden(target.id, (set) => remapHiddenAfterDelete(set, index))
     updateTargetStrokes(copy, `${index + 1}획을 삭제했습니다.`)
   }
 
@@ -140,6 +161,7 @@ export function useStrokeEdit(
     const copy = target.strokes.map(cloneStroke)
     const merged = mergeTwoStrokes(copy[index], copy[index + 1])
     copy.splice(index, 2, merged)
+    updateHidden(target.id, (set) => remapHiddenAfterMerge(set, index))
     updateTargetStrokes(copy, `${index + 1}획과 ${index + 2}획을 병합했습니다.`)
     selectedStrokeIndex.value = index
   }

@@ -2,8 +2,9 @@ import { warnOnce } from '../../shared/log.ts'
 import { apiRequest, characterUrl } from '../lib/api.ts'
 import type { Ref } from 'vue'
 import { snapOpacity } from '../../shared/clamp.ts'
-import { META_PATCH_DEBOUNCE_MS } from '../../shared/constants.ts'
-import { isReferenceKind } from '../../shared/layerKind.ts'
+import { LAYER_ID, META_PATCH_DEBOUNCE_MS } from '../../shared/constants.ts'
+import { isContourLayer, isReferenceKind } from '../../shared/layerKind.ts'
+import { hideAllIndices, isIndexSoloed, soloVisibleIndex, toggleHiddenIndex } from '../lib/hiddenItems.ts'
 import type { LayerColor, LayerMetaPatch, LayerRecord } from '../../shared/types.ts'
 import type { LayerEditorState } from './layerEditorState.ts'
 
@@ -12,7 +13,7 @@ export function useLayerAppearance(
   message: Ref<string>,
   onAutoFetch: (layerId: string, keepActiveSelection: boolean) => void,
 ) {
-  const { selected, layers, panelLayers, soloSnapshot } = state
+  const { selected, shown, reveal, layers, panelLayers, editableLayer, selectedStrokeIndex, soloSnapshot, hiddenItemsByLayer } = state
 
   let metaTimer: ReturnType<typeof setTimeout> | null = null
   const pendingMeta = new Map<string, LayerMetaPatch>()
@@ -193,6 +194,83 @@ export function useLayerAppearance(
     })
   }
 
+  function itemCountOf(layer: LayerRecord): number {
+    return isContourLayer(layer) ? layer.paths.length : layer.strokes.length
+  }
+
+  function itemLabelOf(layer: LayerRecord, index: number): string {
+    return isContourLayer(layer) ? `윤곽 #${index + 1}` : `${index + 1}획`
+  }
+
+  function setHiddenForLayer(layerId: string, next: Set<number>) {
+    if (next.size === 0) {
+      if (!(layerId in hiddenItemsByLayer.value)) return
+      const rest = { ...hiddenItemsByLayer.value }
+      delete rest[layerId]
+      hiddenItemsByLayer.value = rest
+      return
+    }
+    hiddenItemsByLayer.value = { ...hiddenItemsByLayer.value, [layerId]: next }
+  }
+
+  function soloStrokeItem(index: number) {
+    const target = editableLayer.value
+    const count = target ? itemCountOf(target) : 0
+    if (!target || index < 0 || index >= count) return
+    const current = hiddenItemsByLayer.value[target.id] ?? new Set<number>()
+    const wasSolo = isIndexSoloed(count, index, current)
+    const next = soloVisibleIndex(count, index, current)
+    setHiddenForLayer(target.id, next)
+    if (target.id === LAYER_ID.strokes) {
+      shown.value = wasSolo ? count : Math.max(shown.value, index + 1)
+      reveal.value = 1
+    }
+    message.value = wasSolo
+      ? '모든 항목을 다시 표시합니다.'
+      : `${itemLabelOf(target, index)}만 단독 표시합니다. (다시 누르면 복원)`
+  }
+
+  function toggleStrokeItemVisible(index: number, altKey = false) {
+    const target = editableLayer.value
+    const count = target ? itemCountOf(target) : 0
+    if (!target || index < 0 || index >= count) return
+    if (altKey) {
+      soloStrokeItem(index)
+      return
+    }
+    const current = hiddenItemsByLayer.value[target.id] ?? new Set<number>()
+    const next = toggleHiddenIndex(current, index)
+    setHiddenForLayer(target.id, next)
+    if (!next.has(index) && target.id === LAYER_ID.strokes) {
+      shown.value = Math.max(shown.value, index + 1)
+      reveal.value = 1
+    }
+    message.value = next.has(index)
+      ? `${itemLabelOf(target, index)}을 숨겼습니다.`
+      : `${itemLabelOf(target, index)}을 표시합니다.`
+  }
+
+  function setStrokeItemsVisibility(mode: 'all' | 'solo' | 'none') {
+    const target = editableLayer.value
+    const count = target ? itemCountOf(target) : 0
+    if (!target || count === 0) return
+    if (mode === 'all') {
+      setHiddenForLayer(target.id, new Set())
+      if (target.id === LAYER_ID.strokes) {
+        shown.value = count
+        reveal.value = 1
+      }
+      message.value = `'${target.name}'의 모든 항목을 표시합니다.`
+      return
+    }
+    if (mode === 'solo') {
+      soloStrokeItem(selectedStrokeIndex.value)
+      return
+    }
+    setHiddenForLayer(target.id, hideAllIndices(count))
+    message.value = `'${target.name}'의 모든 항목을 숨겼습니다.`
+  }
+
   return {
     flushMetaPatches,
     isSoloed,
@@ -205,5 +283,8 @@ export function useLayerAppearance(
     setLayerColor,
     renameLayer,
     moveLayerOrder,
+    toggleStrokeItemVisible,
+    soloStrokeItem,
+    setStrokeItemsVisibility,
   }
 }

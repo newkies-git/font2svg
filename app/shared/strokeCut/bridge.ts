@@ -1,4 +1,14 @@
-import { flattenContours, pointSegmentDistance, round1, type Pt } from '../paths.ts'
+import { flattenContours, pointSegmentDistance, polygonArea, round1, type Pt } from '../paths.ts'
+import {
+  buildOverlapCubic,
+  chordNearInk,
+  isStrokeEndGap,
+  measureMedianWidths,
+  nearestPartnerIndex,
+  targetOverlapDepth,
+  type EndOverlapRange,
+} from './overlap.ts'
+import { GeometryError, rasterize, type Raster } from './raster.ts'
 
 // 외곽선을 다시 찍는 간격. 모서리에서 획 배정이 한 점에 몰리지 않게 한다.
 const SAMPLE_STEP = 4
@@ -6,17 +16,55 @@ const SAMPLE_STEP = 4
 const SHARP_TURN = 0.5
 
 type Run = { from: number; to: number; full?: boolean }
+type BridgeOptions = {
+  raster?: Raster
+  endOverlap?: EndOverlapRange
+}
+type OverlapContext = {
+  raster: Raster
+  strokeWidths: number[]
+  range: EndOverlapRange
+}
 
 // 글자 윤곽의 점을 가장 가까운 중심선에 배정하고, 한 획의 외곽선이 끊긴 끝점과 끝점을 베지어로 잇는다.
 // 끊긴 간격이 maxGap보다 길거나 그 획의 외곽선 점이 없으면 null. 호출한 쪽은 그때 격자 윤곽을 쓴다.
 // 중심선이 실제로 만나는 곳. 스치기만 하는 획은 교차로 보지 않는다.
 const CROSSING_APPROACH = 24
 
-export function outlineByContourBridges(contours: Pt[][], medians: Pt[][], maxGap: number): (string | null)[] {
+function createOverlapContext(
+  contours: Pt[][],
+  medians: Pt[][],
+  options?: BridgeOptions,
+): OverlapContext | null {
+  const range = options?.endOverlap
+  if (!range || range.max <= 0 || contours.length === 0) return null
+  let raster = options?.raster
+  if (!raster) {
+    try {
+      raster = rasterize(contours)
+    } catch (error) {
+      if (error instanceof GeometryError) return null
+      throw error
+    }
+  }
+  return {
+    raster,
+    strokeWidths: measureMedianWidths(raster, medians),
+    range,
+  }
+}
+
+export function outlineByContourBridges(
+  contours: Pt[][],
+  medians: Pt[][],
+  maxGap: number,
+  options?: BridgeOptions,
+): (string | null)[] {
   const partners = crossingPartners(medians)
   // 교차하는 다른 획의 중심선에 이보다 가까운, 구간의 한가운데 점은 교차 벽이다. 끝점은 남긴다.
   const wall = maxGap * 0.2
-  return medians.map((_, stroke) => pathForStroke(contours, medians, stroke, maxGap, partners, wall))
+  const overlap = createOverlapContext(contours, medians, options)
+  return medians.map((_, stroke) => pathForStroke(contours, medians, stroke, maxGap, partners, wall, overlap))
 }
 
 // 찍은 점(끝점, 중간점)으로 기존 윤곽의 짧은 쪽을 베지어로 바꾼다. 윤곽이 없으면 null.
@@ -47,6 +95,7 @@ function pathForStroke(
   maxGap: number,
   partners: number[][],
   wall: number,
+  overlap: OverlapContext | null,
 ): string | null {
   const subpaths: string[] = []
   for (const contour of contours) {
@@ -60,20 +109,74 @@ function pathForStroke(
       subpaths.push(closedPolyline(ring))
       continue
     }
-    const bridged = bridgeRuns(ring, runs, maxGap, medians, stroke, partners[stroke], wall)
+    const bridged = bridgeRuns(ring, labels, runs, maxGap, medians, stroke, partners[stroke], wall, overlap)
     if (!bridged) return null
     subpaths.push(bridged)
   }
   return subpaths.length > 0 ? subpaths.join(' ') : null
 }
 
-function bridgeRuns(ring: Pt[], runs: Run[], maxGap: number, medians: Pt[][], owner: number, partners: number[], wall: number): string | null {
+function silhouetteEndpoint(
+  ring: Pt[],
+  start: number,
+  limit: number,
+  step: number,
+  adjLabel: number,
+  medians: Pt[][],
+  owner: number,
+  partners: number[],
+  wall: number,
+  overlap: OverlapContext | null,
+): number {
+  if (!overlap || adjLabel === owner) {
+    return walkToSilhouette(ring, start, limit, step, medians, owner, partners, wall)
+  }
+  const activePartners = partners.includes(adjLabel) ? partners : [...partners, adjLabel]
+  const activeWall = Math.max(wall, (overlap.strokeWidths[adjLabel] ?? 0) * 0.75)
+  return walkToSilhouette(ring, start, limit, step, medians, owner, activePartners, activeWall)
+}
+
+function overlapBridgeCubic(
+  a: Pt,
+  b: Pt,
+  chordLen: number,
+  ringArea: number,
+  medians: Pt[][],
+  owner: number,
+  overlap: OverlapContext,
+): string | null {
+  const nOut = ringArea > 0
+    ? { x: (b.y - a.y) / chordLen, y: -(b.x - a.x) / chordLen }
+    : { x: -(b.y - a.y) / chordLen, y: (b.x - a.x) / chordLen }
+  const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
+  if (!isStrokeEndGap(mid, chordLen, nOut, medians[owner], overlap.strokeWidths[owner] ?? 0)) return null
+  const probe = { x: mid.x + nOut.x * 6, y: mid.y + nOut.y * 6 }
+  const partner = nearestPartnerIndex(probe, medians, owner)
+  const partnerWidth = partner >= 0 ? (overlap.strokeWidths[partner] ?? 0) : 0
+  const { target } = targetOverlapDepth(overlap.raster, mid, nOut, partnerWidth, overlap.range)
+  const ctrl = buildOverlapCubic(a, b, nOut, target, overlap.raster)
+  return ctrl ? `C ${fmt(ctrl.c1)} ${fmt(ctrl.c2)} ${fmt(b)}` : null
+}
+
+function bridgeRuns(
+  ring: Pt[],
+  labels: number[],
+  runs: Run[],
+  maxGap: number,
+  medians: Pt[][],
+  owner: number,
+  partners: number[],
+  wall: number,
+  overlap: OverlapContext | null,
+): string | null {
   const n = ring.length
   const cut = runs.map((run, r) => {
     const next = runs[(r + 1) % runs.length]
+    const leaveAdj = labels[(run.to + 1) % n]
+    const enterAdj = labels[(next.from - 1 + n) % n]
     return {
-      leave: walkToSilhouette(ring, run.to, run.from, -1, medians, owner, partners, wall),
-      enter: walkToSilhouette(ring, next.from, next.to, 1, medians, owner, partners, wall),
+      leave: silhouetteEndpoint(ring, run.to, run.from, -1, leaveAdj, medians, owner, partners, wall, overlap),
+      enter: silhouetteEndpoint(ring, next.from, next.to, 1, enterAdj, medians, owner, partners, wall, overlap),
     }
   })
   // 양쪽으로 늘린 끝이 구간 안에서 엇갈리면 그 구간은 원래 끝점을 쓴다.
@@ -93,7 +196,9 @@ function bridgeRuns(ring: Pt[], runs: Run[], maxGap: number, medians: Pt[][], ow
     const a = ring[cut[r].leave]
     const b = ring[cut[r].enter]
     if (Math.hypot(b.x - a.x, b.y - a.y) > maxGap) return null
+    if (overlap && !chordNearInk(overlap.raster, a, b)) return null
   }
+  const ringArea = overlap ? polygonArea(ring) : 0
   const cmds = [`M ${fmt(ring[cut[runs.length - 1].enter])}`]
   for (let r = 0; r < runs.length; r++) {
     const leave = cut[r].leave
@@ -104,8 +209,12 @@ function bridgeRuns(ring: Pt[], runs: Run[], maxGap: number, medians: Pt[][], ow
     }
     const a = ring[leave]
     const b = ring[cut[r].enter]
-    if (Math.hypot(b.x - a.x, b.y - a.y) < 0.5) continue
-    cmds.push(chordCubic(a, b))
+    const chordLen = Math.hypot(b.x - a.x, b.y - a.y)
+    if (chordLen < 0.5) continue
+    const cubic = overlap
+      ? overlapBridgeCubic(a, b, chordLen, ringArea, medians, owner, overlap)
+      : null
+    cmds.push(cubic ?? chordCubic(a, b))
   }
   cmds.push('Z')
   return cmds.join(' ')

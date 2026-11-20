@@ -4,6 +4,7 @@ import { pointSegmentDistance } from '../paths.ts'
 import { outlineByContourBridges } from './bridge.ts'
 import { outlineOfLoop, traceLoops } from './contour.ts'
 import { computeOptimalStrokeWidth } from './median.ts'
+import { applyRasterEndOverlap, measureMedianWidths, type EndOverlapRange } from './overlap.ts'
 import { OUTLINE_FLATNESS, pixelToFont, rasterize } from './raster.ts'
 
 // 교차부 공유 확장 반경: 기본 획 폭 대비 비율, 최소 픽셀
@@ -12,7 +13,12 @@ const COVER_RADIUS_MIN_PX = 4
 // 교차로 끊긴 외곽선 끝점 사이가 이 배수보다 길면 베지어로 잇지 않고 격자 윤곽을 쓴다.
 const BRIDGE_GAP_RATIO = 2.5
 
-export function segmentOutlineByMedians(fullOutlinePaths: string[], medians: Pt[][], defaultWidth = DEFAULT_STROKE_WIDTH): {
+export function segmentOutlineByMedians(
+  fullOutlinePaths: string[],
+  medians: Pt[][],
+  defaultWidth = DEFAULT_STROKE_WIDTH,
+  options?: { endOverlap?: EndOverlapRange },
+): {
   strokes: string[]
   widths: number[]
   coverage: number
@@ -24,6 +30,7 @@ export function segmentOutlineByMedians(fullOutlinePaths: string[], medians: Pt[
   const raster = rasterize(contours)
   const { w, h, ink } = raster
   const strokeMasks = medians.map(() => new Uint8Array(w * h))
+  const ownerMap = new Int16Array(w * h).fill(-1)
 
   // 1차 브러시 교집합 분할 + 잔여 조각 최근접 중심선 흡수
   let coveredPixels = 0
@@ -45,6 +52,7 @@ export function segmentOutlineByMedians(fullOutlinePaths: string[], medians: Pt[
       }
     }
     strokeMasks[bestIdx][i] = 1
+    ownerMap[i] = bestIdx
     coveredPixels++
   }
 
@@ -78,11 +86,24 @@ export function segmentOutlineByMedians(fullOutlinePaths: string[], medians: Pt[
 
   const strokes: string[] = []
   const widths: number[] = []
-  const bridged = outlineByContourBridges(contours, medians, defaultWidth * BRIDGE_GAP_RATIO)
+  const overlapRange = options?.endOverlap && options.endOverlap.max > 0 ? options.endOverlap : undefined
+  const bridged = outlineByContourBridges(
+    contours,
+    medians,
+    defaultWidth * BRIDGE_GAP_RATIO,
+    overlapRange ? { raster, endOverlap: overlapRange } : undefined,
+  )
+  let strokeWidths: number[] | null = null
   for (let s = 0; s < medians.length; s++) {
-    const loops = traceLoops(strokeMasks[s], w, h)
-    const traced = loops.length > 0 ? outlineOfLoop(loops[0], raster) : (fullOutlinePaths[s] ?? fullOutlinePaths[0] ?? '')
-    const path = bridged[s] ?? traced
+    let path = bridged[s]
+    if (!path) {
+      if (overlapRange) {
+        strokeWidths ??= measureMedianWidths(raster, medians)
+        applyRasterEndOverlap(strokeMasks[s], ownerMap, raster, medians, s, strokeWidths, overlapRange)
+      }
+      const loops = traceLoops(strokeMasks[s], w, h)
+      path = loops.length > 0 ? outlineOfLoop(loops[0], raster) : (fullOutlinePaths[s] ?? fullOutlinePaths[0] ?? '')
+    }
     strokes.push(path)
     widths.push(computeOptimalStrokeWidth(path, medians[s], defaultWidth))
   }

@@ -11,10 +11,13 @@ const props = defineProps<{
   locked: boolean
   fontContourCount: number
   guideLayers: LayerRecord[]
+  hiddenIndices: Set<number>
 }>()
 
 const emit = defineEmits<{
   select: [index: number]
+  toggleHidden: [index: number, altKey: boolean]
+  visibilityPreset: [mode: 'all' | 'solo' | 'none']
   setRadical: [index: number, value: 0 | 1]
   setCap: [index: number, end: 'start' | 'end', value: CapType]
   move: [index: number, delta: number]
@@ -30,6 +33,15 @@ const emit = defineEmits<{
 const isContourMode = computed(() => (props.layer ? isContourLayer(props.layer) : false))
 const strokes = computed<StrokeRecord[]>(() => props.layer?.strokes ?? [])
 const currentStroke = computed<StrokeRecord | null>(() => strokes.value[props.selectedIndex] ?? null)
+const totalCount = computed(() => (props.layer ? (isContourMode.value ? props.layer.paths.length : strokes.value.length) : 0))
+const hiddenCount = computed(() => {
+  let count = 0
+  for (const idx of props.hiddenIndices) {
+    if (idx >= 0 && idx < totalCount.value) count++
+  }
+  return count
+})
+const visibleCount = computed(() => Math.max(0, totalCount.value - hiddenCount.value))
 
 // 획 윤곽(OUTLINE) 레이어: 궁서체 윤곽 매핑
 const isOutlineMode = computed(() => props.layer?.kind === 'OUTLINE')
@@ -57,9 +69,16 @@ function toggleContour(contour: number) {
       <h3 id="strokes-pane-title">
         {{ isContourMode ? `윤곽 · ${layer?.name}` : `획 구성 · ${layer?.name ?? '없음'}` }}
       </h3>
-      <span v-if="layer" class="pane-count">
-        {{ isContourMode ? `${layer.paths.length}개` : `${strokes.length}획` }}
-      </span>
+      <div v-if="layer" class="pane-head-right">
+        <div v-if="totalCount > 0" class="pane-head-links" role="group" aria-label="항목 일괄 표시 전환">
+          <button type="button" title="모든 항목 표시" @click="emit('visibilityPreset', 'all')">전체</button>
+          <button type="button" title="선택한 항목만 단독 보기" @click="emit('visibilityPreset', 'solo')">단독</button>
+          <button type="button" title="모든 항목 숨김" @click="emit('visibilityPreset', 'none')">숨김</button>
+        </div>
+        <span class="pane-count">
+          {{ hiddenCount > 0 ? `${visibleCount}/${totalCount}` : totalCount }}{{ isContourMode ? '개' : '획' }}
+        </span>
+      </div>
     </div>
 
     <!-- 획 윤곽: 자동 매핑 -->
@@ -94,9 +113,27 @@ function toggleContour(contour: number) {
           role="option"
           :aria-selected="index === selectedIndex"
           class="stroke-clean-row"
-          :class="{ 'is-current': index === selectedIndex }"
+          :class="{ 'is-current': index === selectedIndex, 'is-hidden': hiddenIndices.has(index) }"
           @click="emit('select', index)"
         >
+          <button
+            type="button"
+            class="stroke-eye-btn"
+            :class="{ 'is-off': hiddenIndices.has(index) }"
+            :aria-pressed="!hiddenIndices.has(index)"
+            :aria-label="`윤곽 #${index + 1} ${hiddenIndices.has(index) ? '표시' : '숨기기'}`"
+            :title="`윤곽 #${index + 1} ${hiddenIndices.has(index) ? '표시' : '숨기기'} (Alt+클릭: 단독 보기)`"
+            @click.stop="emit('toggleHidden', index, $event.altKey)"
+          >
+            <svg v-if="!hiddenIndices.has(index)" class="eye-svg" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+              <path d="M1.8 9S4.5 4.2 9 4.2 16.2 9 16.2 9 13.5 13.8 9 13.8 1.8 9 1.8 9Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
+              <circle cx="9" cy="9" r="2.3" fill="currentColor" />
+            </svg>
+            <svg v-else class="eye-svg off" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+              <path d="M3 15L15 3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+              <path d="M2.5 9S5 4.8 9 4.8 15.5 9 15.5 9 13 13.2 9 13.2 2.5 9 2.5 9Z" stroke="currentColor" stroke-width="1.3" stroke-dasharray="2 2" />
+            </svg>
+          </button>
           <span class="stroke-idx">{{ index + 1 }}</span>
           <span class="stroke-row-label">윤곽 서브패스 #{{ index + 1 }}</span>
         </li>
@@ -120,9 +157,27 @@ function toggleContour(contour: number) {
           role="option"
           :aria-selected="index === selectedIndex"
           class="stroke-clean-row"
-          :class="{ 'is-current': index === selectedIndex }"
+          :class="{ 'is-current': index === selectedIndex, 'is-hidden': hiddenIndices.has(index) }"
           @click="emit('select', index)"
         >
+          <button
+            type="button"
+            class="stroke-eye-btn"
+            :class="{ 'is-off': hiddenIndices.has(index) }"
+            :aria-pressed="!hiddenIndices.has(index)"
+            :aria-label="`${index + 1}획 ${hiddenIndices.has(index) ? '표시' : '숨기기'}`"
+            :title="`${index + 1}획 ${hiddenIndices.has(index) ? '표시' : '숨기기'} (Alt+클릭: 단독 보기)`"
+            @click.stop="emit('toggleHidden', index, $event.altKey)"
+          >
+            <svg v-if="!hiddenIndices.has(index)" class="eye-svg" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+              <path d="M1.8 9S4.5 4.2 9 4.2 16.2 9 16.2 9 13.5 13.8 9 13.8 1.8 9 1.8 9Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
+              <circle cx="9" cy="9" r="2.3" fill="currentColor" />
+            </svg>
+            <svg v-else class="eye-svg off" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+              <path d="M3 15L15 3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+              <path d="M2.5 9S5 4.8 9 4.8 15.5 9 15.5 9 13 13.2 9 13.2 2.5 9 2.5 9Z" stroke="currentColor" stroke-width="1.3" stroke-dasharray="2 2" />
+            </svg>
+          </button>
           <span class="stroke-idx">{{ index + 1 }}</span>
           <span class="stroke-row-label">{{ index + 1 }}획</span>
           <span v-if="stroke.is_radical" class="rad-dot-badge">부수</span>

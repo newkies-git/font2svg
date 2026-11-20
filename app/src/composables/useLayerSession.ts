@@ -1,7 +1,8 @@
 import { LAYER_ID } from '../../shared/constants.ts'
-import { isReferenceKind } from '../../shared/layerKind.ts'
+import { isContourLayer, isReferenceKind } from '../../shared/layerKind.ts'
 import { ref, type Ref } from 'vue'
 import type { CharacterDetail, EditorTool, LayerRecord } from '../../shared/types.ts'
+import { pruneHiddenIndices } from '../lib/hiddenItems.ts'
 import { cloneLayer, cloneStroke } from './layerClone.ts'
 import type { LayerEditorState } from './layerEditorState.ts'
 
@@ -25,6 +26,7 @@ export function useLayerSession(
     connectPoints,
     dirtyIds,
     soloSnapshot,
+    hiddenItemsByLayer,
     strokesLayer,
     activeLayer,
     editableLayer,
@@ -33,6 +35,7 @@ export function useLayerSession(
 
   // 서버에서 받은 직후(또는 저장 직후) 레이어 스냅샷. 초기화 버튼이 여기로 되돌린다.
   const baselines = ref(new Map<string, LayerRecord>())
+  let syncedUnicode: string | null = null
 
   function syncFromDetail(detail: CharacterDetail) {
     const cloned = detail.layers.map(cloneLayer)
@@ -40,6 +43,20 @@ export function useLayerSession(
     baselines.value = new Map(cloned.map((layer) => [layer.id, cloneLayer(layer)]))
     dirtyIds.value = new Set()
     soloSnapshot.value = null
+    if (syncedUnicode !== detail.unicode) {
+      hiddenItemsByLayer.value = {}
+      syncedUnicode = detail.unicode
+    } else {
+      const nextHidden: Record<string, Set<number>> = {}
+      for (const layer of cloned) {
+        const cur = hiddenItemsByLayer.value[layer.id]
+        if (!cur || cur.size === 0) continue
+        const count = isContourLayer(layer) ? layer.paths.length : layer.strokes.length
+        const pruned = pruneHiddenIndices(cur, count)
+        if (pruned.size > 0) nextHidden[layer.id] = pruned
+      }
+      hiddenItemsByLayer.value = nextHidden
+    }
     knifePoints.value = []
     connectPoints.value = []
     selectedMedianPointIndex.value = null
@@ -85,6 +102,11 @@ export function useLayerSession(
     const count = restored.kind === 'FONT' ? restored.paths.length : restored.strokes.length
     if (selectedStrokeIndex.value >= count) selectedStrokeIndex.value = Math.max(0, count - 1)
     selectedPathPoints.value = new Set()
+    if (target.id in hiddenItemsByLayer.value) {
+      const rest = { ...hiddenItemsByLayer.value }
+      delete rest[target.id]
+      hiddenItemsByLayer.value = rest
+    }
     message.value = `'${restored.name}' 레이어를 불러온 상태로 초기화했습니다.`
   }
 

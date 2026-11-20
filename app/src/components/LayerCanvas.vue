@@ -32,6 +32,7 @@ const props = defineProps<{
   reveal: number
   knifePoints: Pt[]
   connectPoints: Pt[]
+  hiddenItems: Record<string, Set<number>>
 }>()
 
 const emit = defineEmits<{
@@ -166,6 +167,14 @@ function onCanvasWheel(event: WheelEvent) {
   if (!at) return
   event.preventDefault()
   view.value = zoomViewAt(view.value, at.x, at.y, event.deltaY < 0)
+}
+
+function isItemHidden(layerId: string, index: number): boolean {
+  return props.hiddenItems[layerId]?.has(index) ?? false
+}
+
+function isOverlayItemHidden(index: number): boolean {
+  return props.editableLayer ? isItemHidden(props.editableLayer.id, index) : false
 }
 
 function visibleStrokesOfWork(strokes: StrokeRecord[]): StrokeRecord[] {
@@ -360,6 +369,7 @@ function onShapePointerDown(layerId: string, index: number, event: PointerEvent)
           <path
             v-for="(d, pIdx) in layer.paths"
             :key="`font-p-${pIdx}`"
+            v-show="!isItemHidden(layer.id, pIdx)"
             class="font-contour"
             vector-effect="non-scaling-stroke"
             :class="{
@@ -372,6 +382,7 @@ function onShapePointerDown(layerId: string, index: number, event: PointerEvent)
           <path
             v-for="(stroke, sIdx) in layer.strokes"
             :key="`font-s-${sIdx}`"
+            v-show="!isItemHidden(layer.id, sIdx)"
             class="font-contour"
             vector-effect="non-scaling-stroke"
             :class="{ 'is-picked': editableLayer?.id === layer.id && selectedIndex === sIdx }"
@@ -390,6 +401,7 @@ function onShapePointerDown(layerId: string, index: number, event: PointerEvent)
           <path
             v-for="(d, pIdx) in layer.paths"
             :key="`${layer.id}-p-${pIdx}`"
+            v-show="!isItemHidden(layer.id, pIdx)"
             class="ref-outline"
             vector-effect="non-scaling-stroke"
             :class="{ 'is-picked': editableLayer?.id === layer.id && selectedIndex === pIdx }"
@@ -399,6 +411,7 @@ function onShapePointerDown(layerId: string, index: number, event: PointerEvent)
           <path
             v-for="(stroke, sIdx) in layer.strokes"
             :key="`${layer.id}-s-${sIdx}`"
+            v-show="!isItemHidden(layer.id, sIdx)"
             class="ref-outline"
             vector-effect="non-scaling-stroke"
             :class="{
@@ -421,6 +434,7 @@ function onShapePointerDown(layerId: string, index: number, event: PointerEvent)
           <path
             v-for="(stroke, sIdx) in visibleStrokesOfWork(layer.strokes)"
             :key="`work-fill-${stroke.stroke_order}`"
+            v-show="!isItemHidden(layer.id, sIdx)"
             class="ink-stroke"
             vector-effect="non-scaling-stroke"
             :class="{
@@ -440,6 +454,7 @@ function onShapePointerDown(layerId: string, index: number, event: PointerEvent)
           <polyline
             v-for="(stroke, index) in visibleStrokesOfWork(layer.strokes)"
             :key="`work-anim-${stroke.stroke_order}`"
+            v-show="!isItemHidden(layer.id, index)"
             :clip-path="`url(#clip-${stroke.stroke_order})`"
             class="anim-stroke"
             :class="{
@@ -463,6 +478,7 @@ function onShapePointerDown(layerId: string, index: number, event: PointerEvent)
           <polyline
             v-for="(stroke, sIdx) in overlayStrokes"
             :key="`ov-median-${sIdx}`"
+            v-show="!isOverlayItemHidden(sIdx)"
             class="median-stroke"
             :class="{ 'is-current-median': sIdx === selectedIndex }"
             :points="polylinePoints(stroke.median_points)"
@@ -479,6 +495,7 @@ function onShapePointerDown(layerId: string, index: number, event: PointerEvent)
           <g
             v-for="(stroke, index) in overlayStrokes"
             :key="`ov-num-${index}`"
+            v-show="!isOverlayItemHidden(index)"
             :transform="`translate(${stroke.median_points[0][0]} ${stroke.median_points[0][1]}) scale(1 -1)`"
           >
             <circle :r="BADGE_RADIUS" class="num-badge" />

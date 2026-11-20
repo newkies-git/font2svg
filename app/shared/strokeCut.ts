@@ -7,6 +7,7 @@
 //   caps     기필·수필 모양
 //   extract  획 추출(교차 분리)
 //   segment  중심선 기준 윤곽 분할
+//   overlap  접합부 끝단 겹침 폭 측정·확장
 //   bridge   교차로 끊긴 외곽선 끝점을 베지어로 연결
 export { spliceOutlineBridge } from './strokeCut/bridge.ts'
 export { simplifyPolyline } from './strokeCut/contour.ts'

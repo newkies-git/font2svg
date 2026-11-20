@@ -77,6 +77,9 @@ export const FIT_LIMIT_SHIFT = 160
 export const FIT_LIMIT_SCALE = 0.5
 export const FIT_LIMIT_ANGLE = 0.5
 export const FIT_LIMIT_SHEAR = 0.5
+// 자동 맞춤 시 다른 획과 만나는 획의 시작·끝이 겹치는 상대 획 폭 대비 겹침 비율 범위(1/2 ~ 2/3)
+export const FIT_END_OVERLAP_MIN_RATIO = 0.5
+export const FIT_END_OVERLAP_MAX_RATIO = 2 / 3
 // DB 백업 파일 이름 접두어(database/<DB 이름>.backup-<시각>.db). .gitignore가 이 패턴을 제외한다.
 export const BACKUP_TAG = 'backup'
 // 마이그레이션 직전 자동 백업 파일 이름 접두어(database/<DB 이름>.before-v<버전>-<시각>.db)

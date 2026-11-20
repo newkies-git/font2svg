@@ -1,4 +1,7 @@
 import {
+  DEFAULT_STROKE_WIDTH,
+  FIT_END_OVERLAP_MAX_RATIO,
+  FIT_END_OVERLAP_MIN_RATIO,
   FIT_FLATNESS,
   FIT_GRID,
   FIT_LEVELS,
@@ -18,7 +21,7 @@ import {
   MEDIAN_SIMPLIFY_TOLERANCE,
 } from '../../shared/constants.ts'
 import { flattenContours, round1 } from '../../shared/paths.ts'
-import { recoverMedian, segmentOutlineByMedians, simplifyPolyline } from '../../shared/strokeCut.ts'
+import { computeOptimalStrokeWidth, recoverMedian, segmentOutlineByMedians, simplifyPolyline } from '../../shared/strokeCut.ts'
 import { transformStroke } from './vectorEdit.ts'
 import type { Pt, StrokeRecord } from '../../shared/types.ts'
 
@@ -275,15 +278,62 @@ function medianAlong(path: string, guide: Pt[], width: number): { points: Pt[]; 
   return points.length >= 2 ? { points, width: recovered.width } : null
 }
 
-// 획 윤곽을 궁서체에서 그 획이 맡은 모양으로 바꾼다. 중심선은 그 윤곽을 따르게 점을 다시 잡는다.
-function snapStroke(stroke: StrokeRecord, piece: string, region: Uint8Array): { stroke: StrokeRecord; before: number; after: number } {
+// 기존 중심선의 정점·중점 중 절반 이상이 분할된 궁서체 조각 위에 놓여 있으면 끝점 보존을 위해 중심선을 유지한다.
+function medianCoveredByMask(points: Pt[], mask: Uint8Array): boolean {
+  if (points.length < 2) return false
+  const samples: Pt[] = [...points]
+  for (let i = 0; i < points.length - 1; i++) {
+    samples.push([(points[i][0] + points[i + 1][0]) / 2, (points[i][1] + points[i + 1][1]) / 2])
+  }
+  let hits = 0
+  for (const [x, y] of samples) {
+    const col = Math.floor((x + FIT_MARGIN) / CELL)
+    const row = Math.floor((y + FIT_MARGIN) / CELL)
+    let matched = false
+    for (let dr = -1; dr <= 1 && !matched; dr++) {
+      const nr = row + dr
+      if (nr < 0 || nr >= FIT_GRID) continue
+      for (let dc = -1; dc <= 1; dc++) {
+        const nc = col + dc
+        if (nc >= 0 && nc < FIT_GRID && mask[nr * FIT_GRID + nc] === 1) {
+          matched = true
+          break
+        }
+      }
+    }
+    if (matched) hits++
+  }
+  return hits >= samples.length * 0.5
+}
+
+// 획 윤곽을 궁서체에서 그 획이 맡은 모양으로 바꾼다. 중심선은 다획 길잡이가 조각 위에 있으면 유지하고 아니면 윤곽에서 다시 잡는다.
+function snapStroke(
+  stroke: StrokeRecord,
+  piece: string,
+  region: Uint8Array,
+  preserveGuideMedian: boolean,
+): { stroke: StrokeRecord; before: number; after: number } {
   const before = iou(fillMask(strokeLoops(stroke)), region)
   const path = piece.trim()
-  const median = path ? medianAlong(path, stroke.median_points, stroke.stroke_width) : null
-  if (path && median) {
-    const snapped: StrokeRecord = { ...stroke, outline_path: path, median_points: median.points, stroke_width: median.width }
-    const after = iou(fillMask(strokeLoops(snapped)), region)
-    if (after > before + FIT_MIN_GAIN) return { stroke: snapped, before, after }
+  if (path) {
+    const pieceMask = preserveGuideMedian ? fillMask(loopsOf([path])) : null
+    const median =
+      pieceMask && stroke.median_points.length >= 2 && medianCoveredByMask(stroke.median_points, pieceMask)
+        ? {
+            points: stroke.median_points,
+            width: computeOptimalStrokeWidth(
+              path,
+              stroke.median_points.map(([x, y]) => ({ x, y })),
+              stroke.stroke_width,
+            ),
+          }
+        : medianAlong(path, stroke.median_points, stroke.stroke_width)
+    if (median) {
+      const snapped: StrokeRecord = { ...stroke, outline_path: path, median_points: median.points, stroke_width: median.width }
+      const after = iou(pieceMask ?? fillMask(strokeLoops(snapped)), region)
+      if (after > before + FIT_MIN_GAIN) return { stroke: snapped, before, after }
+      if (after >= before - 0.05) return { stroke, before, after: before }
+    }
   }
   return refineStroke(stroke, region)
 }
@@ -325,9 +375,38 @@ function fontPieces(strokes: StrokeRecord[], fontPaths: string[]): string[] {
   const paths = fontPaths.filter((path) => path.trim())
   if (strokes.length <= 1) return [paths.join(' ')]
   if (paths.length === strokes.length) return matchContours(strokes, paths)
+  const whole = new Set(paths)
   const medians = strokes.map((stroke) => stroke.median_points.map(([x, y]) => ({ x, y })))
-  const split = segmentOutlineByMedians(paths, medians).strokes
-  return strokes.map((_, index) => split[index] ?? '')
+  const split = segmentOutlineByMedians(paths, medians, DEFAULT_STROKE_WIDTH, {
+    endOverlap: { min: FIT_END_OVERLAP_MIN_RATIO, max: FIT_END_OVERLAP_MAX_RATIO },
+  }).strokes
+  return strokes.map((_, index) => {
+    const piece = split[index] ?? ''
+    return whole.has(piece) ? '' : piece
+  })
+}
+
+// 끝단 겹침으로 상대 획 안까지 확장된 분할 조각은 보로노이 경계와 합집합한 목표 마스크로 평가한다.
+function targetRegion(fontMask: Uint8Array, voronoi: Uint8Array, piece: string): Uint8Array {
+  const trimmed = piece.trim()
+  if (!trimmed) return voronoi
+  const pieceMask = fillMask(loopsOf([trimmed]))
+  let voronoiCount = 0
+  let sharedCount = 0
+  let extraCount = 0
+  for (let i = 0; i < fontMask.length; i++) {
+    const inVoronoi = voronoi[i] === 1
+    const inPiece = pieceMask[i] === 1 && fontMask[i] === 1
+    if (inVoronoi) voronoiCount++
+    if (inVoronoi && inPiece) sharedCount++
+    else if (!inVoronoi && inPiece) extraCount++
+  }
+  if (voronoiCount === 0 || sharedCount < voronoiCount * 0.5 || extraCount > voronoiCount) return voronoi
+  const combined = voronoi.slice()
+  for (let i = 0; i < fontMask.length; i++) {
+    if (pieceMask[i] && fontMask[i]) combined[i] = 1
+  }
+  return combined
 }
 
 const meanOf = (values: number[]) => (values.length === 0 ? 0 : values.reduce((s, v) => s + v, 0) / values.length)
@@ -336,18 +415,22 @@ const meanOf = (values: number[]) => (values.length === 0 ? 0 : values.reduce((s
 export function autoFitStroke(strokes: StrokeRecord[], fontPaths: string[], index: number): FitResult {
   const fontMask = fillMask(loopsOf(fontPaths))
   const regions = assignRegions(fontMask, strokes)
-  const result = snapStroke(strokes[index], fontPieces(strokes, fontPaths)[index] ?? '', regions[index])
+  const segmented = strokes.length > 1 && fontPaths.filter((path) => path.trim()).length !== strokes.length
+  const piece = fontPieces(strokes, fontPaths)[index] ?? ''
+  const target = targetRegion(fontMask, regions[index], piece)
+  const result = snapStroke(strokes[index], piece, target, segmented)
   return { strokes: strokes.map((s, i) => (i === index ? result.stroke : s)), before: result.before, after: result.after }
 }
 
 // 레이어의 획마다 맡은 궁서체 모양으로 윤곽을 바꾼다. 모양을 나누지 못한 획만 위치·크기를 옮긴다.
 export function autoFitLayer(strokes: StrokeRecord[], fontPaths: string[]): FitResult {
   const fontMask = fillMask(loopsOf(fontPaths))
-  const beforeRegions = assignRegions(fontMask, strokes)
-  const before = meanOf(strokes.map((stroke, i) => iou(fillMask(strokeLoops(stroke)), beforeRegions[i])))
+  const voronoi = assignRegions(fontMask, strokes)
+  const segmented = strokes.length > 1 && fontPaths.filter((path) => path.trim()).length !== strokes.length
   const pieces = fontPieces(strokes, fontPaths)
-  const current = strokes.map((stroke, i) => snapStroke(stroke, pieces[i] ?? '', beforeRegions[i]).stroke)
-  const finalRegions = assignRegions(fontMask, current)
-  const after = meanOf(current.map((stroke, i) => iou(fillMask(strokeLoops(stroke)), finalRegions[i])))
-  return { strokes: current, before, after }
+  const targets = strokes.map((_, i) => targetRegion(fontMask, voronoi[i], pieces[i] ?? ''))
+  const before = meanOf(strokes.map((stroke, i) => iou(fillMask(strokeLoops(stroke)), targets[i])))
+  const results = strokes.map((stroke, i) => snapStroke(stroke, pieces[i] ?? '', targets[i], segmented))
+  const after = meanOf(results.map((result) => result.after))
+  return { strokes: results.map((result) => result.stroke), before, after }
 }

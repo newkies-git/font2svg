@@ -21,6 +21,8 @@ export type LayerEditorState = {
   connectPoints: Ref<Pt[]>
   dirtyIds: Ref<Set<string>>
   soloSnapshot: Ref<Record<string, boolean> | null>
+  hiddenItemsByLayer: Ref<Record<string, Set<number>>>
+  activeHiddenItems: ComputedRef<Set<number>>
   panelLayers: ComputedRef<LayerRecord[]>
   orderedLayers: ComputedRef<LayerRecord[]>
   strokesLayer: ComputedRef<LayerRecord | null>
@@ -32,6 +34,8 @@ export type LayerEditorState = {
   isEditableLocked: ComputedRef<boolean>
   activeStrokes: ComputedRef<StrokeRecord[]>
 }
+
+const EMPTY_HIDDEN = new Set<number>()
 
 export function createLayerEditorState(
   selected: Ref<CharacterDetail | null>,
@@ -51,6 +55,7 @@ export function createLayerEditorState(
   const connectPoints = ref<Pt[]>([])
   const dirtyIds = ref<Set<string>>(new Set())
   const soloSnapshot = ref<Record<string, boolean> | null>(null)
+  const hiddenItemsByLayer = ref<Record<string, Set<number>>>({})
 
   // 역순 표시용(PhotoCraft 패널: 위쪽 행이 가장 위 레이어)
   const panelLayers = computed(() => layers.value.slice().sort((a, b) => b.z_index - a.z_index))
@@ -81,6 +86,7 @@ export function createLayerEditorState(
   })
 
   const activeStrokes = computed<StrokeRecord[]>(() => editableLayer.value?.strokes ?? [])
+  const activeHiddenItems = computed(() => (editableLayer.value ? (hiddenItemsByLayer.value[editableLayer.value.id] ?? EMPTY_HIDDEN) : EMPTY_HIDDEN))
 
   return {
     selected,
@@ -99,6 +105,8 @@ export function createLayerEditorState(
     connectPoints,
     dirtyIds,
     soloSnapshot,
+    hiddenItemsByLayer,
+    activeHiddenItems,
     panelLayers,
     orderedLayers,
     strokesLayer,

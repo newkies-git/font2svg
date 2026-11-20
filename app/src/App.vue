@@ -68,6 +68,10 @@ const {
   selectStrokeItem,
   toggleLayerVisible,
   soloLayer,
+  activeHiddenItems,
+  hiddenItemsByLayer,
+  toggleStrokeItemVisible,
+  setStrokeItemsVisibility,
   setPresetVisibility,
   setLayerOpacity,
   toggleLayerLock,
@@ -287,6 +291,7 @@ onMounted(() => {
               :reveal="reveal"
               :knife-points="knifePoints"
               :connect-points="connectPoints"
+              :hidden-items="hiddenItemsByLayer"
               @select-item="selectStrokeItem"
               @knife-point="applyKnifePoint"
               @connect-point="applyConnectPoint"
@@ -346,7 +351,10 @@ onMounted(() => {
             :locked="isEditableLocked"
             :font-contour-count="fontLayer?.paths.length ?? 0"
             :guide-layers="outlineGuideLayers"
+            :hidden-indices="activeHiddenItems"
             @select="selectStrokeItem"
+            @toggle-hidden="toggleStrokeItemVisible"
+            @visibility-preset="setStrokeItemsVisibility"
             @set-radical="setStrokeRadical"
             @set-cap="onSetCap"
             @move="moveStrokeInActive"
