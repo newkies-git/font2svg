@@ -155,6 +155,18 @@ test('윤곽 연결: 3점 미만이면 오류, 3점이면 선택 획의 윤곽�
   assert.match(work().strokes[0].outline_path, /^M 100 100 L 500 100 L 500 400 Z$/)
 })
 
+test('교차 연결: 끝점 둘 사이의 짧은 윤곽만 베지어로 바꾸고 수동 매핑으로 남긴다', () => {
+  const { edit, work, state } = setup([bar(100)])
+  edit.applyConnectPoint([100, 120])
+  edit.applyConnectPoint([100, 140])
+  edit.commitConnectBridge()
+  const outline = work().strokes[0].outline_path
+  assert.match(outline, /C /)
+  assert.match(outline, /500/)
+  assert.equal(work().strokes[0].map_manual, 1)
+  assert.equal(state.connectPoints.value.length, 0)
+})
+
 test('작업 획에 추가: 다른 레이어의 획을 복제해 끝에 붙인다', () => {
   const { state, edit } = setup([bar(100)])
   state.layers.value.push(layerOf(LAYER_ID.naver, 'NAVER', [bar(300), bar(500)]))
@@ -323,7 +335,7 @@ test('윤곽 연결 도구: 점 지정·되돌리기·취소와 안내 메시지
   edit.applyConnectPoint([0, 0])
   assert.equal(message.value, '윤곽 연결: 중간점 또는 끝점을 클릭하세요.')
   edit.applyConnectPoint([10, 0])
-  assert.match(message.value, /끝점\(또는 추가 중간점\)/)
+  assert.match(message.value, /교차 연결/)
   edit.applyConnectPoint([10, 10])
   assert.match(message.value, /3점 지정됨/)
   edit.applyConnectPoint([10.5, 10.5]) // 1.5 미만 거리의 중복 점은 무시

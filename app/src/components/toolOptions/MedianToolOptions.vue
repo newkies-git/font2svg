@@ -34,5 +34,4 @@ const emit = defineEmits<{
   >
     윤곽 재분할
   </button>
-  <span class="knife-inline-pill" role="status" title="중심선·베지어·칼·윤곽연결 도구에서 커서 주변을 확대합니다">돋보기 ON</span>
 </template>

@@ -8,7 +8,7 @@ const tools: { id: EditorTool; key: string; label: string; tip: string }[] = [
   { id: 'select', key: 'V', label: '선택·변환', tip: '선택 및 이동·크기 변환 (V)' },
   { id: 'bezier', key: 'A', label: '베지어 정점', tip: '베지어 앵커·곡선 제어점 편집 (A)' },
   { id: 'median', key: 'M', label: '중심선 편집', tip: '중심선 정점 이동·추가·삭제 · 윤곽 재분할 (M)' },
-  { id: 'connect', key: 'P', label: '윤곽 연결', tip: '시작·중간·끝점을 찍어 윤곽을 다시 연결 (P)' },
+  { id: 'connect', key: 'P', label: '윤곽 연결', tip: '점을 찍어 윤곽을 다시 잇거나, 교차 끝점을 베지어로 연결 (P)' },
   { id: 'knife', key: 'K', label: '칼 분할', tip: '외곽선 칼 분할 (K)' },
 ]
 </script>

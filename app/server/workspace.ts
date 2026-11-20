@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { DB_BUSY_TIMEOUT_MS, DEFAULT_STROKE_WIDTH, LAYER_ID } from '../shared/constants.ts'
-import type { LayerMetaPatch } from '../shared/types.ts'
+import type { FitStatus, LayerMetaPatch } from '../shared/types.ts'
 import { createCharacterCatalog } from './characterCatalog.ts'
 import { isReferenceKind } from '../shared/layerKind.ts'
 import { createCompileOutput } from './compileOutput.ts'
@@ -10,6 +10,9 @@ import { transaction } from './db.ts'
 import { createFontApply } from './fontApply.ts'
 import { fitGuideToFont, splitByContours } from './geometry.ts'
 import { createIssues } from './issues.ts'
+import { listOllamaStatus } from './ids.ts'
+import { createOllamaIdsPipeline } from './ollamaIds.ts'
+import { splitFontByOllamaGuide, type OllamaSplitSource } from './ollamaSplit.ts'
 import { parseLayerBatch, parseResegmentMedians, type LayerSavePayload } from './layerRequests.ts'
 import { fontContoursOf } from './layers.ts'
 import {
@@ -77,6 +80,11 @@ export function createWorkspace(rootDir: string) {
     fontOrGiven: font.fontOrGiven,
     fitOrGiven: font.fitOrGiven,
   })
+  const ollamaIds = createOllamaIdsPipeline(db, rootDir, {
+    strokes,
+    issues,
+    fitOrGiven: font.fitOrGiven,
+  })
   const conversions = createConversions(db, { strokes, issues })
   const output = createCompileOutput(db, compiledDir, {
     getCharacter: catalog.getCharacter,
@@ -118,6 +126,76 @@ export function createWorkspace(rootDir: string) {
     const fit = await references.applyNaver(unicode, write)
     const detail = getCharacter(unicode)
     return detail && { ...detail, fit_status: fit.status, unmatched_strokes: fit.unmatched }
+  }
+
+  async function applyOllamaIds(
+    unicode: string,
+    options: { model?: string; ids?: string; write?: 'replace' | 'append' } = {},
+  ) {
+    const fit = await ollamaIds.applyIds(unicode, options)
+    const detail = getCharacter(unicode)
+    return detail && {
+      ...detail,
+      fit_status: fit.status,
+      unmatched_strokes: fit.unmatched,
+      ids: fit.ids,
+      model: fit.model,
+    }
+  }
+
+  async function splitFontWithOllama(
+    unicode: string,
+    options: { source: OllamaSplitSource; model?: string; write?: 'replace' | 'append' },
+  ) {
+    let detail = requireFound(getCharacter(unicode))
+    const contours = fontContoursOf(detail)
+    if (contours.length === 0) throw new Error('현재 글자에 궁서체 윤곽이 없습니다.')
+
+    const targetLayerId = options.source === 'MMH' ? LAYER_ID.mmh : LAYER_ID.naver
+    let guideLayer = detail.layers.find((item) => item.id === targetLayerId)
+    if (!guideLayer || guideLayer.strokes.length === 0) {
+      detail = requireFound(await fetchLayer(unicode, targetLayerId))
+      guideLayer = detail.layers.find((item) => item.id === targetLayerId)
+    }
+    if (!guideLayer || guideLayer.strokes.length === 0) {
+      throw new Error(`${options.source === 'MMH' ? 'Hanzi(MMH)' : '네이버'} 기준 획순 데이터를 가져올 수 없습니다.`)
+    }
+
+    const fitted = await splitFontByOllamaGuide({
+      char: detail.char,
+      source: options.source,
+      contours,
+      guideStrokes: guideLayer.strokes,
+      model: options.model,
+    })
+
+    const radicals = guideLayer.strokes.flatMap((stroke, index) => (stroke.is_radical ? [index] : []))
+    const items = toItems(fitted, new Set(radicals))
+    const action = options.source === 'MMH' ? 'Ollama 궁서체 분리 (Hanzi)' : 'Ollama 궁서체 분리 (네이버)'
+    const existing = detail.strokes
+    const fitStatus = fitted.unmatched.length > 0 ? 'partial' : 'fitted'
+
+    if (options.write === 'append' && existing.length > 0) {
+      updateStrokes(unicode, [...existing, ...items], `${action} 추가`)
+      const next = getCharacter(unicode)
+      return next && {
+        ...next,
+        fit_status: fitStatus,
+        unmatched_strokes: fitted.unmatched.map((order) => order + existing.length),
+        source: options.source,
+        model: fitted.model,
+      }
+    }
+
+    references.saveImported(unicode, options.source, guideLayer.source_url, radicals, fitted, action)
+    const next = getCharacter(unicode)
+    return next && {
+      ...next,
+      fit_status: fitStatus,
+      unmatched_strokes: fitted.unmatched,
+      source: options.source,
+      model: fitted.model,
+    }
   }
 
   function updateLayersMeta(unicode: string, patches: LayerMetaPatch[]) {
@@ -188,7 +266,17 @@ export function createWorkspace(rootDir: string) {
     return getCharacter(unicode)
   }
 
-  function applyLayerToStrokes(unicode: string, layerId: string, mode: 'direct' | 'fit_font' = 'direct', write: 'replace' | 'append' = 'replace') {
+  type AppliedDetail = NonNullable<ReturnType<typeof catalog.getCharacter>> & {
+    fit_status?: FitStatus
+    unmatched_strokes?: number[]
+  }
+
+  function applyLayerToStrokes(
+    unicode: string,
+    layerId: string,
+    mode: 'direct' | 'fit_font' = 'direct',
+    write: 'replace' | 'append' = 'replace',
+  ): AppliedDetail | null {
     const detail = requireFound(getCharacter(unicode))
     const layer = detail.layers.find((item) => item.id === layerId)
     if (!layer || layer.strokes.length === 0) throw new Error('적용할 획 데이터가 없는 레이어입니다.')
@@ -210,7 +298,7 @@ export function createWorkspace(rootDir: string) {
 
     // 참고 획은 궁서체(기본 레이어)에 맞춘다. 맞지 않는 획은 지우지 않고 번호로 돌려 작업 획에서 고치게 한다.
     const guide = layer.strokes.map((stroke) => stroke.median_points)
-    const attachFit = (saved: ReturnType<typeof commit>, status: 'fitted' | 'partial' | 'copied' | 'no-font', unmatched: number[]) => {
+    const attachFit = (saved: ReturnType<typeof commit>, status: FitStatus, unmatched: number[]): AppliedDetail | null => {
       if (!saved || !isReferenceKind(layer.kind)) return saved
       const offset = write === 'append' && kept > 0 ? kept : 0
       return { ...saved, fit_status: status, unmatched_strokes: unmatched.map((order) => order + offset) }
@@ -307,6 +395,10 @@ export function createWorkspace(rootDir: string) {
     approve,
     undo,
     applyNaver,
+    getOllamaStatus: listOllamaStatus,
+    inferOllamaIds: ollamaIds.inferIds,
+    applyOllamaIds,
+    splitFontWithOllama,
     applyFontBatch: font.applyFontBatch,
     applyAcjkBatch: references.applyAcjkBatch,
     compile: output.compile,

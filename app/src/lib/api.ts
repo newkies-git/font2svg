@@ -1,3 +1,5 @@
+import type { AppliedCharacterDetail, OllamaIdsPreview, OllamaStatus } from '../../shared/types.ts'
+
 const API_ROOT = '/api'
 
 type RequestInitLite = {
@@ -28,4 +30,41 @@ export async function apiRequest<T = unknown>(url: string, fallbackMessage: stri
   const payload = await response.json()
   if (!response.ok) throw new Error((payload as { error?: string }).error ?? fallbackMessage)
   return payload as T
+}
+
+export function fetchOllamaStatus(): Promise<OllamaStatus> {
+  return apiRequest<OllamaStatus>(apiUrl('ollama', 'status'), '로컬 Ollama 연결 상태를 확인하지 못했습니다.')
+}
+
+export function inferOllamaIds(
+  unicode: string,
+  payload: { model?: string; ids?: string },
+): Promise<OllamaIdsPreview> {
+  return apiRequest<OllamaIdsPreview>(
+    characterUrl(unicode, 'ollama-ids'),
+    'Ollama IDS 추론에 실패했습니다.',
+    { method: 'POST', body: { mode: 'infer', ...payload } },
+  )
+}
+
+export function applyOllamaIds(
+  unicode: string,
+  payload: { model?: string; ids?: string; write?: 'replace' | 'append' },
+): Promise<AppliedCharacterDetail & { ids?: string; model?: string }> {
+  return apiRequest(
+    characterUrl(unicode, 'ollama-ids'),
+    'Ollama IDS 획 합성에 실패했습니다.',
+    { method: 'POST', body: { mode: 'apply', ...payload } },
+  )
+}
+
+export function splitFontWithOllama(
+  unicode: string,
+  payload: { source: 'NAVER' | 'MMH'; model?: string; write?: 'replace' | 'append' },
+): Promise<AppliedCharacterDetail & { source?: 'NAVER' | 'MMH'; model?: string }> {
+  return apiRequest(
+    characterUrl(unicode, 'ollama-split'),
+    'Ollama 궁서체 획 분리에 실패했습니다.',
+    { method: 'POST', body: payload },
+  )
 }

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { isContourLayer, isReferenceKind } from '../../shared/layerKind.ts'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useCanvasDrag, type ResizeDir } from '../composables/useCanvasDrag.ts'
 import { useCanvasFit, visibleWorkStrokes } from '../composables/useCanvasFit.ts'
 import { useCanvasLoupe } from '../composables/useCanvasLoupe.ts'
@@ -8,6 +8,7 @@ import { BADGE_RADIUS, CANVAS } from '../../shared/constants.ts'
 import { handleDirsFor, handlePoint, type TransformMode } from '../lib/transformMath.ts'
 import { pathsBBox, strokesBBox, type BBox } from '../lib/vectorEdit.ts'
 import { bezierNodesOf, polylinePoints, strokeDash } from '../lib/canvasGeometry.ts'
+import { FULL_CANVAS_VIEW, isFullView, panView, viewFromSelection, zoomViewAt, type CanvasView } from '../lib/canvasView.ts'
 import type { CharacterDetail, EditorTool, LayerRecord, Pt, StrokeRecord } from '../../shared/types.ts'
 import { MIN_CONNECT_POINTS } from '../composables/useConnectTool.ts'
 import BezierOverlay from './canvasOverlays/BezierOverlay.vue'
@@ -55,11 +56,103 @@ const {
   loupeVisible,
   loupeEnabled,
   loupeLens,
-  LOUPE_ZOOM,
+  loupeZoom,
   LOUPE_RADIUS,
   onCanvasPointerMove,
   onCanvasPointerLeave,
 } = useCanvasLoupe(() => props.tool, fontToScreen, eventToFont)
+
+const svgEl = ref<SVGSVGElement | null>(null)
+const view = ref<CanvasView>({ ...FULL_CANVAS_VIEW })
+const zoomArmed = ref(false)
+const marquee = ref<{ x0: number; y0: number; x1: number; y1: number } | null>(null)
+const zoomed = computed(() => !isFullView(view.value))
+const viewBoxAttr = computed(() => `${view.value.x} ${view.value.y} ${view.value.w} ${view.value.h}`)
+
+watch(() => props.selected?.char, () => {
+  view.value = { ...FULL_CANVAS_VIEW }
+  zoomArmed.value = false
+  marquee.value = null
+})
+
+function clientToSvg(event: PointerEvent | WheelEvent): { x: number; y: number } | null {
+  const ctm = svgEl.value?.getScreenCTM()
+  if (!ctm) return null
+  const pt = new DOMPoint(event.clientX, event.clientY).matrixTransform(ctm.inverse())
+  return { x: pt.x, y: pt.y }
+}
+
+function toggleZoomArm() {
+  zoomArmed.value = !zoomArmed.value
+  marquee.value = null
+}
+
+function resetView() {
+  view.value = { ...FULL_CANVAS_VIEW }
+  zoomArmed.value = false
+  marquee.value = null
+}
+
+function startMarquee(event: PointerEvent) {
+  const origin = clientToSvg(event)
+  if (!origin) return
+  marquee.value = { x0: origin.x, y0: origin.y, x1: origin.x, y1: origin.y }
+  const move = (moveEvent: PointerEvent) => {
+    const cur = clientToSvg(moveEvent)
+    if (!cur || !marquee.value) return
+    marquee.value = { ...marquee.value, x1: cur.x, y1: cur.y }
+  }
+  const up = () => {
+    window.removeEventListener('pointermove', move)
+    window.removeEventListener('pointerup', up)
+    const box = marquee.value
+    marquee.value = null
+    zoomArmed.value = false
+    if (!box) return
+    const next = viewFromSelection(box.x0, box.y0, box.x1, box.y1)
+    if (next) view.value = next
+  }
+  window.addEventListener('pointermove', move)
+  window.addEventListener('pointerup', up)
+}
+
+function startPan(event: PointerEvent) {
+  const ctm = svgEl.value?.getScreenCTM()
+  if (!ctm || ctm.a === 0 || ctm.d === 0) return
+  const scaleX = ctm.a
+  const scaleY = ctm.d
+  const originX = event.clientX
+  const originY = event.clientY
+  const start = { ...view.value }
+  const move = (moveEvent: PointerEvent) => {
+    view.value = panView(start, (moveEvent.clientX - originX) / scaleX, (moveEvent.clientY - originY) / scaleY)
+  }
+  const up = () => {
+    window.removeEventListener('pointermove', move)
+    window.removeEventListener('pointerup', up)
+  }
+  window.addEventListener('pointermove', move)
+  window.addEventListener('pointerup', up)
+}
+
+function onZoomPointerDown(event: PointerEvent) {
+  if (event.button === 1) {
+    event.preventDefault()
+    event.stopPropagation()
+    startPan(event)
+    return
+  }
+  if (!zoomArmed.value || event.button !== 0) return
+  event.stopPropagation()
+  startMarquee(event)
+}
+
+function onCanvasWheel(event: WheelEvent) {
+  const at = clientToSvg(event)
+  if (!at) return
+  event.preventDefault()
+  view.value = zoomViewAt(view.value, at.x, at.y, event.deltaY < 0)
+}
 
 function visibleStrokesOfWork(strokes: StrokeRecord[]): StrokeRecord[] {
   return visibleWorkStrokes(strokes, props.shown)
@@ -184,17 +277,21 @@ function onShapePointerDown(layerId: string, index: number, event: PointerEvent)
 </script>
 
 <template>
+  <div v-if="selected" class="canvas-frame">
   <svg
-    v-if="selected"
+    ref="svgEl"
     role="img"
     class="layer-canvas-svg"
     :data-tool="tool"
+    :data-zoom="zoomArmed ? 'armed' : zoomed ? 'in' : 'full'"
     :aria-label="`${selected.char} (${selected.reading ?? ''}) 레이어 필순 편집기`"
-    :viewBox="`0 0 ${CANVAS} ${CANVAS}`"
+    :viewBox="viewBoxAttr"
     tabindex="0"
+    @pointerdown.capture="onZoomPointerDown"
     @pointerdown="onCanvasPointerDown"
     @pointermove="onCanvasPointerMove"
     @pointerleave="onCanvasPointerLeave"
+    @wheel="onCanvasWheel"
     @dblclick="onCanvasDblClick"
   >
     <title>{{ selected.char }} {{ selected.reading ? `(${selected.reading})` : '' }} 다중 레이어 뷰어</title>
@@ -229,6 +326,7 @@ function onShapePointerDown(layerId: string, index: number, event: PointerEvent)
             v-for="(d, pIdx) in layer.paths"
             :key="`font-p-${pIdx}`"
             class="font-contour"
+            vector-effect="non-scaling-stroke"
             :class="{
               'is-picked': editableLayer?.id === layer.id && selectedIndex === pIdx,
               'is-mapped': mappedContours.has(pIdx),
@@ -240,6 +338,7 @@ function onShapePointerDown(layerId: string, index: number, event: PointerEvent)
             v-for="(stroke, sIdx) in layer.strokes"
             :key="`font-s-${sIdx}`"
             class="font-contour"
+            vector-effect="non-scaling-stroke"
             :class="{ 'is-picked': editableLayer?.id === layer.id && selectedIndex === sIdx }"
             :d="stroke.outline_path"
             @pointerdown="onShapePointerDown(layer.id, sIdx, $event)"
@@ -257,6 +356,7 @@ function onShapePointerDown(layerId: string, index: number, event: PointerEvent)
             v-for="(d, pIdx) in layer.paths"
             :key="`${layer.id}-p-${pIdx}`"
             class="ref-outline"
+            vector-effect="non-scaling-stroke"
             :class="{ 'is-picked': editableLayer?.id === layer.id && selectedIndex === pIdx }"
             :d="d"
             @pointerdown="onShapePointerDown(layer.id, pIdx, $event)"
@@ -265,6 +365,7 @@ function onShapePointerDown(layerId: string, index: number, event: PointerEvent)
             v-for="(stroke, sIdx) in layer.strokes"
             :key="`${layer.id}-s-${sIdx}`"
             class="ref-outline"
+            vector-effect="non-scaling-stroke"
             :class="{
               'is-picked': editableLayer?.id === layer.id && selectedIndex === sIdx,
               'is-radical': stroke.is_radical,
@@ -286,6 +387,7 @@ function onShapePointerDown(layerId: string, index: number, event: PointerEvent)
             v-for="(stroke, sIdx) in visibleStrokesOfWork(layer.strokes)"
             :key="`work-fill-${stroke.stroke_order}`"
             class="ink-stroke"
+            vector-effect="non-scaling-stroke"
             :class="{
               'radical-stroke': stroke.is_radical,
               'is-picked': editableLayer?.id === layer.id && selectedIndex === sIdx,
@@ -382,8 +484,39 @@ function onShapePointerDown(layerId: string, index: number, event: PointerEvent)
       <ConnectOverlay v-if="tool === 'connect' && connectPoints.length > 0" :connect-points="connectPoints" />
     </g>
 
-    <LoupeOverlay v-if="loupeVisible && loupeLens && loupeEnabled" :lens="loupeLens" :zoom="LOUPE_ZOOM" :radius="LOUPE_RADIUS" />
+    <rect
+      v-if="marquee"
+      class="zoom-marquee"
+      :x="Math.min(marquee.x0, marquee.x1)"
+      :y="Math.min(marquee.y0, marquee.y1)"
+      :width="Math.abs(marquee.x1 - marquee.x0)"
+      :height="Math.abs(marquee.y1 - marquee.y0)"
+    />
+    <LoupeOverlay v-if="loupeVisible && loupeLens && loupeEnabled && !zoomed && !zoomArmed" :lens="loupeLens" :zoom="loupeZoom" :radius="LOUPE_RADIUS" />
   </svg>
+  <div class="canvas-zoom-bar">
+    <button
+      type="button"
+      class="bar-btn"
+      :class="{ on: zoomArmed }"
+      :aria-pressed="zoomArmed"
+      title="확대할 영역을 드래그합니다. 놓은 뒤 그 배율에서 점을 그대로 편집합니다. 휠로도 배율을 바꿉니다."
+      @click="toggleZoomArm"
+    >
+      영역 확대
+    </button>
+    <button
+      v-if="zoomed"
+      type="button"
+      class="bar-btn"
+      title="글자 전체로 돌아갑니다. 가운데 버튼으로 화면을 옮길 수 있습니다."
+      @click="resetView"
+    >
+      전체
+    </button>
+    <span v-if="zoomArmed" class="zoom-hint">확대할 영역을 드래그하세요</span>
+  </div>
+  </div>
   <div v-else class="empty-state">
     <svg class="empty-svg-icon" viewBox="0 0 36 36" fill="none" aria-hidden="true">
       <rect x="4" y="4" width="28" height="28" rx="4" stroke="currentColor" stroke-width="1.6" />

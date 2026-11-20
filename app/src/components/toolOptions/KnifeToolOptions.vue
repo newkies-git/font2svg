@@ -38,6 +38,5 @@ const emit = defineEmits<{
         {{ option.label }}
       </button>
     </div>
-    <span class="knife-inline-pill" role="status" title="정밀 편집 시 커서 주변을 확대합니다">돋보기 ON</span>
   </template>
 </template>

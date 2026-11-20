@@ -17,6 +17,6 @@ export const CONNECT_MID_RADIUS = 10
 export const KNIFE_PULSE_RADIUS = 14
 export const KNIFE_POINT_RADIUS = 5
 
-// 돋보기: 십자선의 반 길이와 초점 점 반지름
-export const LOUPE_CROSS_HALF = 10
-export const LOUPE_FOCUS_RADIUS = 3
+// 돋보기: 십자선의 반 길이와, 커서 위 고리의 반지름
+export const LOUPE_CROSS_HALF = 16
+export const LOUPE_FOCUS_RADIUS = 5

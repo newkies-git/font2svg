@@ -5,10 +5,13 @@ import ConfirmDialog from './components/ConfirmDialog.vue'
 import ImportChoiceDialog from './components/ImportChoiceDialog.vue'
 import LayerCanvas from './components/LayerCanvas.vue'
 import LayersPanel from './components/LayersPanel.vue'
+import OllamaIdsDialog from './components/OllamaIdsDialog.vue'
+import OllamaSplitDialog from './components/OllamaSplitDialog.vue'
 import StepControls from './components/StepControls.vue'
 import StrokeList from './components/StrokeList.vue'
 import StudioTopBar from './components/StudioTopBar.vue'
 import ToolRail from './components/ToolRail.vue'
+import { fetchOllamaStatus } from './lib/api.ts'
 import { useCharacterActions } from './composables/useCharacterActions.ts'
 import { useCharacterList } from './composables/useCharacterList.ts'
 import { useLayerWorkspace } from './composables/useLayerWorkspace.ts'
@@ -18,13 +21,24 @@ import { useStudioShortcuts } from './composables/useStudioShortcuts.ts'
 import { useStudioState } from './composables/useStudioState.ts'
 import { useTheme } from './composables/useTheme.ts'
 import { LAYER_ID } from '../shared/constants.ts'
-import type { CapType } from '../shared/types.ts'
+import type { CapType, OllamaStatus } from '../shared/types.ts'
 
 const studio = useStudioState()
 const { selected, message, error, busy, shown, reveal } = studio
 const confirmDialog = ref<InstanceType<typeof ConfirmDialog> | null>(null)
 const importChoice = ref<InstanceType<typeof ImportChoiceDialog> | null>(null)
+const ollamaDialog = ref<InstanceType<typeof OllamaIdsDialog> | null>(null)
+const ollamaSplitDialog = ref<InstanceType<typeof OllamaSplitDialog> | null>(null)
+const ollamaStatus = ref<OllamaStatus | null>(null)
 const confirmImport = () => importChoice.value?.ask() ?? Promise.resolve(undefined)
+
+async function refreshOllamaStatus() {
+  try {
+    ollamaStatus.value = await fetchOllamaStatus()
+  } catch {
+    ollamaStatus.value = null
+  }
+}
 
 const { chars, query, statusFilter, filteredChars, statusCounts, loadList, clearSearch } = useCharacterList(error)
 const { themeMode, setTheme } = useTheme()
@@ -86,6 +100,7 @@ const {
   undoConnectPoint,
   applyConnectPoint,
   commitConnectOutline,
+  commitConnectBridge,
   saveAllDirtyLayers,
   resetLayerToOriginal,
   fetchReferenceForLayer,
@@ -98,7 +113,7 @@ const {
   deleteActiveCustomLayer,
 } = useLayerWorkspace(studio, { onReloadList: loadList, stopPlayback: stop, confirmImport })
 
-const { uploadInitial, openChar, openFirst, undo, approve, compileChar, applyNaver, importSvg, importImage } = useCharacterActions(studio, {
+const { uploadInitial, openChar, openFirst, undo, approve, compileChar, applyNaver, applyOllama, applyOllamaSplit, importSvg, importImage } = useCharacterActions(studio, {
   chars,
   loadList,
   syncFromDetail,
@@ -160,7 +175,10 @@ useStudioShortcuts({
   cancelConnect,
 })
 
-onMounted(loadList)
+onMounted(() => {
+  void loadList()
+  void refreshOllamaStatus()
+})
 </script>
 
 <template>
@@ -210,12 +228,15 @@ onMounted(loadList)
         @cancel-connect="cancelConnect"
         @undo-connect="undoConnectPoint"
         @commit-connect="commitConnectOutline"
+        @commit-bridge="commitConnectBridge"
         @unlock="unlockActiveLayers"
         @save="saveAllDirtyLayers"
         @approve="approve"
         @undo="undo"
         @compile="compileChar"
         @naver="applyNaver"
+        @ollama="ollamaDialog?.open()"
+        @ollama-split="ollamaSplitDialog?.open()"
         @import-svg="importSvg"
         @import-image="importImage"
       />
@@ -306,6 +327,40 @@ onMounted(loadList)
             @map-contours="mapOutlineContours"
             @refresh-outline="refreshOutlineMapping"
           />
+
+          <section class="inspector-ollama-bar" aria-labelledby="ollama-dock-title">
+            <div class="inspector-ollama-head">
+              <h3 id="ollama-dock-title" class="ollama-dock-title">로컬 Ollama</h3>
+              <span
+                class="ollama-status-pill"
+                :class="ollamaStatus?.connected ? 'is-ok' : 'is-off'"
+                :title="ollamaStatus?.connected ? `연결됨 (${ollamaStatus.defaultModel})` : '로컬 Ollama 미연결'"
+              >
+                <span class="ollama-dot" aria-hidden="true" />
+                <span>{{ ollamaStatus?.connected ? ollamaStatus.defaultModel : '꺼짐' }}</span>
+              </span>
+            </div>
+            <div class="inspector-ollama-actions">
+              <button
+                type="button"
+                class="ollama-dock-btn primary"
+                :disabled="!selected || busy"
+                title="로컬 Ollama로 현재 궁서체 윤곽을 네이버 또는 Hanzi 획순에 맞게 분리합니다"
+                @click="ollamaSplitDialog?.open()"
+              >
+                궁서체 획 분리
+              </button>
+              <button
+                type="button"
+                class="ollama-dock-btn"
+                :disabled="!selected || busy"
+                title="로컬 Ollama로 IDS 구조식을 추론하고 부품 획을 합성합니다"
+                @click="ollamaDialog?.open()"
+              >
+                IDS 합성
+              </button>
+            </div>
+          </section>
         </aside>
       </div>
 
@@ -336,5 +391,20 @@ onMounted(loadList)
       작업 획에 이미 획이 있습니다.<br />
       지우고 가져온 획만 쓸지, 기존 획 뒤에 덧붙일지 고르세요.
     </ImportChoiceDialog>
+    <OllamaIdsDialog
+      ref="ollamaDialog"
+      :selected="selected"
+      :busy="busy"
+      @apply="applyOllama"
+      @status-updated="ollamaStatus = $event"
+    />
+    <OllamaSplitDialog
+      ref="ollamaSplitDialog"
+      :selected="selected"
+      :font-contour-count="fontLayer?.paths.length ?? 0"
+      :busy="busy"
+      @split="applyOllamaSplit"
+      @status-updated="ollamaStatus = $event"
+    />
   </div>
 </template>

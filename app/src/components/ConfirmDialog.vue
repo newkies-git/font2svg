@@ -9,12 +9,15 @@ let resolveAsk: ((value: boolean) => void) | null = null
 function ask(): Promise<boolean> {
   return new Promise((resolve) => {
     resolveAsk = resolve
+    if (dialog.value) dialog.value.returnValue = ''
     dialog.value?.showModal()
   })
 }
 
 function onClose() {
-  resolveAsk?.(dialog.value?.returnValue === 'confirm')
+  const confirmed = dialog.value?.returnValue === 'confirm'
+  if (dialog.value) dialog.value.returnValue = ''
+  resolveAsk?.(confirmed)
   resolveAsk = null
 }
 

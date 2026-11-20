@@ -3,7 +3,7 @@ import test from 'node:test'
 import type { LayerMetaPatch } from '../shared/types.ts'
 import { mergeLayerMeta } from '../server/layerWrites.ts'
 
-const current = { kind: 'MMH', name: '기존', z_index: 3, visible: 1, opacity: 0.6, locked: 0, label_color: 'violet' } as const
+const current = { kind: 'CUSTOM', name: '기존', z_index: 3, visible: 1, opacity: 0.6, locked: 0, label_color: 'violet' } as const
 const merge = (patch: Partial<LayerMetaPatch>) => mergeLayerMeta({ ...current }, { id: 'x', ...patch } as LayerMetaPatch)
 
 test('요청이 비어 있으면 현재 설정을 그대로 둔다', () => {
@@ -13,7 +13,7 @@ test('요청이 비어 있으면 현재 설정을 그대로 둔다', () => {
 test('올바른 값은 덮어쓰고 종류는 바꾸지 않는다', () => {
   assert.deepEqual(
     merge({ name: ' 새 이름 ', z_index: 7.6, visible: false, opacity: 0.25, locked: true, label_color: 'rose' }),
-    { kind: 'MMH', name: '새 이름', z_index: 8, visible: 0, opacity: 0.25, locked: 1, label_color: 'rose' },
+    { kind: 'CUSTOM', name: '새 이름', z_index: 8, visible: 0, opacity: 0.25, locked: 1, label_color: 'rose' },
   )
 })
 
@@ -39,4 +39,12 @@ test('불투명도와 색상은 허용 범위·목록을 벗어나면 현재 값
   assert.equal(merge({ opacity: 5 }).opacity, 1, '범위를 넘으면 가장자리로 맞춘다')
   assert.equal(merge({ label_color: 'bogus' as never }).label_color, 'violet')
   assert.equal(merge({ label_color: 'none' }).label_color, 'none')
+})
+
+test('참고 레이어(MMH·ACJK·NAVER)는 항상 잠금(1)을 유지한다', () => {
+  for (const kind of ['MMH', 'ACJK', 'NAVER'] as const) {
+    const ref = { ...current, kind, locked: 0 }
+    assert.equal(mergeLayerMeta(ref, { id: 'x' }).locked, 1, `${kind} 빈 패치`)
+    assert.equal(mergeLayerMeta(ref, { id: 'x', locked: false }).locked, 1, `${kind} 잠금 해제 시도`)
+  }
 })

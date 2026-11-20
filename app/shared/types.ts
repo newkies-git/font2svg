@@ -4,6 +4,7 @@ export type Pt = [number, number]
 
 type RefSource = 'MMH' | 'ACJK' | 'NAVER' | 'IDS' | 'OLLAMA_IDS' | 'MANUAL' | 'FONT' | 'NONE'
 export type IssueStatus = 'OPEN' | 'DRAFT' | 'APPROVED'
+export type FitStatus = 'fitted' | 'partial' | 'copied' | 'no-font'
 export type CapType = (typeof CAP_TYPES)[number]
 export type ThemeMode = 'system' | 'light' | 'dark'
 export type StatusFilter = 'ALL' | IssueStatus
@@ -118,5 +119,27 @@ export type CharacterDetail = {
   strokes: StrokeRecord[]
   layers: LayerRecord[]
   history_count: number
+}
+
+export type AppliedCharacterDetail = CharacterDetail & {
+  fit_status?: FitStatus
+  unmatched_strokes?: number[]
+}
+
+export type OllamaStatus = {
+  connected: boolean
+  models: string[]
+  defaultModel: string
+  url: string
+  error?: string
+}
+
+export type OllamaIdsPreview = {
+  char: string
+  model: string
+  ids: string | null
+  valid: boolean
+  composable: boolean
+  strokeCount: number
 }
 

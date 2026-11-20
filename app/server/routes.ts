@@ -46,6 +46,7 @@ const optionalText = (value: unknown): string | undefined => (typeof value === '
 const ROUTES: Route[] = [
   { method: 'GET', pattern: 'characters', handler: ({ ws, searchParams }) => ws.listCharacters(searchParams.get('q') ?? '') },
   { method: 'GET', pattern: 'radicals', handler: ({ ws }) => ws.listRadicals() },
+  { method: 'GET', pattern: 'ollama/status', handler: ({ ws }) => ws.getOllamaStatus() },
   {
     method: 'POST',
     pattern: 'import',
@@ -102,6 +103,37 @@ const ROUTES: Route[] = [
     handler: async ({ ws, params, body }) => {
       const write = (await body()).write === 'append' ? 'append' : 'replace'
       return ws.applyNaver(params.unicode, write)
+    },
+  },
+  {
+    method: 'POST',
+    pattern: 'characters/:unicode/ollama-ids',
+    handler: async ({ ws, params, body }) => {
+      const payload = await body()
+      const model = optionalText(payload.model)
+      if (payload.mode === 'infer') {
+        return ws.inferOllamaIds(params.unicode, {
+          model,
+          ids: typeof payload.ids === 'string' ? payload.ids : undefined,
+        })
+      }
+      const write = payload.write === 'append' ? 'append' : 'replace'
+      return ws.applyOllamaIds(params.unicode, {
+        model,
+        ids: optionalText(payload.ids),
+        write,
+      })
+    },
+  },
+  {
+    method: 'POST',
+    pattern: 'characters/:unicode/ollama-split',
+    handler: async ({ ws, params, body }) => {
+      const payload = await body()
+      const source = payload.source === 'MMH' ? 'MMH' : 'NAVER'
+      const model = optionalText(payload.model)
+      const write = payload.write === 'append' ? 'append' : 'replace'
+      return ws.splitFontWithOllama(params.unicode, { source, model, write })
     },
   },
   { method: 'POST', pattern: 'characters/:unicode/compile', handler: ({ ws, params }) => ws.compile(params.unicode) },

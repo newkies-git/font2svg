@@ -95,6 +95,7 @@ export function useLayerWorkspace(
     undoConnectPoint: edit.undoConnectPoint,
     applyConnectPoint: edit.applyConnectPoint,
     commitConnectOutline: edit.commitConnectOutline,
+    commitConnectBridge: edit.commitConnectBridge,
     saveActiveLayer: commands.saveActiveLayer,
     saveAllDirtyLayers: commands.saveAllDirtyLayers,
     resetLayerToOriginal: commands.resetLayerToOriginal,

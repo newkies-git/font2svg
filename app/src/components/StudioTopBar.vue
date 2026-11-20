@@ -5,6 +5,7 @@ import { isReferenceKind } from '../../shared/layerKind.ts'
 import { ISSUE_LABELS } from '../lib/labels.ts'
 import type { TransformMode } from '../lib/transformMath.ts'
 import type { CharacterDetail, EditorTool, KnifeMode, LayerRecord, Pt } from '../../shared/types.ts'
+import { formatLoupeZoom, isLoupeTool, useLoupeControls } from '../composables/useCanvasLoupe.ts'
 import ConnectToolOptions from './toolOptions/ConnectToolOptions.vue'
 import KnifeToolOptions from './toolOptions/KnifeToolOptions.vue'
 import MedianToolOptions from './toolOptions/MedianToolOptions.vue'
@@ -39,16 +40,20 @@ const emit = defineEmits<{
   cancelConnect: []
   undoConnect: []
   commitConnect: []
+  commitBridge: []
   unlock: []
   save: []
   approve: []
   undo: []
   compile: []
   naver: []
+  ollama: []
+  ollamaSplit: []
   importSvg: [event: Event]
   importImage: [event: Event, split: ImageSplit]
 }>()
 
+const { loupeOn, loupeZoom, toggleLoupe } = useLoupeControls()
 const menuRef = ref<HTMLDetailsElement | null>(null)
 const svgFileInput = ref<HTMLInputElement | null>(null)
 const imageFileInput = ref<HTMLInputElement | null>(null)
@@ -147,6 +152,7 @@ function runMenuAction(fn: () => void) {
         @cancel-connect="emit('cancelConnect')"
         @undo-connect="emit('undoConnect')"
         @commit-connect="emit('commitConnect')"
+        @commit-bridge="emit('commitBridge')"
       />
       <KnifeToolOptions
         v-else-if="tool === 'knife'"
@@ -156,9 +162,17 @@ function runMenuAction(fn: () => void) {
         @cancel-knife="emit('cancelKnife')"
       />
 
-      <template v-else-if="tool === 'bezier'">
-        <span class="knife-inline-pill" role="status" title="정밀 편집 시 커서 주변을 확대합니다">돋보기 ON</span>
-      </template>
+      <button
+        v-if="isLoupeTool(tool)"
+        type="button"
+        class="bar-btn"
+        :class="{ on: loupeOn }"
+        :aria-pressed="loupeOn"
+        title="커서 옆을 확대합니다. 렌즈는 커서를 가리지 않습니다. 영역을 크게 보려면 캔버스의 영역 확대를 씁니다."
+        @click="toggleLoupe"
+      >
+        돋보기 {{ loupeOn ? `${formatLoupeZoom(loupeZoom)}×` : '꺼짐' }}
+      </button>
     </div>
 
     <!-- 우측: 단일 통합 문서 작업 바 -->
@@ -235,6 +249,24 @@ function runMenuAction(fn: () => void) {
             @click="runMenuAction(() => emit('naver'))"
           >
             네이버 획순을 작업 획으로…
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            :disabled="!selected || busy"
+            title="로컬 Ollama 모델로 현재 궁서체 윤곽을 네이버 또는 Hanzi 획순에 맞게 분리합니다"
+            @click="runMenuAction(() => emit('ollamaSplit'))"
+          >
+            로컬 Ollama 궁서체 획 분리 (Naver / Hanzi)…
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            :disabled="!selected || busy"
+            title="로컬 Ollama 모델로 IDS 구조식을 추론하고 부품 획을 합성합니다"
+            @click="runMenuAction(() => emit('ollama'))"
+          >
+            로컬 Ollama IDS 획 합성…
           </button>
           <button
             type="button"

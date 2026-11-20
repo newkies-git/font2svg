@@ -30,7 +30,6 @@ export const KANGXI_COUNT = 214
 export const DB_BUSY_TIMEOUT_MS = 5_000
 export const FETCH_TIMEOUT_MS = 10_000
 export const OLLAMA_TIMEOUT_MS = 60_000
-export const MISSING_FETCH_LIMIT = 20
 export const MEDIAN_MIN_POINTS = 2
 export const MEDIAN_BBOX_INSET = 20
 export const MEDIAN_SIMPLIFY_TOLERANCE = 3
@@ -42,7 +41,6 @@ export const MAX_COVERED_AREA_RATIO = 1.7
 export const FONT_BATCH_LIMIT = 10
 export const AREA_FLATNESS = 2
 export const IDS_MAX_DEPTH = 3
-export const IDS_FILE_LIMIT = 16 * 1024 * 1024
 export const ACJK_FILE_LIMIT = 32 * 1024 * 1024
 export const ACJK_BATCH_LIMIT = 200
 // OUTLINE 매핑: 획 윤곽의 꼭짓점이 궁서체 윤곽선에서 이 거리 이내면 그 윤곽에 속한 것으로 본다.
@@ -79,8 +77,6 @@ export const FIT_LIMIT_SHIFT = 160
 export const FIT_LIMIT_SCALE = 0.5
 export const FIT_LIMIT_ANGLE = 0.5
 export const FIT_LIMIT_SHEAR = 0.5
-// 획별 보정을 영역 재할당과 번갈아 반복하는 횟수
-export const FIT_REFINE_ROUNDS = 2
 // DB 백업 파일 이름 접두어(database/<DB 이름>.backup-<시각>.db). .gitignore가 이 패턴을 제외한다.
 export const BACKUP_TAG = 'backup'
 // 마이그레이션 직전 자동 백업 파일 이름 접두어(database/<DB 이름>.before-v<버전>-<시각>.db)

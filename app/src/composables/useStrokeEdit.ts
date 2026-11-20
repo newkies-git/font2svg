@@ -201,8 +201,8 @@ export function useStrokeEdit(
     }
   }
 
-  // 겹침 비율(IoU)을 최대화해 활성 레이어를 궁서체 윤곽에 자동으로 맞춘다.
-  // 전체 변환 범위면 레이어 전체(+획별 보정), 단일 획 범위면 선택한 획만 맞춘다.
+  // 획 윤곽을 그 획이 맡은 궁서체 모양으로 바꾼다. 중심선 점은 그 윤곽을 따르게 다시 잡는다.
+  // 전체 변환 범위면 레이어의 획 전부, 단일 획 범위면 선택한 획만 맞춘다.
   function autoFitToFont() {
     const target = guardUnlocked()
     const fl = fontLayer.value
@@ -225,7 +225,7 @@ export function useStrokeEdit(
       message.value = `${subject}: 더 나은 위치를 찾지 못했습니다 (겹침 ${percent(result.before)}). 수동으로 대략 맞춘 뒤 다시 시도하세요.`
       return
     }
-    updateTargetStrokes(result.strokes, `${subject} 자동 맞춤: 궁서체 겹침 ${percent(result.before)} → ${percent(result.after)}. 확인 후 저장하세요.`)
+    updateTargetStrokes(result.strokes, `${subject} 자동 맞춤: 궁서체 겹침 ${percent(result.before)} → ${percent(result.after)}. 윤곽을 궁서체 모양에 맞췄습니다. 확인 후 저장하세요.`)
   }
 
   // 베지어 편집 결과 반영
@@ -244,7 +244,7 @@ export function useStrokeEdit(
 
   // 중심선 정점 이동 / 추가 / 삭제
   const { cancelKnife, applyKnifePoint } = useKnifeTool(state, message, error, guardUnlocked, updateTargetStrokes, updateTargetPaths)
-  const { cancelConnect, undoConnectPoint, applyConnectPoint, commitConnectOutline } = useConnectTool(state, message, error, guardUnlocked, updateTargetPaths, editStroke)
+  const { cancelConnect, undoConnectPoint, applyConnectPoint, commitConnectOutline, commitConnectBridge } = useConnectTool(state, message, error, guardUnlocked, updateTargetPaths, editStroke)
   const { moveMedianVertex, addMedianVertex, deleteMedianVertex } = useMedianEdit(state, error, editStroke)
 
   return {
@@ -269,5 +269,6 @@ export function useStrokeEdit(
     undoConnectPoint,
     applyConnectPoint,
     commitConnectOutline,
+    commitConnectBridge,
   }
 }

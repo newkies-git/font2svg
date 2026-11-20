@@ -1,6 +1,7 @@
 import { DEFAULT_STROKE_WIDTH } from '../constants.ts'
 import { flattenContours, type Pt } from '../paths.ts'
 import { pointSegmentDistance } from '../paths.ts'
+import { outlineByContourBridges } from './bridge.ts'
 import { outlineOfLoop, traceLoops } from './contour.ts'
 import { computeOptimalStrokeWidth } from './median.ts'
 import { OUTLINE_FLATNESS, pixelToFont, rasterize } from './raster.ts'
@@ -8,6 +9,8 @@ import { OUTLINE_FLATNESS, pixelToFont, rasterize } from './raster.ts'
 // 교차부 공유 확장 반경: 기본 획 폭 대비 비율, 최소 픽셀
 const COVER_RADIUS_RATIO = 0.42
 const COVER_RADIUS_MIN_PX = 4
+// 교차로 끊긴 외곽선 끝점 사이가 이 배수보다 길면 베지어로 잇지 않고 격자 윤곽을 쓴다.
+const BRIDGE_GAP_RATIO = 2.5
 
 export function segmentOutlineByMedians(fullOutlinePaths: string[], medians: Pt[][], defaultWidth = DEFAULT_STROKE_WIDTH): {
   strokes: string[]
@@ -75,9 +78,11 @@ export function segmentOutlineByMedians(fullOutlinePaths: string[], medians: Pt[
 
   const strokes: string[] = []
   const widths: number[] = []
+  const bridged = outlineByContourBridges(contours, medians, defaultWidth * BRIDGE_GAP_RATIO)
   for (let s = 0; s < medians.length; s++) {
     const loops = traceLoops(strokeMasks[s], w, h)
-    const path = loops.length > 0 ? outlineOfLoop(loops[0], raster) : (fullOutlinePaths[s] ?? fullOutlinePaths[0] ?? '')
+    const traced = loops.length > 0 ? outlineOfLoop(loops[0], raster) : (fullOutlinePaths[s] ?? fullOutlinePaths[0] ?? '')
+    const path = bridged[s] ?? traced
     strokes.push(path)
     widths.push(computeOptimalStrokeWidth(path, medians[s], defaultWidth))
   }

@@ -1,4 +1,5 @@
 import { isContourLayer } from '../../shared/layerKind.ts'
+import { spliceOutlineBridge } from '../../shared/strokeCut.ts'
 import type { Ref } from 'vue'
 import { pointsToClosedPath, restrokeFromOutline, roundPt } from '../lib/strokeOps.ts'
 import type { LayerRecord, Pt, StrokeRecord } from '../../shared/types.ts'
@@ -6,6 +7,8 @@ import type { LayerEditorState } from './layerEditorState.ts'
 
 // 윤곽 연결에 필요한 최소 점 수(시작·중간·끝)
 export const MIN_CONNECT_POINTS = 3
+// 교차 연결은 끝점 둘이면 된다. 중간점은 더 찍을 수 있다.
+export const MIN_BRIDGE_POINTS = 2
 // 앞 점과 이 거리(저장 좌표) 안쪽이면 같은 점을 다시 찍은 것으로 보고 무시한다.
 const MIN_CONNECT_POINT_GAP = 1.5
 const CONNECT_KEYS_HINT = 'Enter 연결 · ⌫ 되돌리기 · Esc 취소'
@@ -46,8 +49,8 @@ export function useConnectTool(
     connectPoints.value = [...connectPoints.value, next]
     const n = connectPoints.value.length
     if (n === 1) message.value = '윤곽 연결: 중간점 또는 끝점을 클릭하세요.'
-    else if (n === 2) message.value = '윤곽 연결: 끝점(또는 추가 중간점)을 클릭하세요. 3점 이상이면 Enter로 연결.'
-    else message.value = `윤곽 연결: ${n}점 지정됨 — Enter/더블클릭으로 닫힌 윤곽 연결 (⌫ 되돌리기 · Esc 취소)`
+    else if (n === 2) message.value = '윤곽 연결: 끝점 2개. [교차 연결]로 잇거나, 중간점을 더 찍으세요.'
+    else message.value = `윤곽 연결: ${n}점 지정됨 — [교차 연결]은 끝점 사이를 잇고, Enter는 윤곽 전체를 바꿉니다.`
   }
 
   function commitConnectOutline() {
@@ -72,5 +75,49 @@ export function useConnectTool(
     editStroke(idx, (stroke) => restrokeFromOutline(stroke, path), `${idx + 1}획 윤곽을 지정한 점으로 다시 연결했습니다. ${SAVE_HINT}`)
   }
 
-  return { cancelConnect, undoConnectPoint, applyConnectPoint, commitConnectOutline }
+  // 찍은 끝점(과 중간점) 사이의 짧은 윤곽만 베지어로 바꾼다. 자동 매핑이 교차 끝점을 못 찾을 때 쓴다.
+  function commitConnectBridge() {
+    const target = guardUnlocked()
+    if (!target) return
+    if (connectPoints.value.length < MIN_BRIDGE_POINTS) {
+      error.value = `교차 연결에는 끝점 둘 이상이 필요합니다.`
+      return
+    }
+    const marks = connectPoints.value.map(([x, y]) => ({ x, y }))
+    const idx = selectedStrokeIndex.value
+
+    if (isContourLayer(target)) {
+      const outline = target.paths[idx]
+      if (!outline) return
+      const path = spliceOutlineBridge(outline, marks)
+      if (!path) {
+        error.value = '윤곽에서 끝점 사이를 찾지 못했습니다. 끝점을 윤곽 가까이 찍어 주세요.'
+        return
+      }
+      connectPoints.value = []
+      const copy = target.paths.slice()
+      copy[idx] = path
+      updateTargetPaths(copy, `교차 끝점을 베지어로 연결했습니다. ${SAVE_HINT}`)
+      return
+    }
+
+    const stroke = target.strokes[idx]
+    if (!stroke?.outline_path) {
+      error.value = '연결할 획 윤곽이 없습니다.'
+      return
+    }
+    const path = spliceOutlineBridge(stroke.outline_path, marks)
+    if (!path) {
+      error.value = '윤곽에서 끝점 사이를 찾지 못했습니다. 끝점을 윤곽 가까이 찍어 주세요.'
+      return
+    }
+    connectPoints.value = []
+    editStroke(
+      idx,
+      (current) => ({ ...restrokeFromOutline(current, path), map_manual: 1 }),
+      `${idx + 1}획 교차 끝점을 베지어로 연결했습니다. ${SAVE_HINT}`,
+    )
+  }
+
+  return { cancelConnect, undoConnectPoint, applyConnectPoint, commitConnectOutline, commitConnectBridge }
 }

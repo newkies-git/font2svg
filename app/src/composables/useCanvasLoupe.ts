@@ -2,13 +2,83 @@ import { computed, ref } from 'vue'
 import { CANVAS } from '../../shared/constants.ts'
 import type { EditorTool, Pt } from '../../shared/types.ts'
 
-const LOUPE_ZOOM = 2.8
-const LOUPE_RADIUS = 58
-const LOUPE_OFFSET = 78
-// 돋보기가 캔버스 가장자리에서 떨어지는 여백과, 커서에서 우상단으로 비켜 놓는 비율
-const LOUPE_EDGE_MARGIN = 4
-const LOUPE_OFFSET_X_RATIO = 0.55
-const LOUPE_OFFSET_Y_RATIO = 0.75
+export const LOUPE_RADIUS = 108
+const LOUPE_ZOOM_MIN = 2
+const LOUPE_ZOOM_MAX = 8
+const LOUPE_ZOOM_STEP = 0.5
+const LOUPE_GAP = 36
+const LOUPE_MARGIN = 8
+// 렌즈 테두리와 커서 사이에 이만큼은 비워 둔다.
+const LOUPE_CLEAR = 16
+
+const LOUPE_TOOLS = new Set<EditorTool>(['bezier', 'median', 'knife', 'connect'])
+
+const loupeOn = ref(true)
+const loupeZoom = ref(4)
+
+export function isLoupeTool(tool: EditorTool): boolean {
+  return LOUPE_TOOLS.has(tool)
+}
+
+export function formatLoupeZoom(zoom: number): string {
+  return Number.isInteger(zoom) ? String(zoom) : zoom.toFixed(1)
+}
+
+export function nextLoupeZoom(current: number, deltaY: number): number {
+  const step = deltaY > 0 ? -LOUPE_ZOOM_STEP : LOUPE_ZOOM_STEP
+  const next = Math.round((current + step) / LOUPE_ZOOM_STEP) * LOUPE_ZOOM_STEP
+  return Math.min(LOUPE_ZOOM_MAX, Math.max(LOUPE_ZOOM_MIN, next))
+}
+
+function lensFits(cx: number, cy: number, canvas: number): boolean {
+  return cx - LOUPE_RADIUS >= LOUPE_MARGIN
+    && cy - LOUPE_RADIUS >= LOUPE_MARGIN
+    && cx + LOUPE_RADIUS <= canvas - LOUPE_MARGIN
+    && cy + LOUPE_RADIUS <= canvas - LOUPE_MARGIN
+}
+
+function clearsCursor(cx: number, cy: number, sx: number, sy: number): boolean {
+  return Math.hypot(cx - sx, cy - sy) >= LOUPE_RADIUS + LOUPE_CLEAR
+}
+
+// 커서를 가리지 않는 자리. 오른쪽 위를 먼저 보고, 캔버스를 벗어나면 다른 대각으로 넘긴다.
+export function placeLoupe(sx: number, sy: number, canvas = CANVAS): { cx: number; cy: number } {
+  const reach = LOUPE_RADIUS + LOUPE_GAP
+  const spots: Array<[number, number]> = [
+    [sx + reach, sy - reach],
+    [sx - reach, sy - reach],
+    [sx + reach, sy + reach],
+    [sx - reach, sy + reach],
+  ]
+  for (const [cx, cy] of spots) {
+    if (lensFits(cx, cy, canvas) && clearsCursor(cx, cy, sx, sy)) return { cx, cy }
+  }
+  const inset = LOUPE_MARGIN + LOUPE_RADIUS
+  const corners: Array<[number, number]> = [
+    [canvas - inset, inset],
+    [inset, inset],
+    [canvas - inset, canvas - inset],
+    [inset, canvas - inset],
+  ]
+  let best = corners[0]
+  let bestDist = -1
+  for (const corner of corners) {
+    const dist = Math.hypot(corner[0] - sx, corner[1] - sy)
+    if (dist > bestDist) {
+      bestDist = dist
+      best = corner
+    }
+  }
+  return { cx: best[0], cy: best[1] }
+}
+
+export function useLoupeControls() {
+  function toggleLoupe() {
+    loupeOn.value = !loupeOn.value
+  }
+
+  return { loupeOn, loupeZoom, toggleLoupe }
+}
 
 export function useCanvasLoupe(
   tool: () => EditorTool,
@@ -18,9 +88,7 @@ export function useCanvasLoupe(
   const loupeVisible = ref(false)
   const loupeFont = ref<Pt | null>(null)
 
-  const loupeEnabled = computed(
-    () => tool() === 'bezier' || tool() === 'median' || tool() === 'knife' || tool() === 'connect',
-  )
+  const loupeEnabled = computed(() => loupeOn.value && isLoupeTool(tool()))
 
   const loupeScreen = computed(() => {
     const pt = loupeFont.value
@@ -31,12 +99,7 @@ export function useCanvasLoupe(
   const loupeLens = computed(() => {
     const s = loupeScreen.value
     if (!s) return null
-    // 커서를 가리지 않도록 우상단으로 오프셋
-    const lowest = LOUPE_RADIUS + LOUPE_EDGE_MARGIN
-    const highest = CANVAS - lowest
-    const cx = Math.min(highest, Math.max(lowest, s.x + LOUPE_OFFSET * LOUPE_OFFSET_X_RATIO))
-    const cy = Math.min(highest, Math.max(lowest, s.y - LOUPE_OFFSET * LOUPE_OFFSET_Y_RATIO))
-    return { cx, cy, sx: s.x, sy: s.y }
+    return { ...placeLoupe(s.x, s.y), sx: s.x, sy: s.y }
   })
 
   function onCanvasPointerMove(event: PointerEvent) {
@@ -61,7 +124,7 @@ export function useCanvasLoupe(
     loupeVisible,
     loupeEnabled,
     loupeLens,
-    LOUPE_ZOOM,
+    loupeZoom,
     LOUPE_RADIUS,
     onCanvasPointerMove,
     onCanvasPointerLeave,

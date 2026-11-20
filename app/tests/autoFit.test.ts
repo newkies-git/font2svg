@@ -40,6 +40,16 @@ test('단일 획 맞춤은 선택한 획만 바꾼다', () => {
   assert.deepEqual(result.strokes[1], shaken[1])
 })
 
+test('단일 획은 궁서체 윤곽 그대로가 되고, 굽은 곳에는 중심선 점이 생긴다', () => {
+  const font = ['M 80 340 C 300 340 400 360 500 400 C 600 440 700 340 920 340 L 920 430 C 700 430 600 530 500 530 C 400 530 300 430 80 430 Z']
+  const ribbon = strokeOf(rectPath(80, 350, 920, 430), [[100, 390], [900, 390]])
+  const result = autoFitStroke([ribbon], font, 0)
+  assert.equal(result.strokes[0].outline_path, font[0])
+  assert.ok(result.after > result.before)
+  const bend = result.strokes[0].median_points.some(([, y]) => y > 430)
+  assert.ok(bend, `중심선이 활을 따르지 않음: ${JSON.stringify(result.strokes[0].median_points)}`)
+})
+
 test('원본 획 배열은 바꾸지 않는다(불변)', () => {
   const shaken = shake()
   const snapshot = JSON.stringify(shaken)

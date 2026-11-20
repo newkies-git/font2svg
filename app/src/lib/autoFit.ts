@@ -9,15 +9,16 @@ import {
   FIT_MARGIN,
   FIT_MAX_SWEEPS,
   FIT_MIN_GAIN,
-  FIT_REFINE_ROUNDS,
   FIT_STEP_ANGLE,
   FIT_STEP_DECAY,
   FIT_STEP_SCALE,
   FIT_STEP_SHEAR,
   FIT_STEP_SHIFT,
   CANVAS,
+  MEDIAN_SIMPLIFY_TOLERANCE,
 } from '../../shared/constants.ts'
-import { flattenContours } from '../../shared/paths.ts'
+import { flattenContours, round1 } from '../../shared/paths.ts'
+import { recoverMedian, segmentOutlineByMedians, simplifyPolyline } from '../../shared/strokeCut.ts'
 import { transformStroke } from './vectorEdit.ts'
 import type { Pt, StrokeRecord } from '../../shared/types.ts'
 
@@ -253,30 +254,99 @@ function refineStroke(stroke: StrokeRecord, region: Uint8Array): { stroke: Strok
   return fit.score > before ? { stroke: transformedStroke(stroke, fit.params, center), before, after: fit.score } : { stroke, before, after: before }
 }
 
+// 새 중심선의 시작을 기존 획의 시작 쪽에 둔다.
+function orientLike(points: Pt[], guide: Pt[]): Pt[] {
+  if (points.length < 2 || guide.length < 1) return points
+  const [gx, gy] = guide[0]
+  const first = Math.hypot(points[0][0] - gx, points[0][1] - gy)
+  const last = Math.hypot(points[points.length - 1][0] - gx, points[points.length - 1][1] - gy)
+  return last < first ? points.slice().reverse() : points
+}
+
+// 윤곽에서 중심선을 다시 잡고, 굽은 곳만 점으로 남긴다. 직선은 양 끝 두 점이다.
+function medianAlong(path: string, guide: Pt[], width: number): { points: Pt[]; width: number } | null {
+  const recovered = recoverMedian(path, width)
+  if (recovered.median.length < 2) return null
+  const simplified = simplifyPolyline(
+    recovered.median.map((point) => ({ x: point.x, y: point.y })),
+    MEDIAN_SIMPLIFY_TOLERANCE,
+  )
+  const points = orientLike(simplified.map((point): Pt => [round1(point.x), round1(point.y)]), guide)
+  return points.length >= 2 ? { points, width: recovered.width } : null
+}
+
+// 획 윤곽을 궁서체에서 그 획이 맡은 모양으로 바꾼다. 중심선은 그 윤곽을 따르게 점을 다시 잡는다.
+function snapStroke(stroke: StrokeRecord, piece: string, region: Uint8Array): { stroke: StrokeRecord; before: number; after: number } {
+  const before = iou(fillMask(strokeLoops(stroke)), region)
+  const path = piece.trim()
+  const median = path ? medianAlong(path, stroke.median_points, stroke.stroke_width) : null
+  if (path && median) {
+    const snapped: StrokeRecord = { ...stroke, outline_path: path, median_points: median.points, stroke_width: median.width }
+    const after = iou(fillMask(strokeLoops(snapped)), region)
+    if (after > before + FIT_MIN_GAIN) return { stroke: snapped, before, after }
+  }
+  return refineStroke(stroke, region)
+}
+
+function medianCenter(stroke: StrokeRecord): Pt | null {
+  const points = stroke.median_points
+  if (points.length === 0) return null
+  const sum = points.reduce((acc, [x, y]) => [acc[0] + x, acc[1] + y] as Pt, [0, 0] as Pt)
+  return [sum[0] / points.length, sum[1] / points.length]
+}
+
+// 윤곽 수와 획 수가 같으면 중심이 가까운 윤곽을 획에 그대로 붙인다. 벡터가 그대로라 픽셀 차이가 없다.
+function matchContours(strokes: StrokeRecord[], paths: string[]): string[] {
+  const centers = paths.map((path) => {
+    const loops = loopsOf([path])
+    return loops.length > 0 ? centroidOf(loops) : null
+  })
+  const used = new Set<number>()
+  return strokes.map((stroke) => {
+    const center = medianCenter(stroke)
+    let best = -1
+    let bestDist = Infinity
+    centers.forEach((candidate, index) => {
+      if (!candidate || !center || used.has(index)) return
+      const dist = (candidate[0] - center[0]) ** 2 + (candidate[1] - center[1]) ** 2
+      if (dist < bestDist) {
+        bestDist = dist
+        best = index
+      }
+    })
+    if (best < 0) return ''
+    used.add(best)
+    return paths[best]
+  })
+}
+
+// 획마다 궁서체 윤곽에서 그 획의 모양을 꺼낸다. 획이 하나면 글자 윤곽 전체가 그 획이다.
+function fontPieces(strokes: StrokeRecord[], fontPaths: string[]): string[] {
+  const paths = fontPaths.filter((path) => path.trim())
+  if (strokes.length <= 1) return [paths.join(' ')]
+  if (paths.length === strokes.length) return matchContours(strokes, paths)
+  const medians = strokes.map((stroke) => stroke.median_points.map(([x, y]) => ({ x, y })))
+  const split = segmentOutlineByMedians(paths, medians).strokes
+  return strokes.map((_, index) => split[index] ?? '')
+}
+
 const meanOf = (values: number[]) => (values.length === 0 ? 0 : values.reduce((s, v) => s + v, 0) / values.length)
 
-// 선택한 획 하나를, 그 획이 맡은 궁서체 영역에 맞춘다.
+// 선택한 획 하나의 윤곽을, 그 획이 맡은 궁서체 모양으로 바꾼다.
 export function autoFitStroke(strokes: StrokeRecord[], fontPaths: string[], index: number): FitResult {
   const fontMask = fillMask(loopsOf(fontPaths))
   const regions = assignRegions(fontMask, strokes)
-  const result = refineStroke(strokes[index], regions[index])
+  const result = snapStroke(strokes[index], fontPieces(strokes, fontPaths)[index] ?? '', regions[index])
   return { strokes: strokes.map((s, i) => (i === index ? result.stroke : s)), before: result.before, after: result.after }
 }
 
-// 레이어 전체: 먼저 글자 전체 면적에 맞는 아핀 변환을 구하고, 이어서 획마다 영역을 다시 배정하며 보정한다.
+// 레이어의 획마다 맡은 궁서체 모양으로 윤곽을 바꾼다. 모양을 나누지 못한 획만 위치·크기를 옮긴다.
 export function autoFitLayer(strokes: StrokeRecord[], fontPaths: string[]): FitResult {
   const fontMask = fillMask(loopsOf(fontPaths))
-  const allLoops = strokes.flatMap(strokeLoops)
-  const center = centroidOf(allLoops)
   const beforeRegions = assignRegions(fontMask, strokes)
   const before = meanOf(strokes.map((stroke, i) => iou(fillMask(strokeLoops(stroke)), beforeRegions[i])))
-  const global = optimize(allLoops, center, fontMask, IDENTITY)
-  let current = global.score > iou(fillMask(allLoops), fontMask) ? strokes.map((s) => transformedStroke(s, global.params, center)) : strokes
-
-  for (let round = 0; round < FIT_REFINE_ROUNDS; round++) {
-    const regions = assignRegions(fontMask, current)
-    current = current.map((stroke, i) => refineStroke(stroke, regions[i]).stroke)
-  }
+  const pieces = fontPieces(strokes, fontPaths)
+  const current = strokes.map((stroke, i) => snapStroke(stroke, pieces[i] ?? '', beforeRegions[i]).stroke)
   const finalRegions = assignRegions(fontMask, current)
   const after = meanOf(current.map((stroke, i) => iou(fillMask(strokeLoops(stroke)), finalRegions[i])))
   return { strokes: current, before, after }

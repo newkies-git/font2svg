@@ -3,9 +3,8 @@ import path from 'node:path'
 import { OLLAMA_TIMEOUT_MS } from '../shared/constants.ts'
 import type { Box } from './geometry.ts'
 
-export const IDS_URL = 'https://www.babelstone.co.uk/CJK/IDS.TXT'
+const IDS_URL = 'https://www.babelstone.co.uk/CJK/IDS.TXT'
 export const IDS_FILE = path.join('database', 'IDS.TXT')
-export const IDS_HEADER = 'Ideographic Description Sequences'
 
 // 공개 IDS에 없는 글자를 사람이 직접 적어 두는 곳.
 export const IDS_BOOK: Record<string, string> = {
@@ -18,9 +17,12 @@ export const LEAF_FORMS: Record<string, string> = {
 }
 
 
-const OLLAMA_URL = 'http://127.0.0.1:11434/api/generate'
-const OLLAMA_MODEL = 'qwen3.5:9b'
+export const OLLAMA_BASE_URL = 'http://127.0.0.1:11434'
+const OLLAMA_URL = `${OLLAMA_BASE_URL}/api/generate`
+const OLLAMA_TAGS_URL = `${OLLAMA_BASE_URL}/api/tags`
+export const OLLAMA_MODEL = 'qwen3.5:9b'
 const OLLAMA_SEED = 1
+const OLLAMA_STATUS_TIMEOUT_MS = 3000
 const OLLAMA_IDS_SCHEMA = {
   type: 'object',
   properties: { ids: { type: 'string' } },
@@ -92,14 +94,60 @@ export function parseIdsFile(text: string): Map<string, string[]> {
   return index
 }
 
-export async function askOllama(char: string): Promise<string | null> {
+export type OllamaStatusResult = {
+  connected: boolean
+  models: string[]
+  defaultModel: string
+  url: string
+  error?: string
+}
+
+export async function listOllamaStatus(): Promise<OllamaStatusResult> {
+  try {
+    const response = await fetch(OLLAMA_TAGS_URL, {
+      method: 'GET',
+      signal: AbortSignal.timeout(OLLAMA_STATUS_TIMEOUT_MS),
+    })
+    if (!response.ok) {
+      return {
+        connected: false,
+        models: [],
+        defaultModel: OLLAMA_MODEL,
+        url: OLLAMA_BASE_URL,
+        error: `Ollama 서버 응답 오류 (HTTP ${response.status})`,
+      }
+    }
+    const data = (await response.json()) as { models?: Array<{ name?: unknown }> }
+    const allModels = (data.models ?? [])
+      .map((item) => (typeof item.name === 'string' ? item.name : ''))
+      .filter(Boolean)
+    const generationModels = allModels.filter((name) => !name.toLowerCase().includes('embedding'))
+    const models = generationModels.length > 0 ? generationModels : allModels
+    return {
+      connected: true,
+      models,
+      defaultModel: models.includes(OLLAMA_MODEL) ? OLLAMA_MODEL : (models[0] ?? OLLAMA_MODEL),
+      url: OLLAMA_BASE_URL,
+    }
+  } catch {
+    return {
+      connected: false,
+      models: [],
+      defaultModel: OLLAMA_MODEL,
+      url: OLLAMA_BASE_URL,
+      error: `로컬 Ollama(${OLLAMA_BASE_URL})에 연결할 수 없습니다. Ollama가 실행 중인지 확인하세요.`,
+    }
+  }
+}
+
+export async function askOllama(char: string, model = OLLAMA_MODEL): Promise<string | null> {
   try {
     const response = await fetch(OLLAMA_URL, {
       method: 'POST',
       signal: AbortSignal.timeout(OLLAMA_TIMEOUT_MS),
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: OLLAMA_MODEL,
+        model,
         stream: false,
         think: false,
         format: OLLAMA_IDS_SCHEMA,

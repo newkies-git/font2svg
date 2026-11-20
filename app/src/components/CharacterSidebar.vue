@@ -51,7 +51,7 @@ function onSearchKeyDown(event: KeyboardEvent) {
         <ThemeSwitch :mode="themeMode" @select="emit('selectTheme', $event)" />
       </div>
 
-      <div class="search-box">
+      <search class="search-box">
         <label for="char-search" class="visually-hidden">한자, 독음, 유니코드 검색</label>
         <div class="search-input-wrap">
           <svg class="search-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -61,6 +61,7 @@ function onSearchKeyDown(event: KeyboardEvent) {
           <input
             id="char-search"
             v-model="query"
+            name="q"
             type="search"
             class="search"
             placeholder="한자 · 독음 · U+코드"
@@ -82,7 +83,7 @@ function onSearchKeyDown(event: KeyboardEvent) {
             ✕
           </button>
         </div>
-      </div>
+      </search>
 
       <div class="filter-tabs" role="tablist" aria-label="상태별 필터">
         <button

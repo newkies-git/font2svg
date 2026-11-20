@@ -103,6 +103,7 @@
     color: var(--color-text-main);
     background-color: var(--color-bg-canvas);
     font-family: var(--font-sans);
+    font-size-adjust: from-font;
     font-synthesis: none;
     line-height: 1.4;
     text-rendering: optimizeLegibility;
@@ -671,6 +672,12 @@
     white-space: nowrap;
   }
 
+  .bar-btn.on {
+    background-color: var(--color-primary-subtle);
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+  }
+
   .btn-count,
   .dirty-badge {
     font-size: 0.65rem;
@@ -835,12 +842,43 @@
     container-type: size;
   }
 
-  .layer-canvas-svg {
-    /* 뷰포트가 좁아도 정사각 유지: 짧은 변에 맞춤 */
+  .canvas-frame {
+    position: relative;
     inline-size: min(100cqw, 100cqh);
     block-size: min(100cqw, 100cqh);
-    max-inline-size: 100%;
-    max-block-size: 100%;
+  }
+
+  .canvas-zoom-bar {
+    position: absolute;
+    inset-block-start: 8px;
+    inset-inline-start: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    z-index: 2;
+  }
+
+  .zoom-hint {
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--color-primary);
+    background-color: var(--color-bg-surface);
+    border: 1px solid var(--color-primary);
+    border-radius: var(--radius-sm);
+    padding: 3px 8px;
+  }
+
+  .zoom-marquee {
+    fill: rgba(37, 99, 235, 0.14);
+    stroke: #2563eb;
+    stroke-width: 2px;
+    pointer-events: none;
+  }
+
+  .layer-canvas-svg {
+    /* 뷰포트가 좁아도 정사각 유지: 짧은 변에 맞춤 */
+    inline-size: 100%;
+    block-size: 100%;
     aspect-ratio: 1 / 1;
     background-color: var(--color-bg-surface);
     border: 1px solid var(--color-border-strong);
@@ -863,6 +901,10 @@
 
   .layer-canvas-svg[data-tool="select"] {
     cursor: move;
+  }
+
+  .layer-canvas-svg[data-zoom="armed"] {
+    cursor: crosshair;
   }
 
   .layer-canvas-svg text {
@@ -973,10 +1015,10 @@
     block-size: 12px;
   }
 
-  /* ---- 3C. Right Docked Inspector: [LayersPane | StrokesPane] ---- */
+  /* ---- 3C. Right Docked Inspector: [LayersPane | StrokesPane | OllamaBar] ---- */
   .inspector-dock {
     display: grid;
-    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto;
     background-color: var(--color-bg-surface);
     border-inline-start: 1px solid var(--color-border-subtle);
     min-block-size: 0;
@@ -1774,6 +1816,7 @@
     fill: var(--layer-fill, light-dark(rgba(148, 163, 184, 0.42), rgba(148, 163, 184, 0.32)));
     stroke: var(--layer-accent, light-dark(#64748b, #94a3b8));
     stroke-width: 1.75px;
+    vector-effect: non-scaling-stroke;
   }
 
   .ink-stroke.radical-stroke {
@@ -1812,12 +1855,14 @@
     fill: var(--layer-fill, var(--color-svg-outline-fill));
     stroke: var(--layer-accent, var(--color-svg-outline-stroke));
     stroke-width: 1.75px;
+    vector-effect: non-scaling-stroke;
   }
 
   .ref-outline {
     fill: var(--layer-fill, rgba(56, 189, 248, 0.2));
     stroke: var(--layer-accent, #0284c7);
     stroke-width: 1.75px;
+    vector-effect: non-scaling-stroke;
   }
 
   .ref-outline.is-radical {
@@ -2046,7 +2091,7 @@
 
   .loupe-cross {
     stroke: #ef4444;
-    stroke-width: 1.6px;
+    stroke-width: 1.75px;
     opacity: 0.85;
   }
 
@@ -2058,8 +2103,15 @@
   }
 
   .loupe-focus {
-    fill: #ef4444;
-    opacity: 0.9;
+    fill: none;
+    stroke: #ef4444;
+    stroke-width: 1.75px;
+  }
+
+  .layer-canvas-svg text.loupe-zoom {
+    font-size: 18px;
+    font-weight: 700;
+    fill: var(--color-text-main);
   }
 
   /* ==== 5. Modal Dialog ==== */
@@ -2075,6 +2127,8 @@
   }
 
   dialog::backdrop {
+    overflow: hidden;
+    overscroll-behavior: contain;
     background: rgba(0, 0, 0, 0.48);
     backdrop-filter: blur(2px);
   }
@@ -2085,7 +2139,7 @@
     font-weight: 700;
   }
 
-  .dialog-content p {
+  .dialog-content :where(p) {
     margin: 0 0 16px;
     font-size: 0.84rem;
     line-height: 1.5;
@@ -2096,6 +2150,271 @@
     display: flex;
     justify-content: flex-end;
     gap: 8px;
+  }
+
+  /* ==== 6. Local Ollama Status & IDS Dialog ==== */
+  .ollama-status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 8px;
+    min-block-size: 20px;
+    border-radius: 9999px;
+    border: 1px solid var(--color-border-strong);
+    background-color: var(--color-bg-surface);
+    color: var(--color-text-muted);
+    font-size: 0.7rem;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .ollama-status-pill:hover {
+    background-color: var(--color-bg-hover);
+    color: var(--color-text-main);
+  }
+
+  .ollama-status-pill.is-ok {
+    border-color: var(--color-status-approved);
+    color: var(--color-status-approved);
+    background-color: var(--color-status-approved-bg);
+  }
+
+  .ollama-dot {
+    inline-size: 7px;
+    block-size: 7px;
+    border-radius: 50%;
+    background-color: var(--color-text-subtle);
+  }
+
+  .is-ok .ollama-dot {
+    background-color: var(--color-status-approved);
+  }
+
+  dialog.ollama-dialog:modal {
+    max-inline-size: min(92vw, 480px);
+    inline-size: 100%;
+  }
+
+  .ollama-dialog-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+    margin-block-end: 12px;
+  }
+
+  .ollama-char-sub {
+    margin: 4px 0 0;
+    font-size: 0.8rem;
+  }
+
+  .ollama-conn-wrap {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  .ollama-conn-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 8px;
+    border-radius: 9999px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    background-color: var(--color-bg-subtle);
+    color: var(--color-text-muted);
+  }
+
+  .ollama-conn-badge.is-ok {
+    background-color: var(--color-status-approved-bg);
+    color: var(--color-status-approved);
+  }
+
+  .ollama-conn-badge.is-off {
+    background-color: var(--color-danger-subtle);
+    color: var(--color-danger);
+  }
+
+  .ollama-refresh-btn {
+    padding: 4px 8px;
+    font-size: 0.72rem;
+  }
+
+  .ollama-warn {
+    padding: 8px 10px;
+    border-radius: var(--radius-md);
+    background-color: var(--color-status-draft-bg);
+    color: var(--color-text-main);
+    font-size: 0.78rem;
+    margin-block-end: 12px;
+  }
+
+  .ollama-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-block-end: 14px;
+  }
+
+  .ollama-field label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--color-text-muted);
+  }
+
+  .ollama-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .ollama-row select,
+  .ollama-row input {
+    flex: 1;
+    min-inline-size: 0;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-md);
+    padding: 7px 10px;
+    background-color: var(--color-bg-surface);
+    color: var(--color-text-main);
+    font-size: 0.85rem;
+    font-weight: 600;
+  }
+
+  .ids-op-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  .ids-op-btn {
+    padding: 4px 7px;
+    font-size: 0.85rem;
+    line-height: 1.1;
+    min-inline-size: 28px;
+    background-color: var(--color-bg-subtle);
+  }
+
+  .ollama-preview {
+    padding: 8px 10px;
+    border-radius: var(--radius-md);
+    font-size: 0.8rem;
+    font-weight: 600;
+    margin-block-end: 14px;
+  }
+
+  .ollama-preview.is-ready {
+    background-color: var(--color-status-approved-bg);
+    color: var(--color-status-approved);
+  }
+
+  .ollama-preview.is-fail {
+    background-color: var(--color-status-draft-bg);
+    color: var(--color-status-draft);
+  }
+
+  .ollama-fieldset {
+    border: 0;
+    margin: 0 0 14px;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .ollama-fieldset legend {
+    padding: 0;
+    margin-block-end: 6px;
+  }
+
+  .ollama-field-label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--color-text-muted);
+  }
+
+  .source-choice-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .source-choice-btn {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 3px;
+    padding: 10px 12px;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-md);
+    background-color: var(--color-bg-surface);
+    text-align: start;
+    cursor: pointer;
+  }
+
+  .source-choice-btn strong {
+    font-size: 0.85rem;
+    color: var(--color-text-main);
+  }
+
+  .source-choice-btn span {
+    font-size: 0.72rem;
+    color: var(--color-text-muted);
+  }
+
+  .source-choice-btn:has(:checked) {
+    border-color: var(--color-primary);
+    background-color: var(--color-primary-subtle);
+  }
+
+  .source-choice-btn:has(:checked) strong {
+    color: var(--color-primary);
+  }
+
+  .source-choice-btn:has(:focus-visible) {
+    outline: 2px solid var(--focus-ring-color);
+    outline-offset: var(--focus-ring-offset);
+  }
+
+  /* Right Sidebar Bottom Ollama Bar */
+  .inspector-ollama-bar {
+    border-block-start: 1px solid var(--color-border-strong);
+    background-color: var(--color-bg-subtle);
+    padding: 8px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .inspector-ollama-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .ollama-dock-title {
+    margin: 0;
+    font-size: 0.72rem;
+    font-weight: 800;
+    color: var(--color-text-muted);
+    letter-spacing: 0.01em;
+  }
+
+  .inspector-ollama-actions {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 6px;
+  }
+
+  .ollama-dock-btn {
+    padding: 6px 10px;
+    font-size: 0.76rem;
+    font-weight: 700;
+    border-radius: var(--radius-md);
   }
 }
 
@@ -2128,6 +2447,23 @@
   @media (prefers-reduced-motion: reduce) {
     button {
       transition: none;
+    }
+    progress.loading-spinner:indeterminate {
+      animation-duration: 3s;
+    }
+  }
+
+  @media (forced-colors: active) {
+    :where(a:any-link, button, input, select, summary):focus-visible,
+    .source-choice-btn:has(:focus-visible) {
+      outline: 2px solid Highlight;
+    }
+    button.primary,
+    .char.active,
+    .tab-btn.active,
+    .layer-row.is-active,
+    .source-choice-btn:has(:checked) {
+      outline: 2px solid Highlight;
     }
   }
 

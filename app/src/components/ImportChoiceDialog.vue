@@ -7,12 +7,14 @@ let resolveAsk: ((value: 'replace' | 'append' | null) => void) | null = null
 function ask(): Promise<'replace' | 'append' | null> {
   return new Promise((resolve) => {
     resolveAsk = resolve
+    if (dialog.value) dialog.value.returnValue = ''
     dialog.value?.showModal()
   })
 }
 
 function onClose() {
   const value = dialog.value?.returnValue
+  if (dialog.value) dialog.value.returnValue = ''
   resolveAsk?.(value === 'replace' || value === 'append' ? value : null)
   resolveAsk = null
 }
