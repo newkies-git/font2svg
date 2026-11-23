@@ -1,5 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite'
 import { DEFAULT_STROKE_WIDTH, LAYER_ID } from '../shared/constants.ts'
+import { matchStrokeOrder, reorderByMatch } from '../shared/strokeOrder.ts'
 import type { LayerRecord, StrokeRecord } from '../shared/types.ts'
 import { contourIndicesOfOutline, contourLoopsOf, ribbonPath, splitOutlinePieces } from './geometry.ts'
 import { fontContoursOf, fontFingerprint } from './layers.ts'
@@ -9,11 +10,26 @@ import { requireFound } from './model.ts'
 const OUTLINE_LAYER_ID = LAYER_ID.outline
 const SOURCE_FALLBACK_IDS = [LAYER_ID.naver, LAYER_ID.mmh] as const
 
-// 중심선 길잡이로 쓸 레이어: 지정한 레이어 → 작업 획 → 네이버 → MMH 순으로 획이 있는 첫 레이어.
+// 네이버와 Hanzi 레이어의 획 수가 같으면, 모양은 Hanzi(굵기·시작·끝·꺾임) 순서는 네이버를 따른 길잡이 레이어를 만든다.
+function orderedReferenceLayer(layers: LayerRecord[]): LayerRecord | null {
+  const naver = layers.find((item) => item.id === LAYER_ID.naver)
+  const mmh = layers.find((item) => item.id === LAYER_ID.mmh)
+  if (!naver || !mmh) return null
+  const match = matchStrokeOrder(naver.strokes.map((stroke) => stroke.median_points), mmh.strokes.map((stroke) => stroke.median_points))
+  if (!match) return null
+  const strokes = reorderByMatch(mmh.strokes, match).map((stroke, index) => ({ ...stroke, stroke_order: index + 1 }))
+  return { ...mmh, strokes }
+}
+
+// 중심선 길잡이로 쓸 레이어: 지정한 레이어 → 작업 획 → (네이버 순서+Hanzi 모양) → 네이버 → MMH 순으로 획이 있는 첫 레이어.
 function pickGuideLayer(layers: LayerRecord[], sourceLayerId?: string): LayerRecord {
-  const ids = [sourceLayerId, LAYER_ID.strokes, ...SOURCE_FALLBACK_IDS].filter((id): id is string => Boolean(id))
-  for (const id of ids) {
-    const layer = layers.find((item) => item.id === id)
+  const ids = [sourceLayerId, LAYER_ID.strokes].filter((id): id is string => Boolean(id))
+  const candidates = [
+    ...ids.map((id) => layers.find((item) => item.id === id)),
+    sourceLayerId ? undefined : orderedReferenceLayer(layers),
+    ...SOURCE_FALLBACK_IDS.map((id) => layers.find((item) => item.id === id)),
+  ]
+  for (const layer of candidates) {
     if (layer && layer.strokes.length > 0) return layer
   }
   throw new Error('중심선을 가져올 획 데이터가 있는 레이어가 없습니다. 네이버/Hanzi 레이어를 먼저 수신하세요.')

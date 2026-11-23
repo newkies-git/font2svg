@@ -5,13 +5,13 @@ import { DatabaseSync } from 'node:sqlite'
 import { BENCH_SAMPLE_SIZE, CANVAS, LAYER_ID } from '../shared/constants.ts'
 import { measureExtraction, measureOutline, summarizeExtraction, type CharMeasure } from '../server/extractMetrics.ts'
 import { loadFont } from '../server/font.ts'
-import { hanjaStrokes, parseHanja } from '../server/references.ts'
+import { orderedGlyph } from '../server/referenceMerge.ts'
+import { parseHanja } from '../server/references.ts'
 import { fitGuideToFont } from '../server/geometry.ts'
 import type { Pt } from '../shared/types.ts'
-import { REFERENCE_PRIORITY } from '../shared/layerKind.ts'
 
-// 궁서체 윤곽에 참고 중심선(NAVER 우선)을 맞춰 획을 나눈 결과를 숫자로 잰다. DB는 읽기만 한다.
-// 사람이 그린 참고 윤곽(NAVER)을 기준선으로 같이 보여, 추출 결과가 얼마나 다른지 본다.
+// 궁서체 윤곽에 참고 중심선(획순 NAVER, 모양 Hanzi)을 맞춰 획을 나눈 결과를 숫자로 잰다. DB는 읽기만 한다.
+// 사람이 그린 참고 윤곽(Hanzi)을 기준선으로 같이 보여, 추출 결과가 얼마나 다른지 본다.
 // 사용법: npm run bench:extract [-- --size 200] [-- --out 결과.json] [-- --sheet 접촉시트.svg]
 const appDir = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
 const rootDir = path.join(appDir, '..')
@@ -31,14 +31,11 @@ const font = loadFont(path.join(appDir, 'fonts', 'Gungseouche.ttf'))
 if (!font) throw new Error('궁서체 폰트(app/fonts/Gungseouche.ttf)가 없습니다')
 const db = new DatabaseSync(path.join(rootDir, 'database', 'chusa1817.db'), { readOnly: true })
 
-// 같은 글자에 출처가 여럿이면 REFERENCE_PRIORITY 순으로 첫 번째 것을 쓴다.
-const sourceRank = (source: string) => REFERENCE_PRIORITY.indexOf(source as (typeof REFERENCE_PRIORITY)[number])
-const rows = db.prepare(`SELECT c.char, r.source, r.raw_data FROM characters c JOIN reference_data r ON r.unicode = c.unicode WHERE r.found = 1 AND r.source IN (${REFERENCE_PRIORITY.map(() => '?').join(',')}) ORDER BY c.unicode`).all(...REFERENCE_PRIORITY) as { char: string; source: string; raw_data: string }[]
-const best = new Map<string, { source: string; raw: string }>()
-for (const row of rows) {
-  const held = best.get(row.char)
-  if (!held || sourceRank(row.source) < sourceRank(held.source)) best.set(row.char, { source: row.source, raw: row.raw_data })
-}
+// 길잡이는 실제 쓰는 방식과 같게 만든다: 획순은 NAVER, 모양은 Hanzi(획 수가 다르거나 Hanzi가 없으면 NAVER). NAVER가 없는 글자는 뺀다.
+const rows = db.prepare(`SELECT c.char, r.source, r.raw_data FROM characters c JOIN reference_data r ON r.unicode = c.unicode WHERE r.found = 1 AND r.source IN ('NAVER', 'MMH') ORDER BY c.unicode`).all() as { char: string; source: string; raw_data: string }[]
+const best = new Map<string, { NAVER?: string; MMH?: string }>()
+for (const row of rows) best.set(row.char, { ...best.get(row.char), [row.source]: row.raw_data })
+for (const [char, sources] of best) if (!sources.NAVER) best.delete(char)
 const candidates = [...best.keys()]
 // 앞에서부터 고르게 size자를 뽑는다(같은 입력이면 같은 표본이라 전후 비교가 된다).
 const step = Math.max(1, Math.floor(candidates.length / size))
@@ -52,8 +49,9 @@ const sheet: { char: string; outlines: string[] }[] = []
 const started = Date.now()
 for (const char of sample) {
   const contours = font.contours(char)
-  const glyph = parseHanja(best.get(char)!.raw)
-  const guide = glyph && hanjaStrokes(glyph)
+  const sources = best.get(char)!
+  const naver = parseHanja(sources.NAVER!)
+  const guide = naver && orderedGlyph(naver, sources.MMH ? parseHanja(sources.MMH) : null)
   if (!contours || !guide) continue
   for (const outline of guide.outlines) {
     const counted = measureOutline(outline)
@@ -64,7 +62,7 @@ for (const char of sample) {
   measures.push(measureExtraction(char, contours, guide.medians))
   if (sheetFile) sheet.push({ char, outlines: fitGuideToFont(contours, guide.medians)?.outlines ?? [] })
 }
-const summary = { ...summarizeExtraction(measures, { vertices: referenceVertices, curveRatios: referenceCurveRatios, medians: referenceMedians }), seconds: Number(((Date.now() - started) / 1000).toFixed(1)), referenceLayer: LAYER_ID.naver }
+const summary = { ...summarizeExtraction(measures, { vertices: referenceVertices, curveRatios: referenceCurveRatios, medians: referenceMedians }), seconds: Number(((Date.now() - started) / 1000).toFixed(1)), referenceShape: 'MMH', referenceOrder: LAYER_ID.naver }
 console.log(JSON.stringify(summary, null, 2))
 if (outFile) fs.writeFileSync(outFile, JSON.stringify(summary, null, 2) + '\n')
 if (sheetFile) fs.writeFileSync(sheetFile, contactSheet(sheet))

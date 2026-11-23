@@ -136,7 +136,7 @@ test('ollama-ids 라우트: 추론 미리보기(infer)와 작업 획 적용(appl
   }
 })
 
-test('IDS 합성: 부품 획을 같은 글자의 Hanzi와 NAVER 중 NAVER 획순에서 가져온다', async () => {
+test('IDS 합성: 부품 획의 모양은 Hanzi, 순서는 NAVER에서 가져오고 Hanzi가 없으면 NAVER를 쓴다', async () => {
   const dir = tempDir()
   const ws = createWorkspace(dir)
   const side = new DatabaseSync(path.join(dir, 'database', 'chusa1817.db'))
@@ -145,14 +145,19 @@ test('IDS 합성: 부품 획을 같은 글자의 Hanzi와 NAVER 중 NAVER 획순
     // 같은 부품 '一'에 출처마다 다른 중심선을 둔다: NAVER는 가로, Hanzi는 대각선.
     const insert = side.prepare(`INSERT INTO reference_data (unicode, source, source_version, raw_data, found) VALUES ('U+4E00', ?, 'test', ?, 1)`)
     const glyph = (median: number[][]) => JSON.stringify({ strokes: ['M 100 450 L 900 450 L 900 550 L 100 550 Z'], medians: [median] })
-    insert.run('MMH', glyph([[100, 100], [900, 900]]))
     insert.run('NAVER', glyph([[100, 500], [900, 500]]))
-    const detail = await ws.applyOllamaIds('U+4E8C', { ids: '⿱一一' })
-    assert.ok(detail)
-    assert.equal(detail.strokes.length, 2)
-    for (const stroke of detail.strokes) {
+    const naverOnly = await ws.applyOllamaIds('U+4E8C', { ids: '⿱一一' })
+    assert.ok(naverOnly)
+    for (const stroke of naverOnly.strokes) {
+      assert.equal(stroke.median_points[0][1], stroke.median_points[stroke.median_points.length - 1][1], 'Hanzi가 없으면 가로 중심선(NAVER)이다')
+    }
+    insert.run('MMH', glyph([[100, 100], [900, 900]]))
+    const merged = await ws.applyOllamaIds('U+4E8C', { ids: '⿱一一' })
+    assert.ok(merged)
+    assert.equal(merged.strokes.length, 2)
+    for (const stroke of merged.strokes) {
       const [first, last] = [stroke.median_points[0], stroke.median_points[stroke.median_points.length - 1]]
-      assert.equal(first[1], last[1], '가로 중심선(NAVER)이어야 한다')
+      assert.notEqual(first[1], last[1], '획 수가 같으면 모양은 Hanzi(대각선)여야 한다')
     }
   } finally {
     side.close()

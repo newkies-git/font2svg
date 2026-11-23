@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
 import { DEFAULT_STROKE_WIDTH } from '../shared/constants.ts'
-import { referenceRank } from '../shared/layerKind.ts'
+import { orderedGlyph } from './referenceMerge.ts'
 import type { Pt, WriteMode } from '../shared/types.ts'
 import { parseWriteMode } from '../shared/writeMode.ts'
 import { transaction } from './db.ts'
@@ -80,14 +80,17 @@ export function createOllamaIdsPipeline(
           JOIN characters c ON c.unicode = r.unicode
           WHERE c.char = ? AND r.found = 1 AND r.raw_data IS NOT NULL
         `).all(char) as Array<{ source: string; raw_data: string }>
-        refRows.sort((a, b) => referenceRank(a.source) - referenceRank(b.source))
-
-        for (const row of refRows) {
-          const glyph = parseHanja(row.raw_data)
-          const imported = glyph ? hanjaStrokes(glyph) : null
-          if (imported && imported.medians.length > 0) return imported.medians
+        const glyphOf = (source: string) => {
+          const row = refRows.find((item) => item.source === source)
+          return row ? parseHanja(row.raw_data) : null
         }
-        return []
+        // 획순은 NAVER, 모양은 Hanzi를 따른다(orderedGlyph). NAVER가 없으면 Hanzi를 그대로 쓴다.
+        const naver = glyphOf('NAVER')
+        const merged = naver ? orderedGlyph(naver, glyphOf('MMH')) : null
+        if (merged) return merged.medians
+        const mmh = glyphOf('MMH')
+        const imported = mmh ? hanjaStrokes(mmh) : null
+        return imported && imported.medians.length > 0 ? imported.medians : []
       },
       decompositions(char: string): string[] {
         const manual = IDS_BOOK[char]

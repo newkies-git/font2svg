@@ -15,11 +15,11 @@ import {
   ACTOR_USER,
 } from './model.ts'
 import { readReferenceRow } from './lookups.ts'
+import { orderedGlyph } from './referenceMerge.ts'
 import {
   fetchHanja,
   fetchNaver,
   HANJA_VERSION,
-  hanjaStrokes,
   hanjaUrl,
   NAVER_VERSION,
   naverUrl,
@@ -157,19 +157,20 @@ export function createReferencePipeline(
     })
   }
 
-  // 획순이 틀린 글자를 사람이 지정해 네이버 한자사전 획순으로 바꾼다. 사람이 고친 글자도 바꾸며(실행 취소로 되돌린다),
+  // 획순이 틀린 글자를 사람이 지정해 네이버 한자사전 획순으로 바꾼다. 획의 모양(굵기·시작·끝·꺾임)은 Hanzi를 쓰고 순서만 네이버를 따른다(orderedGlyph).
+  // 사람이 고친 글자도 바꾸며(실행 취소로 되돌린다),
   // 바뀌기 전 strokes 행은 strokes_history에 남고 같은 글자의 작업 데이터는 지워진다. 네이버에 없으면 아무것도 바꾸지 않는다.
   // write가 append이고 작업 획이 있으면 기존 획 뒤에 붙인다. 비어 있으면 교체와 같다.
   async function applyNaver(unicode: string, write: WriteMode = 'replace') {
     const character = strokes.requireCharacter(unicode)
     const naver = await loadSource(unicode, 'NAVER', naverUrl(character.char), () => fetchNaver(character.char))
-    const imported = naver ? hanjaStrokes(naver.value) : null
-    if (!naver || !imported) throw new Error('네이버 한자사전에서 이 글자의 획순을 찾지 못했습니다.')
-    const fitted = fitOrGiven(character.char, imported.medians, imported.outlines)
-    const items = toItems(fitted.glyph, new Set(naver.value.radical))
+    const ordered = naver ? orderedGlyph(naver.value, (await loadSource(unicode, 'MMH', hanjaUrl(character.char), () => fetchHanja(character.char)))?.value ?? null) : null
+    if (!naver || !ordered) throw new Error('네이버 한자사전에서 이 글자의 획순을 찾지 못했습니다.')
+    const fitted = fitOrGiven(character.char, ordered.medians, ordered.outlines)
+    const items = toItems(fitted.glyph, new Set(ordered.radical))
     const kept = strokes.appendStrokes(unicode, write, items, ACTION_NAVER)
     if (kept !== null) return { unmatched: fitted.unmatched.map((order) => order + kept), status: fitted.status }
-    saveImported(unicode, 'NAVER', naver.url, naver.value.radical, fitted.glyph, ACTION_NAVER)
+    saveImported(unicode, 'NAVER', naver.url, ordered.radical, fitted.glyph, ACTION_NAVER)
     return { unmatched: fitted.unmatched, status: fitted.status }
   }
 

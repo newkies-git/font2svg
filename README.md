@@ -28,7 +28,7 @@ npm run dev        # http://localhost:5173 (API는 Vite 개발 서버가 같이 
 | `npm run lint` | ESLint(버그 가능성이 있는 패턴만 검사, 형식 규칙 없음. `.ts`에는 기다리지 않은 Promise를 잡는 타입 기반 규칙 포함) |
 | `npm run knip` | 안 쓰는 파일·export·의존성 검사 |
 | `npm run backup` | `database/chusa1817.backup-<시각>.db`로 DB 백업 |
-| `npm run bench:extract` | 궁서체 윤곽을 참고 중심선(NAVER 우선)으로 나눈 결과의 품질 지표(정점 수·곡선 비율·중심선 꺾임/되돌림·파편·띠 대체)를 잰다. DB는 읽기만 하며 `-- --out 파일.json`, `-- --sheet 접촉시트.svg`를 줄 수 있다. 기준값은 `docs/benchmarks/extract-baseline.json` |
+| `npm run bench:extract` | 궁서체 윤곽을 참고 중심선(획순 NAVER, 모양 Hanzi)으로 나눈 결과의 품질 지표(정점 수·곡선 비율·중심선 꺾임/되돌림·파편·띠 대체)를 잰다. DB는 읽기만 하며 `-- --out 파일.json`, `-- --sheet 접촉시트.svg`를 줄 수 있다. 기준값은 `docs/benchmarks/extract-baseline.json` |
 
 CI(`.github/workflows/ci.yml`)는 타입 검사·lint·knip·테스트·빌드를 돌린다.
 
@@ -48,7 +48,7 @@ output/     컴파일 산출물(`compiled/<글자>.json`, `.svg`). 개발 서버
 
 ### 레이어
 
-한 글자는 여러 레이어로 보인다: 궁서체(FONT), 획 윤곽(OUTLINE, 궁서체 윤곽 ↔ 획 매핑), 외부 레퍼런스(Hanzi MMH · 네이버 획순. 획 정보는 네이버 우선, AnimCJK는 참고 문서만 `docs/references/animcjk.md`에 둔다), 작업 획(STROKES), 중심선·번호 오버레이, 사용자 레이어(CUSTOM). 레퍼런스 종류는 `shared/layerKind.ts`의 `REFERENCE_KINDS` 한 곳에서 정의한다. 잠긴 레이어의 내용 저장은 서버도 거부한다.
+한 글자는 여러 레이어로 보인다: 궁서체(FONT), 획 윤곽(OUTLINE, 궁서체 윤곽 ↔ 획 매핑), 외부 레퍼런스(Hanzi MMH · 네이버 획순. 획순은 네이버, 획의 굵기·시작·끝·꺾임은 Hanzi가 기준이며, AnimCJK는 참고 문서만 `docs/references/animcjk.md`에 둔다), 작업 획(STROKES), 중심선·번호 오버레이, 사용자 레이어(CUSTOM). 레퍼런스 종류는 `shared/layerKind.ts`의 `REFERENCE_KINDS` 한 곳에서 정의한다. 잠긴 레이어의 내용 저장은 서버도 거부한다.
 
 ### 데이터와 마이그레이션
 

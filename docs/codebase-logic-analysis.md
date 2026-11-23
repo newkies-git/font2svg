@@ -217,7 +217,7 @@ stateDiagram-v2
 2. **로컬 Ollama 상태 및 추론 (`ids.ts`, `ollamaIds.ts`)**:
    - `listOllamaStatus()`: `http://127.0.0.1:11434/api/tags` (`3000ms` 타임아웃)를 조회해 연결 상태와 모델 목록을 반환하며, 이름에 `'embedding'`이 포함된 모델은 생성 모델 목록이 비어있지 않은 한 제외한다.
    - `askOllama(char, model = 'qwen3.5:9b')`: `/api/generate`에 `stream: false`, `think: false`, `temperature: 0`, `seed: 1`, JSON Schema(`format`), `60초` 타임아웃으로 IDS 문자열을 질의한다.
-   - `ollamaIds.ts`: `knownMedians(char)`를 `strokes` → `working_data` → `reference_data (NAVER → MMH)` 순으로 조회한다. `inferIds`는 DB 변경 없이 유효성·합성 가능성·예상 획수를 반환하고, `applyIds`는 `fitOrGiven`을 거쳐 `working_data` (`source = 'OLLAMA_IDS'`, `DRAFT`) 또는 기존 `strokes`에 반영한다.
+   - `ollamaIds.ts`: `knownMedians(char)`를 `strokes` → `working_data` → `reference_data`에서 획순은 NAVER, 모양은 Hanzi로 합쳐(`referenceMerge.ts`의 `orderedGlyph`) 조회한다. `inferIds`는 DB 변경 없이 유효성·합성 가능성·예상 획수를 반환하고, `applyIds`는 `fitOrGiven`을 거쳐 `working_data` (`source = 'OLLAMA_IDS'`, `DRAFT`) 또는 기존 `strokes`에 반영한다.
 3. **로컬 Ollama 궁서체 획 분리 (`ollamaSplit.ts`)**:
    - 현재 기준 궁서체 윤곽(`fontContoursOf`) 각각의 바운딩 박스/중심점과 `NAVER` 또는 `MMH` 길잡이 획순(`1..N`)의 좌표를 프롬프트로 구성하고, JSON Schema(`strokes: [{ strokeOrder, contourIndices, median }]`)로 보정된 중심선과 윤곽 인덱스를 받는다.
    - 받은 `median`(`[0..1024]` 클램프, 누락 획은 원본 길잡이 폴백)으로 `segmentOutlineByMedians`를 실행한다. 만약 기하 분할이 실패하거나 전체 윤곽을 쪼개지 못했는데 Ollama가 해당 획에 **단독으로 1개 윤곽만 매핑(`assigned.length === 1 && contourUseCount === 1`)**했고 면적 조건(`>= 0.005 * glyphArea`)을 충족하면 그 윤곽을 그대로 채택하는 보완 로직이 포함되어 있다. 최종 매칭 실패 획은 `ribbonPath`와 `unmatched_strokes`로 반환된다.
