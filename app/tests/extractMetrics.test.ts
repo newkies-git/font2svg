@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { commandCounts, hasSliver, measureExtraction, measureOutline, summarizeExtraction } from '../server/extractMetrics.ts'
-import { medianTurns, turnAngleDeg } from '../shared/medianShape.ts'
+import { medianTurns, softenKinks, turnAngleDeg } from '../shared/medianShape.ts'
+import type { Pt } from '../shared/types.ts'
 import { rectPath } from './helpers.ts'
 
 test('명령 수와 곡선 비율: L은 직선, C·Q는 곡선으로 센다', () => {
@@ -51,4 +52,14 @@ test('추출 측정: 빈 입력도 0으로 요약한다', () => {
   assert.equal(summary.strokes, 0)
   assert.equal(summary.outline.medianVertices, 0)
   assert.equal(summary.ribbon.percent, 0)
+})
+
+test('꺾임 깎기: 급한 꺾임만 두 완만한 점으로 나누고 끝점·곧은 선은 그대로 둔다', () => {
+  const straight: Pt[] = [[0, 0], [10, 0], [20, 0]]
+  assert.equal(softenKinks(straight), straight)
+  const bent: Pt[] = [[0, 0], [100, 0], [100, 100]]
+  const softened = softenKinks(bent)
+  assert.deepEqual(softened[0], bent[0])
+  assert.deepEqual(softened[softened.length - 1], bent[bent.length - 1])
+  assert.equal(medianTurns(softened).kink, false)
 })

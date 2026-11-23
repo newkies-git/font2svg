@@ -16,6 +16,33 @@ export function turnAngleDeg(a: Pt, b: Pt, c: Pt): number {
   return Math.acos(Math.max(-1, Math.min(1, (ux * vx + uy * vy) / length))) * RADIANS_TO_DEGREES
 }
 
+// 꺾임(KINK_ANGLE_DEG 초과)인 꼭짓점의 모서리를 깎아 두 개의 완만한 꼭짓점으로 나눈다. 양 끝점과 꺾이지 않은 점은 그대로다.
+// 길잡이도 곧은 획에서 골격이 접합부로 휘어 생긴 급한 꺾임을 부드럽게 만들 때 쓴다. 깎는 길이는 이웃 선분의 CORNER_CUT 비율이다.
+const CORNER_CUT = 0.3
+const SOFTEN_PASSES = 2
+
+export function softenKinks(median: Pt[]): Pt[] {
+  let line = median
+  for (let pass = 0; pass < SOFTEN_PASSES; pass++) {
+    if (line.length < 3 || !medianTurns(line).kink) break
+    const next: Pt[] = [line[0]]
+    for (let index = 1; index < line.length - 1; index++) {
+      if (turnAngleDeg(line[index - 1], line[index], line[index + 1]) <= KINK_ANGLE_DEG) {
+        next.push(line[index])
+        continue
+      }
+      const [prev, at, after] = [line[index - 1], line[index], line[index + 1]]
+      next.push(
+        [at[0] + (prev[0] - at[0]) * CORNER_CUT, at[1] + (prev[1] - at[1]) * CORNER_CUT],
+        [at[0] + (after[0] - at[0]) * CORNER_CUT, at[1] + (after[1] - at[1]) * CORNER_CUT],
+      )
+    }
+    next.push(line[line.length - 1])
+    line = next
+  }
+  return line
+}
+
 export function medianTurns(median: Pt[]): { kink: boolean; reversal: boolean } {
   let kink = false
   let reversal = false
