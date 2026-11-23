@@ -1,4 +1,4 @@
-import { AREA_FLATNESS, FIT_GRID, FIT_MARGIN, CANVAS, DEFAULT_STROKE_WIDTH, OUTLINE_CONTOUR_MATCH_RATIO, OUTLINE_CONTOUR_TOLERANCE, MAX_COVERED_AREA_RATIO, MEDIAN_BBOX_INSET, MEDIAN_MIN_POINTS, MEDIAN_SIMPLIFY_TOLERANCE, MIN_COVERED_AREA_RATIO, MIN_STROKE_AREA_RATIO } from '../shared/constants.ts'
+import { AREA_FLATNESS, FIT_END_OVERLAP_MAX_RATIO, FIT_END_OVERLAP_MIN_RATIO, FIT_GRID, FIT_MARGIN, CANVAS, DEFAULT_STROKE_WIDTH, OUTLINE_CONTOUR_MATCH_RATIO, OUTLINE_CONTOUR_TOLERANCE, MAX_COVERED_AREA_RATIO, MEDIAN_BBOX_INSET, MEDIAN_MIN_POINTS, MEDIAN_SIMPLIFY_TOLERANCE, MIN_COVERED_AREA_RATIO, MIN_STROKE_AREA_RATIO } from '../shared/constants.ts'
 import { flattenContours, pointSegmentDistance, polygonArea, round1, type Pt as Point } from '../shared/paths.ts'
 import { computeOptimalStrokeWidth, recoverMedian, segmentOutlineByMedians, simplifyPolyline } from '../shared/strokeCut.ts'
 import type { Pt } from '../shared/types.ts'
@@ -181,7 +181,7 @@ function lineInsideOutline(line: Pt[], outline: string): boolean {
 }
 
 function piecesForGuide(contours: string[], fitted: Pt[][], shapes?: Loop[][]): OutlinePiece[] | null {
-  const split = segmentOutlineByMedians(contours, fitted.map(toPoints))
+  const split = segmentOutlineByMedians(contours, fitted.map(toPoints), undefined, { endOverlap: { min: FIT_END_OVERLAP_MIN_RATIO, max: FIT_END_OVERLAP_MAX_RATIO } })
   if (split.strokes.length !== fitted.length) return null
   const glyphArea = Math.abs(contours.reduce((sum, d) => sum + contourArea(d), 0))
   const whole = new Set(contours)

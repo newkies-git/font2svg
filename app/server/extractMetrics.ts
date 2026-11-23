@@ -2,7 +2,7 @@ import { DEFAULT_STROKE_WIDTH } from '../shared/constants.ts'
 import { flattenContours, polygonArea } from '../shared/paths.ts'
 import type { Pt } from '../shared/types.ts'
 import { medianTurns } from '../shared/medianShape.ts'
-import { fitGuideToFont } from './geometry.ts'
+import { fitGuideToFont, fitMediansToOutline } from './geometry.ts'
 
 // 획 추출 품질을 숫자로 재는 측정기. 추출 방식을 바꿀 때 전후를 같은 잣대로 비교하려고 둔다(scripts/benchExtract.ts).
 // 사람이 쓴 획과 다른 모양을 가리키는 지표(정점 과다·곡선 없음·중심선 꺾임/되돌림·파편·띠 대체)를 획마다 센다.
@@ -23,6 +23,8 @@ export type StrokeMeasure = {
   kink: boolean
   reversal: boolean
   sliver: boolean
+  // 추출한 중심선 길이를 bbox로 맞춘 참고 중심선 길이로 나눈 값. 1보다 많이 작으면 획의 시작이나 끝이 잘린 것이다.
+  lengthRatio: number
   // 윤곽을 못 찾아 고정 폭 띠로 대체됐다(추출 실패).
   ribbon: boolean
   // 윤곽을 못 찾았지만 띠가 아니라 쓸 만한 윤곽이 있다.
@@ -60,12 +62,14 @@ export function measureExtraction(char: string, contours: string[], guide: Pt[][
   }
   if (!fit) return { char, strokes: [], fitted: false }
   const unmatched = new Set(fit.unmatched)
+  const guideLines = fitMediansToOutline(guide, contours)
   const strokes = fit.outlines.map((outline, index): StrokeMeasure => {
     const isUnmatched = unmatched.has(index + 1)
     const ribbon = isUnmatched && fit.widths?.[index] === DEFAULT_STROKE_WIDTH
     return {
       ...measureOutline(outline),
       medianPoints: fit.medians[index].length,
+      lengthRatio: polylineLength(fit.medians[index]) / Math.max(MIN_GUIDE_LENGTH, polylineLength(guideLines[index])),
       ...medianTurns(fit.medians[index]),
       sliver: hasSliver(outline),
       ribbon,
@@ -74,6 +78,11 @@ export function measureExtraction(char: string, contours: string[], guide: Pt[][
   })
   return { char, strokes, fitted: true }
 }
+
+const MIN_GUIDE_LENGTH = 1
+// 중심선 길이가 참고의 이 비율에 못 미치면 시작·끝이 잘린 획으로 센다.
+const SHORT_LENGTH_RATIO = 0.85
+const polylineLength = (line: Pt[]): number => line.slice(1).reduce((sum, point, index) => sum + Math.hypot(point[0] - line[index][0], point[1] - line[index][1]), 0)
 
 const median = (values: number[]): number => {
   if (values.length === 0) return 0
@@ -95,6 +104,7 @@ const mean = (values: number[]): number => (values.length === 0 ? 0 : Number((va
 export function summarizeExtraction(measures: CharMeasure[], reference: { vertices: number[]; curveRatios: number[]; medians: Pt[][] }) {
   const fitted = measures.filter((item) => item.fitted)
   const strokes = fitted.flatMap((item) => item.strokes)
+  const mapped = strokes.filter((stroke) => !stroke.ribbon && !stroke.unmatchedUsable)
   const charsWith = (test: (stroke: StrokeMeasure) => boolean) => fitted.filter((item) => item.strokes.some(test)).length
   return {
     chars: { sampled: measures.length, fitted: fitted.length, rejected: measures.length - fitted.length },
@@ -118,6 +128,11 @@ export function summarizeExtraction(measures: CharMeasure[], reference: { vertic
       charsWithReversal: rate(charsWith((stroke) => stroke.reversal), fitted.length),
     },
     sliver: rate(strokes.filter((stroke) => stroke.sliver).length, strokes.length),
+    // 매핑된 획의 중심선 길이 비(추출 ÷ 참고)와 SHORT_LENGTH_RATIO 미만으로 짧은 획
+    length: {
+      medianRatio: Number(median(mapped.map((stroke) => stroke.lengthRatio)).toFixed(RATIO_DIGITS)),
+      short: rate(mapped.filter((stroke) => stroke.lengthRatio < SHORT_LENGTH_RATIO).length, mapped.length),
+    },
     ribbon: rate(strokes.filter((stroke) => stroke.ribbon).length, strokes.length),
     charsWithRibbon: rate(charsWith((stroke) => stroke.ribbon), fitted.length),
     unmatchedUsable: rate(strokes.filter((stroke) => stroke.unmatchedUsable).length, strokes.length),

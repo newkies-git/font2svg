@@ -32,7 +32,7 @@ test('파편: 서브패스가 둘 이상이고 아주 작은 것이 있으면 �
 
 test('추출 측정: 나눌 수 없으면 fitted=false, 요약은 비율과 중앙값을 모은다', () => {
   assert.deepEqual(measureExtraction('空', [], []), { char: '空', strokes: [], fitted: false })
-  const stroke = { vertices: 10, curveRatio: 0.5, medianPoints: 3, kink: true, reversal: false, sliver: false, ribbon: true, unmatchedUsable: false }
+  const stroke = { lengthRatio: 1, vertices: 10, curveRatio: 0.5, medianPoints: 3, kink: true, reversal: false, sliver: false, ribbon: true, unmatchedUsable: false }
   const summary = summarizeExtraction(
     [{ char: '一', fitted: true, strokes: [stroke, { ...stroke, kink: false, ribbon: false }] }, { char: '二', fitted: false, strokes: [] }],
     { vertices: [8, 12, 10], curveRatios: [1, 1, 1], medians: [[[0, 0], [10, 0], [10, 10]], [[0, 0], [10, 0]]] },
