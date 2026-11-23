@@ -4,7 +4,9 @@ import { round1, type Pt } from '../paths.ts'
 // 사람이 쓴 획은 곡선 몇 개로 이뤄지므로, 정점 수백 개짜리 직선 경로보다 형태가 자연스럽고 변곡점 잡음이 없다.
 
 // 맞춤 허용 오차(글꼴 좌표). 점열이 곡선에서 이만큼 넘게 벗어나면 곡선을 나눈다.
-const FIT_TOLERANCE = 1
+const FIT_TOLERANCE = 1.5
+// 직선으로 볼 수 있는 최대 편차(글꼴 좌표). 곡선 허용 오차보다 엄격해야 긴 직선 변이 곡선으로 부풀지 않는다.
+const STRAIGHT_TOLERANCE = 1
 // 모서리 판정: 앞뒤 CORNER_WINDOW(글꼴 좌표 길이) 떨어진 점으로 잰 꺾임이 이 각도(도)를 넘으면 모서리 후보다.
 const CORNER_ANGLE_DEG = 55
 const CORNER_WINDOW = 10
@@ -196,7 +198,7 @@ function pointText(point: Pt): string {
 function segmentCommands(points: Pt[], startTangentOverride: Pt | null, endTangentOverride: Pt | null): string {
   const chordA = points[0]
   const chordB = points[points.length - 1]
-  const straight = points.every((point) => distanceToChord(point, chordA, chordB) < FIT_TOLERANCE)
+  const straight = points.every((point) => distanceToChord(point, chordA, chordB) < STRAIGHT_TOLERANCE)
   if (straight) return `L${pointText(chordB)}`
   const curves = fitCubic(points, startTangentOverride ?? startTangent(points), endTangentOverride ?? endTangent(points), FIT_TOLERANCE)
   return curves.map((curve) => `C${pointText(curve[1])} ${pointText(curve[2])} ${pointText(curve[3])}`).join('')

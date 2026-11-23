@@ -1,4 +1,4 @@
-import { fitOpenPolyline } from './curveFit.ts'
+import { fitClosedLoop, fitOpenPolyline } from './curveFit.ts'
 import { flattenContours, pointSegmentDistance, polygonArea, round1, type Pt } from '../paths.ts'
 import {
   buildOverlapCubic,
@@ -436,7 +436,7 @@ function openRing(pts: Pt[]): Pt[] {
 }
 
 function closedPolyline(ring: Pt[]): string {
-  return `M ${fmt(ring[0])} ${ring.slice(1).map((p) => `L ${fmt(p)}`).join(' ')} Z`
+  return fitClosedLoop(ring) ?? `M ${fmt(ring[0])} ${ring.slice(1).map((p) => `L ${fmt(p)}`).join(' ')} Z`
 }
 
 type Loc = { seg: number; t: number; point: Pt }
