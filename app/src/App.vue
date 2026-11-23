@@ -17,11 +17,11 @@ import { useLayerWorkspace } from './composables/useLayerWorkspace.ts'
 import { useOllamaStatus } from './composables/useOllamaStatus.ts'
 import { usePlayback } from './composables/usePlayback.ts'
 import { useStrokeStepper } from './composables/useStrokeStepper.ts'
+import { useStudioPanels } from './composables/useStudioPanels.ts'
 import { useStudioShortcuts } from './composables/useStudioShortcuts.ts'
 import { useStudioState } from './composables/useStudioState.ts'
 import { useTheme } from './composables/useTheme.ts'
 import { LAYER_ID } from '../shared/constants.ts'
-import type { CapType } from '../shared/types.ts'
 
 const studio = useStudioState()
 const { selected, message, error, busy, shown, reveal } = studio
@@ -42,6 +42,7 @@ const workStrokeCount = computed(() => {
 
 const { playing, play, stop, showAll } = usePlayback(() => workStrokeCount.value, shown, reveal)
 
+const workspace = useLayerWorkspace(studio, { onReloadList: loadList, stopPlayback: stop, confirmImport })
 const {
   layers,
   panelLayers,
@@ -49,7 +50,6 @@ const {
   fontLayer,
   activeLayerId,
   activeTool,
-  activeLayer,
   editableLayer,
   isEditableLocked,
   transformScope,
@@ -78,7 +78,6 @@ const {
   moveLayerOrder,
   moveStrokeInActive,
   setStrokeRadical,
-  setStrokeCap,
   reverseActiveStrokeMedian,
   deleteStrokeAt,
   mergeStrokeWithNext,
@@ -119,7 +118,7 @@ const {
   refreshOutlineMapping,
   duplicateActiveLayer,
   deleteActiveCustomLayer,
-} = useLayerWorkspace(studio, { onReloadList: loadList, stopPlayback: stop, confirmImport })
+} = workspace
 
 const { uploadInitial, openChar, openFirst, undo, approve, compileChar, applyNaver, importSvg, importImage, reload } = useCharacterActions(studio, {
   chars,
@@ -139,31 +138,7 @@ const { uploadInitial, openChar, openFirst, undo, approve, compileChar, applyNav
   },
 })
 
-// 획 윤곽 자동 매핑에서 중심선 길잡이로 쓸 수 있는 레이어(획이 있는 레이어, 작업 획 우선)
-const outlineGuideLayers = computed(() => layers.value
-  .filter((l) => l.id !== LAYER_ID.outline && l.strokes.length > 0)
-  .sort((a, b) => Number(b.id === LAYER_ID.strokes) - Number(a.id === LAYER_ID.strokes) || a.z_index - b.z_index))
-
-const canEditPathPoints = computed(() => {
-  const ed = editableLayer.value
-  if (!ed) return false
-  return Boolean(ed.kind === 'FONT' ? ed.paths[selectedStrokeIndex.value] : ed.strokes[selectedStrokeIndex.value]?.outline_path)
-})
-
-// 기필/수필을 '직접 그리기'로 고르면 꼭짓점(베지어) 편집 도구로 넘어가 그 끝의 윤곽을 손으로 고친다.
-function onSetCap(index: number, end: 'start' | 'end', value: CapType) {
-  setStrokeCap(index, end, value)
-  if (value === 'MANUAL') selectTool('bezier')
-}
-
-function unlockActiveLayers() {
-  if (activeLayer.value?.locked) toggleLayerLock(activeLayer.value.id)
-  if (editableLayer.value?.locked && editableLayer.value.id !== activeLayer.value?.id) {
-    toggleLayerLock(editableLayer.value.id)
-  }
-  if (activeLayer.value && !activeLayer.value.visible) toggleLayerVisible(activeLayer.value.id, false)
-  if (editableLayer.value && !editableLayer.value.visible) toggleLayerVisible(editableLayer.value.id, false)
-}
+const { outlineGuideLayers, canEditPathPoints, onSetCap, unlockActiveLayers } = useStudioPanels(workspace)
 
 const { first: firstStroke, prev: prevStroke, next: nextStroke } = useStrokeStepper(() => workStrokeCount.value, shown, reveal, selectedStrokeIndex)
 
