@@ -195,12 +195,12 @@ function pointText(point: Pt): string {
 }
 
 // 한 구간(모서리~모서리)의 점열을 경로 명령으로 만든다. 거의 직선이면 L 하나로 줄인다.
-function segmentCommands(points: Pt[], startTangentOverride: Pt | null, endTangentOverride: Pt | null): string {
+function segmentCommands(points: Pt[], startTangentOverride: Pt | null, endTangentOverride: Pt | null, tolerance = FIT_TOLERANCE): string {
   const chordA = points[0]
   const chordB = points[points.length - 1]
   const straight = points.every((point) => distanceToChord(point, chordA, chordB) < STRAIGHT_TOLERANCE)
   if (straight) return `L${pointText(chordB)}`
-  const curves = fitCubic(points, startTangentOverride ?? startTangent(points), endTangentOverride ?? endTangent(points), FIT_TOLERANCE)
+  const curves = fitCubic(points, startTangentOverride ?? startTangent(points), endTangentOverride ?? endTangent(points), tolerance)
   return curves.map((curve) => `C${pointText(curve[1])} ${pointText(curve[2])} ${pointText(curve[3])}`).join('')
 }
 
@@ -214,7 +214,7 @@ export function fitOpenPolyline(points: Pt[]): string {
 }
 
 // 닫힌 점열(첫 점을 끝에 반복하지 않음)을 `M … C/L … Z` 경로로 만든다. 점이 모자라면 null.
-export function fitClosedLoop(ring: Pt[]): string | null {
+export function fitClosedLoop(ring: Pt[], tolerance = FIT_TOLERANCE): string | null {
   if (ring.length < 3) return null
   const n = ring.length
   const corners = findCorners(ring)
@@ -235,7 +235,7 @@ export function fitClosedLoop(ring: Pt[]): string | null {
     // 매끈한 분할점에서는 앞뒤 구간이 같은 접선을 공유하도록 이웃 점으로 접선을 정한다.
     const before = smoothCut ? unit(sub(ring[(from + 1) % n], ring[(from - 1 + n) % n])) : null
     const after = smoothCut ? unit(sub(ring[(to - 1 + n) % n], ring[(to + 1) % n])) : null
-    d += segmentCommands(points, before, after)
+    d += segmentCommands(points, before, after, tolerance)
   }
   return `${d}Z`
 }

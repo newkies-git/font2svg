@@ -3,6 +3,8 @@ import { dilate, enclosedHoles } from './mask.ts'
 import { fitClosedLoop } from './curveFit.ts'
 import { pixelPointToFont, type Raster } from './raster.ts'
 
+// 격자를 따라 얻은 윤곽의 곡선 맞춤 허용 오차(격자 칸 수). 계단 잡음이 칸 크기 정도라 그 안쪽 흔들림은 곡선으로 매끄럽게 잇는다.
+const TRACE_FIT_TOLERANCE_PX = 1.2
 const MIN_LOOP_POINTS = 12
 const MIN_LOOP_AREA = 20
 // Chaikin 코너 깎기: 가까운 점/먼 점 가중치
@@ -117,7 +119,7 @@ function pointLineDistance(p: Pt, a: Pt, b: Pt): number {
 // 격자 좌표 점열을 글꼴 좌표로 옮겨 곡선으로 맞춘다. 맞출 수 없는 작은 윤곽은 건너뛴다.
 function loopsToPath(loops: Pt[][], raster: Raster): string {
   return loops
-    .map((loop) => fitClosedLoop(loop.map((point) => pixelPointToFont(raster, point))))
+    .map((loop) => fitClosedLoop(loop.map((point) => pixelPointToFont(raster, point)), TRACE_FIT_TOLERANCE_PX / raster.scale))
     .filter((d): d is string => d !== null)
     .join(' ')
 }
