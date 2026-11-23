@@ -2,7 +2,7 @@
 import type { PointMarquee } from '../../composables/useCanvasDrag.ts'
 import type { bezierNodesOf } from '../../lib/canvasGeometry.ts'
 import { BEZIER_ANCHOR_SIZE, BEZIER_CONTROL_RADIUS } from '../../lib/canvasMetrics.ts'
-import type { HandleRef } from '../../lib/vectorEdit.ts'
+import type { HandleRef } from '../../../shared/vectorEdit.ts'
 
 const props = defineProps<{
   path: string

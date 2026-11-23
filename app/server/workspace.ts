@@ -1,20 +1,18 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { DB_BUSY_TIMEOUT_MS, DEFAULT_STROKE_WIDTH, LAYER_ID } from '../shared/constants.ts'
-import type { FitStatus, LayerMetaPatch } from '../shared/types.ts'
+import { DB_BUSY_TIMEOUT_MS, LAYER_ID } from '../shared/constants.ts'
+import type { LayerMetaPatch, WriteMode } from '../shared/types.ts'
 import { createCharacterCatalog } from './characterCatalog.ts'
-import { isReferenceKind } from '../shared/layerKind.ts'
 import { createCompileOutput } from './compileOutput.ts'
 import { transaction } from './db.ts'
 import { createFontApply } from './fontApply.ts'
-import { fitGuideToFont, splitByContours } from './geometry.ts'
 import { createIssues } from './issues.ts'
+import { createLayerApply } from './layerApply.ts'
+import { createLayerFetch } from './layerFetch.ts'
 import { listOllamaStatus } from './ids.ts'
 import { createOllamaIdsPipeline } from './ollamaIds.ts'
-import { splitFontByOllamaGuide, type OllamaSplitSource } from './ollamaSplit.ts'
-import { parseLayerBatch, parseResegmentMedians, type LayerSavePayload } from './layerRequests.ts'
-import { fontContoursOf } from './layers.ts'
+import { parseLayerBatch, type LayerSavePayload } from './layerRequests.ts'
 import {
   assertLayerUnlocked,
   createCustomLayer,
@@ -24,17 +22,10 @@ import {
   saveNonStrokeLayerContent,
 } from './layerWrites.ts'
 import { sanitizeLayerStrokes } from './layerData.ts'
-import { toItems } from './strokeStore.ts'
-import { ACTOR_USER, ORIGIN_MANUAL, requireFound, type StrokeItem } from './model.ts'
+import { requireFound } from './model.ts'
+import { applyStrokeEdits, sanitizeEdits } from './strokeEdits.ts'
 import { createOutlineMapping } from './outlineMapping.ts'
 import { createReferencePipeline } from './referencePipeline.ts'
-import {
-  ACJK_BLOB,
-  fetchHanja,
-  fetchNaver,
-  hanjaUrl,
-  naverUrl,
-} from './references.ts'
 import { migrate, seed } from './schema.ts'
 import { createConversions } from './conversions.ts'
 import { createStrokeStore } from './strokeStore.ts'
@@ -96,33 +87,24 @@ export function createWorkspace(rootDir: string) {
     return catalog.getCharacter(unicode)
   }
 
-  function updateStrokes(unicode: string, items: StrokeItem[], action: string) {
-    strokes.updateStrokes(unicode, items, action)
-    return getCharacter(unicode)
-  }
+  // 글자 하나를 바꾸는 작업을 감싸 바뀐 뒤의 글자 상세를 돌려준다.
+  const withDetail = <Args extends unknown[]>(change: (unicode: string, ...args: Args) => unknown) =>
+    (unicode: string, ...args: Args) => {
+      change(unicode, ...args)
+      return getCharacter(unicode)
+    }
 
-  function importSvg(unicode: string, svg: string) {
-    strokes.importSvg(unicode, svg)
-    return getCharacter(unicode)
-  }
-
+  const updateStrokes = withDetail(strokes.updateStrokes)
+  const importSvg = withDetail(strokes.importSvg)
   // 래스터 이미지에서 뽑은 윤곽을 획 SVG로 바꿔 저장하고 변환 이력을 남긴다.
-  function importImage(unicode: string, raw: unknown) {
-    conversions.importImage(unicode, raw)
-    return getCharacter(unicode)
-  }
+  const importImage = withDetail(conversions.importImage)
+  const approve = withDetail(strokes.approve)
+  const undo = withDetail(strokes.undo)
 
-  function approve(unicode: string) {
-    strokes.approve(unicode)
-    return getCharacter(unicode)
-  }
+  const layerFetch = createLayerFetch(db, { strokes, references, getCharacter })
+  const layerApply = createLayerApply(db, { strokes, issues, references, getCharacter, fetchLayer: layerFetch.fetchLayer })
 
-  function undo(unicode: string) {
-    strokes.undo(unicode)
-    return getCharacter(unicode)
-  }
-
-  async function applyNaver(unicode: string, write: 'replace' | 'append' = 'replace') {
+  async function applyNaver(unicode: string, write: WriteMode = 'replace') {
     const fit = await references.applyNaver(unicode, write)
     const detail = getCharacter(unicode)
     return detail && { ...detail, fit_status: fit.status, unmatched_strokes: fit.unmatched }
@@ -130,7 +112,7 @@ export function createWorkspace(rootDir: string) {
 
   async function applyOllamaIds(
     unicode: string,
-    options: { model?: string; ids?: string; write?: 'replace' | 'append' } = {},
+    options: { model?: string; ids?: string; write?: WriteMode } = {},
   ) {
     const fit = await ollamaIds.applyIds(unicode, options)
     const detail = getCharacter(unicode)
@@ -143,71 +125,18 @@ export function createWorkspace(rootDir: string) {
     }
   }
 
-  async function splitFontWithOllama(
-    unicode: string,
-    options: { source: OllamaSplitSource; model?: string; write?: 'replace' | 'append' },
-  ) {
-    let detail = requireFound(getCharacter(unicode))
-    const contours = fontContoursOf(detail)
-    if (contours.length === 0) throw new Error('현재 글자에 궁서체 윤곽이 없습니다.')
-
-    const targetLayerId = options.source === 'MMH' ? LAYER_ID.mmh : LAYER_ID.naver
-    let guideLayer = detail.layers.find((item) => item.id === targetLayerId)
-    if (!guideLayer || guideLayer.strokes.length === 0) {
-      detail = requireFound(await fetchLayer(unicode, targetLayerId))
-      guideLayer = detail.layers.find((item) => item.id === targetLayerId)
-    }
-    if (!guideLayer || guideLayer.strokes.length === 0) {
-      throw new Error(`${options.source === 'MMH' ? 'Hanzi(MMH)' : '네이버'} 기준 획순 데이터를 가져올 수 없습니다.`)
-    }
-
-    const fitted = await splitFontByOllamaGuide({
-      char: detail.char,
-      source: options.source,
-      contours,
-      guideStrokes: guideLayer.strokes,
-      model: options.model,
-    })
-
-    const radicals = guideLayer.strokes.flatMap((stroke, index) => (stroke.is_radical ? [index] : []))
-    const items = toItems(fitted, new Set(radicals))
-    const action = options.source === 'MMH' ? 'Ollama 궁서체 분리 (Hanzi)' : 'Ollama 궁서체 분리 (네이버)'
-    const existing = detail.strokes
-    const fitStatus = fitted.unmatched.length > 0 ? 'partial' : 'fitted'
-
-    if (options.write === 'append' && existing.length > 0) {
-      updateStrokes(unicode, [...existing, ...items], `${action} 추가`)
-      const next = getCharacter(unicode)
-      return next && {
-        ...next,
-        fit_status: fitStatus,
-        unmatched_strokes: fitted.unmatched.map((order) => order + existing.length),
-        source: options.source,
-        model: fitted.model,
-      }
-    }
-
-    // 참고 획순(NAVER·MMH)으로 궁서체를 나눈 결과는 applyNaver·applyLayerToStrokes와 같게 strokes에 반영하되,
-    // 사람이 요청한 AI 분리이므로 last_modified_by는 ACTOR_USER로 남겨 일괄 배치 덮어쓰기를 막고 이력을 보존한다.
+  // 채팅 모델이 제안하고 사용자가 승인한 획 수정을 작업 획에 반영한다. 이력이 남아 실행 취소할 수 있다.
+  function applyChatEdits(unicode: string, rawEdits: unknown) {
+    const character = strokes.requireCharacter(unicode)
+    const detail = requireFound(getCharacter(unicode))
+    const edits = sanitizeEdits(rawEdits, detail.strokes.length)
+    if (edits.length === 0) throw new Error('적용할 수 있는 수정이 없습니다. 획 번호가 바뀌었는지 확인하세요.')
+    assertLayerUnlocked(db, character.char, LAYER_ID.strokes)
+    const next = applyStrokeEdits(detail.strokes, edits)
     transaction(db, () => {
-      strokes.replaceStrokes(
-        unicode,
-        items,
-        ACTOR_USER,
-        action,
-        { source: options.source, url: guideLayer.source_url },
-        fitted.fontOutline,
-      )
-      issues.clearIssue(unicode)
+      strokes.updateStrokes(unicode, sanitizeLayerStrokes(next), `Ollama 채팅 수정 (${edits.length}건)`)
     })
-    const next = getCharacter(unicode)
-    return next && {
-      ...next,
-      fit_status: fitStatus,
-      unmatched_strokes: fitted.unmatched,
-      source: options.source,
-      model: fitted.model,
-    }
+    return getCharacter(unicode)
   }
 
   function updateLayersMeta(unicode: string, patches: LayerMetaPatch[]) {
@@ -251,117 +180,6 @@ export function createWorkspace(rootDir: string) {
     return getCharacter(unicode)
   }
 
-  // 외부 수신을 지원하는 레이어별 수신 방법. retryMiss는 "없음"으로 저장된 이전 결과를 지우고 다시 받는다(네이버는 사전이 갱신될 수 있다).
-  const remoteLayers: Record<string, { retryMiss?: boolean; notFound: string; load: (unicode: string, char: string) => Promise<unknown> }> = {
-    [LAYER_ID.naver]: {
-      retryMiss: true,
-      notFound: '네이버 한자사전에서 이 글자의 획순을 찾지 못했습니다.',
-      load: (unicode, char) => references.loadSource(unicode, 'NAVER', naverUrl(char), () => fetchNaver(char)),
-    },
-    [LAYER_ID.acjk]: {
-      notFound: 'AnimCJK에서 이 글자 데이터를 찾지 못했습니다.',
-      load: (unicode, char) => references.loadSource(unicode, 'ACJK', ACJK_BLOB, () => references.fetchAcjk(char)),
-    },
-    [LAYER_ID.mmh]: {
-      notFound: 'Hanzi(MMH)에서 이 글자 데이터를 찾지 못했습니다.',
-      load: (unicode, char) => references.loadSource(unicode, 'MMH', hanjaUrl(char), () => fetchHanja(char)),
-    },
-  }
-
-  async function fetchLayer(unicode: string, layerId: string) {
-    const character = strokes.requireCharacter(unicode)
-    const remote = Object.hasOwn(remoteLayers, layerId) ? remoteLayers[layerId] : undefined
-    if (!remote) throw new Error('외부 수신을 지원하지 않는 레이어입니다.')
-    if (remote.retryMiss) db.prepare(`DELETE FROM reference_data WHERE unicode = ? AND source = 'NAVER' AND found = 0`).run(unicode)
-    if (!(await remote.load(unicode, character.char))) throw new Error(remote.notFound)
-    patchLayersMeta(db, character.char, [{ id: layerId, visible: true }])
-    return getCharacter(unicode)
-  }
-
-  type AppliedDetail = NonNullable<ReturnType<typeof catalog.getCharacter>> & {
-    fit_status?: FitStatus
-    unmatched_strokes?: number[]
-  }
-
-  function applyLayerToStrokes(
-    unicode: string,
-    layerId: string,
-    mode: 'direct' | 'fit_font' = 'direct',
-    write: 'replace' | 'append' = 'replace',
-  ): AppliedDetail | null {
-    const detail = requireFound(getCharacter(unicode))
-    const layer = detail.layers.find((item) => item.id === layerId)
-    if (!layer || layer.strokes.length === 0) throw new Error('적용할 획 데이터가 없는 레이어입니다.')
-    const source = isReferenceKind(layer.kind) ? layer.kind : ORIGIN_MANUAL
-    const radicals = layer.strokes.flatMap((stroke, index) => (stroke.is_radical ? [index] : []))
-    const kept = detail.strokes.length
-
-    // 작업 획이 이미 있으면 추가만 이어 붙인다. 비어 있으면 교체와 같다.
-    const commit = (items: StrokeItem[], action: string, glyph: Parameters<typeof references.saveImported>[4] | null) => {
-      if (write === 'append' && detail.strokes.length > 0) {
-        return updateStrokes(unicode, [...detail.strokes, ...items], `${action} 추가`)
-      }
-      if (glyph) {
-        references.saveImported(unicode, source, layer.source_url, radicals, glyph, action)
-        return getCharacter(unicode)
-      }
-      return updateStrokes(unicode, items, action)
-    }
-
-    // 참고 획은 궁서체(기본 레이어)에 맞춘다. 맞지 않는 획은 지우지 않고 번호로 돌려 작업 획에서 고치게 한다.
-    const guide = layer.strokes.map((stroke) => stroke.median_points)
-    const attachFit = (saved: ReturnType<typeof commit>, status: FitStatus, unmatched: number[]): AppliedDetail | null => {
-      if (!saved || !isReferenceKind(layer.kind)) return saved
-      const offset = write === 'append' && kept > 0 ? kept : 0
-      return { ...saved, fit_status: status, unmatched_strokes: unmatched.map((order) => order + offset) }
-    }
-
-    const contours = fontContoursOf(detail)
-    if (mode === 'fit_font' || isReferenceKind(layer.kind)) {
-      if (contours.length === 0) {
-        if (mode === 'fit_font') throw new Error('궁서체 윤곽이 없어 자동 분할을 적용할 수 없습니다.')
-      } else {
-        const fitted = fitGuideToFont(contours, guide)
-        if (fitted) {
-          const glyph = { medians: fitted.medians, outlines: fitted.outlines, widths: fitted.widths, fontOutline: fitted.fontOutline }
-          const saved = commit(toItems(glyph, new Set(radicals)), `${layer.name} 획을 궁서체에 맞춤`, glyph)
-          return attachFit(saved, fitted.unmatched.length > 0 ? 'partial' : 'fitted', fitted.unmatched)
-        }
-        if (mode === 'fit_font') {
-          throw new Error('궁서체 윤곽 자동 분할 품질 검사를 통과하지 못했습니다. 중심선·위치를 조정하거나 [그대로 적용]을 사용하세요.')
-        }
-      }
-    }
-
-    const glyph = {
-      medians: layer.strokes.map((s) => s.median_points),
-      outlines: layer.strokes.map((s) => s.outline_path),
-      widths: layer.strokes.map((s) => s.stroke_width),
-    }
-    if (source !== ORIGIN_MANUAL) {
-      const saved = commit(toItems(glyph, new Set(radicals)), `${layer.name} 레이어 적용`, glyph)
-      const orders = layer.strokes.map((_, index) => index + 1)
-      return attachFit(saved, contours.length > 0 ? 'copied' : 'no-font', orders)
-    }
-    return commit(layer.strokes, `${layer.name} 레이어 적용`, null)
-  }
-
-  function resegmentLayer(unicode: string, mediansRaw: unknown) {
-    const detail = requireFound(getCharacter(unicode))
-    const contours = fontContoursOf(detail)
-    if (contours.length === 0) throw new Error('궁서체 윤곽이 없어 재분할할 수 없습니다.')
-    const medians = parseResegmentMedians(mediansRaw)
-    const split = splitByContours(contours, medians)
-    if (!split) {
-      throw new Error('중심선 기준 윤곽 자동 분할이 품질 검사를 통과하지 못했습니다. 중심선이 윤곽을 고르게 지나도록 조정해 보세요.')
-    }
-    return {
-      outlines: split.outlines,
-      medians: split.medians,
-      widths: split.widths ?? split.medians.map(() => DEFAULT_STROKE_WIDTH),
-    }
-  }
-
   function duplicateLayer(unicode: string, sourceLayerId?: string, name?: string) {
     const detail = requireFound(getCharacter(unicode))
     const createdId = createCustomLayer(db, detail.char, detail.layers, sourceLayerId, name)
@@ -385,9 +203,9 @@ export function createWorkspace(rootDir: string) {
     saveLayer,
     saveLayers,
     resetLayer,
-    fetchLayer,
-    applyLayerToStrokes,
-    resegmentLayer,
+    fetchLayer: layerFetch.fetchLayer,
+    applyLayerToStrokes: layerApply.applyLayerToStrokes,
+    resegmentLayer: layerApply.resegmentLayer,
     generateOutline: outline.generate,
     mapOutlineStroke: outline.mapStroke,
     refreshOutline: outline.refresh,
@@ -402,7 +220,8 @@ export function createWorkspace(rootDir: string) {
     getOllamaStatus: listOllamaStatus,
     inferOllamaIds: ollamaIds.inferIds,
     applyOllamaIds,
-    splitFontWithOllama,
+    splitFontWithOllama: layerApply.splitFontWithOllama,
+    applyChatEdits,
     applyFontBatch: font.applyFontBatch,
     applyAcjkBatch: references.applyAcjkBatch,
     compile: output.compile,

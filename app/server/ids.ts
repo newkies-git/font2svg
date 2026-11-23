@@ -48,6 +48,16 @@ export function ollamaUrl(endpoint: '/api/generate' | '/api/tags' | '/api/chat')
   return `${resolveOllamaBaseUrl()}${endpoint}`
 }
 
+// 로컬 Ollama에 JSON 본문을 POST한다. 응답 상태·연결 오류 처리는 호출한 쪽이 맡는다.
+export function postOllama(endpoint: '/api/generate' | '/api/chat', body: Record<string, unknown>): Promise<Response> {
+  return fetch(ollamaUrl(endpoint), {
+    method: 'POST',
+    signal: AbortSignal.timeout(OLLAMA_TIMEOUT_MS),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+}
+
 export const WHOLE_BOX: Box = [0, 0, 1, 1]
 const THIRD = 1 / 3
 // 부품 배치 칸: [왼쪽, 아래, 오른쪽, 위] (0~1, 세로는 아래가 0). 감싸는 구조는 바깥 부품이 전체, 안쪽 부품이 가운데 칸을 쓴다.
@@ -158,18 +168,13 @@ export async function listOllamaStatus(): Promise<OllamaStatusResult> {
 
 export async function askOllama(char: string, model = OLLAMA_MODEL): Promise<string | null> {
   try {
-    const response = await fetch(ollamaUrl('/api/generate'), {
-      method: 'POST',
-      signal: AbortSignal.timeout(OLLAMA_TIMEOUT_MS),
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model,
-        stream: false,
-        think: false,
-        format: OLLAMA_IDS_SCHEMA,
-        options: { temperature: 0, seed: OLLAMA_SEED },
-        prompt: `한자 ${char}를 IDS(표의문자 분해)로 나눠라. ids는 IDS 문자열 하나다.\n예) 林 → {"ids":"⿰木木"}\n예) 昌 → {"ids":"⿱日日"}\n예) 謝 → {"ids":"⿰言射"}`,
-      }),
+    const response = await postOllama('/api/generate', {
+      model,
+      stream: false,
+      think: false,
+      format: OLLAMA_IDS_SCHEMA,
+      options: { temperature: 0, seed: OLLAMA_SEED },
+      prompt: `한자 ${char}를 IDS(표의문자 분해)로 나눠라. ids는 IDS 문자열 하나다.\n예) 林 → {"ids":"⿰木木"}\n예) 昌 → {"ids":"⿱日日"}\n예) 謝 → {"ids":"⿰言射"}`,
     })
     if (!response.ok) return null
     const data = await response.json() as { response?: string }

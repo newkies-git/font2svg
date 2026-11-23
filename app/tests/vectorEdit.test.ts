@@ -15,7 +15,7 @@ import {
   strokesBBox,
   transformPath,
   transformStroke,
-} from '../src/lib/vectorEdit.ts'
+} from '../shared/vectorEdit.ts'
 import { rectPath, strokeOf } from './helpers.ts'
 
 test('경로를 편집 가능한 선분으로 읽고 다시 쓴다(왕복)', () => {

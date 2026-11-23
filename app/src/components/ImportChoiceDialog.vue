@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import type { WriteMode } from '../../shared/types.ts'
 
 const dialog = ref<HTMLDialogElement | null>(null)
-let resolveAsk: ((value: 'replace' | 'append' | null) => void) | null = null
+let resolveAsk: ((value: WriteMode | null) => void) | null = null
 
-function ask(): Promise<'replace' | 'append' | null> {
+function ask(): Promise<WriteMode | null> {
   return new Promise((resolve) => {
     resolveAsk = resolve
     if (dialog.value) dialog.value.returnValue = ''

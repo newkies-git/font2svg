@@ -7,7 +7,7 @@ import { parseHanja } from '../server/references.ts'
 import { WARN_ONCE_LIMIT } from '../shared/constants.ts'
 import { resetWarnings, warnOnce } from '../shared/log.ts'
 import { recoverMedian } from '../shared/strokeCut.ts'
-import { recomputeStrokeWidth } from '../src/lib/vectorEdit.ts'
+import { recomputeStrokeWidth } from '../shared/vectorEdit.ts'
 
 let warn: ReturnType<typeof mock.method>
 

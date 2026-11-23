@@ -1,7 +1,7 @@
 import { isContourLayer } from '../../shared/layerKind.ts'
 import { spliceOutlineBridge } from '../../shared/strokeCut.ts'
 import type { Ref } from 'vue'
-import { pointsToClosedPath, restrokeFromOutline, roundPt } from '../lib/strokeOps.ts'
+import { pointsToClosedPath, restrokeFromOutline, roundPt } from '../../shared/strokeOps.ts'
 import type { LayerRecord, Pt, StrokeRecord } from '../../shared/types.ts'
 import type { LayerEditorState } from './layerEditorState.ts'
 

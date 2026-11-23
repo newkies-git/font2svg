@@ -11,7 +11,7 @@ import {
   simplifyEditablePath,
   togglePathSegmentCurve,
 } from '../src/lib/pathPointEdit.ts'
-import { parseEditablePath } from '../src/lib/vectorEdit.ts'
+import { parseEditablePath } from '../shared/vectorEdit.ts'
 
 test('expandSeamPartners: 닫힌 서브패스의 시작점(M)과 마지막 겹침 끝점은 함께 묶인다', () => {
   const closed = parseEditablePath('M 0 0 L 100 0 L 100 50 L 0 0 Z')

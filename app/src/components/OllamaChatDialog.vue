@@ -1,19 +1,20 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
 import { OLLAMA_CHAT_MAX_CONTENT } from '../../shared/constants.ts'
-import type { ChatEdit, ChatMessage, ChatMode, LayerRecord } from '../../shared/types.ts'
-import { chatWithOllama } from '../lib/api.ts'
-import { applyChatEdits, buildChatContext, describeEdit, type ChatEditActions } from '../lib/chatEdits.ts'
+import type { ChatMessage, ChatMode, ChatProposal } from '../../shared/types.ts'
+import { applyChatEdits, chatWithOllama } from '../lib/api.ts'
+import { describeEdit } from '../lib/chatEdits.ts'
 import { useOllamaStatus } from '../composables/useOllamaStatus.ts'
 
-type Turn = ChatMessage & { edits?: ChatEdit[]; applied?: boolean }
+type Turn = ChatMessage & { toolLog?: string[]; proposals?: (ChatProposal & { state: 'pending' | 'applied' })[] }
 
 const props = defineProps<{
-  selected: { char: string; reading?: string | null; meaning?: string | null } | null
-  layer: Pick<LayerRecord, 'name' | 'strokes'> | null
-  locked: boolean
-  actions: ChatEditActions
+  selected: { unicode: string; char: string } | null
+  // 선택한 글자에 저장하지 않은 편집이 있는지(DB 기준으로 적용하므로 덮어쓰기를 막는다)
+  dirty: boolean
 }>()
+
+const emit = defineEmits<{ applied: [unicode: string] }>()
 
 const dialog = ref<HTMLDialogElement | null>(null)
 const log = ref<HTMLElement | null>(null)
@@ -25,7 +26,6 @@ const sending = ref(false)
 const failure = ref('')
 
 const canSend = computed(() => Boolean(draft.value.trim()) && !sending.value && Boolean(status.value?.connected))
-const editBlocked = computed(() => mode.value === 'edit' && (!props.selected || !props.layer || props.layer.strokes.length === 0))
 
 async function open() {
   dialog.value?.show()
@@ -54,9 +54,14 @@ async function send() {
       model: selectedModel.value.trim() || undefined,
       mode: mode.value,
       messages: turns.value.map(({ role, content }) => ({ role, content })),
-      context: buildChatContext(props.selected, props.layer),
+      current: props.selected ?? undefined,
     })
-    turns.value.push({ role: 'assistant', content: result.reply || '(응답이 비었습니다)', edits: result.edits, applied: false })
+    turns.value.push({
+      role: 'assistant',
+      content: result.reply || '(응답이 비었습니다)',
+      toolLog: result.toolLog,
+      proposals: result.proposals.map((proposal) => ({ ...proposal, state: 'pending' })),
+    })
   } catch (cause) {
     failure.value = cause instanceof Error ? cause.message : 'Ollama 채팅에 실패했습니다.'
   } finally {
@@ -65,10 +70,19 @@ async function send() {
   }
 }
 
-function applyTurn(turn: Turn) {
-  if (!turn.edits?.length || turn.applied || props.locked) return
-  applyChatEdits(turn.edits, props.actions)
-  turn.applied = true
+const blockedReason = (proposal: ChatProposal) =>
+  props.dirty && proposal.unicode === props.selected?.unicode ? '저장하지 않은 편집이 있어 적용할 수 없습니다. 먼저 저장하거나 되돌리세요.' : ''
+
+async function applyProposal(proposal: Turn['proposals'] extends (infer P)[] | undefined ? P : never) {
+  if (proposal.state !== 'pending' || blockedReason(proposal)) return
+  failure.value = ''
+  try {
+    await applyChatEdits(proposal.unicode, proposal.edits)
+    proposal.state = 'applied'
+    emit('applied', proposal.unicode)
+  } catch (cause) {
+    failure.value = cause instanceof Error ? cause.message : 'Ollama 제안을 적용하지 못했습니다.'
+  }
 }
 
 function clearTurns() {
@@ -94,8 +108,8 @@ defineExpose({ open })
       <label>
         모드
         <select v-model="mode" name="chat-mode">
-          <option value="chat">일반 채팅</option>
-          <option value="edit">데이터 수정 채팅</option>
+          <option value="chat">일반 채팅 (DB 읽기)</option>
+          <option value="edit">데이터 수정 채팅 (읽기 + 수정 제안)</option>
         </select>
       </label>
       <label>
@@ -111,24 +125,30 @@ defineExpose({ open })
       {{ status.error || '로컬 Ollama 서버가 꺼져 있습니다.' }}
       <button type="button" :disabled="checking" @click="refreshStatus">다시 확인</button>
     </p>
-    <p v-if="mode === 'edit'" class="ollama-chat-hint">
-      <template v-if="editBlocked">수정할 획이 있는 글자와 레이어를 선택하세요.</template>
-      <template v-else>
-        {{ selected?.char }} · '{{ layer?.name }}' 레이어의 {{ layer?.strokes.length }}획을 대상으로 제안합니다. 제안은 [적용]을 눌러야 반영되고, 저장 전까지 되돌릴 수 있습니다.
-      </template>
+    <p class="ollama-chat-hint">
+      모델이 글자·획 데이터를 직접 조회해 답합니다.
+      <template v-if="mode === 'edit'">수정은 제안으로만 올라오며, [적용]을 누르면 DB의 작업 획에 반영됩니다. 승인된 글자는 이력이 남아 실행 취소할 수 있지만, 승인 전 글자는 작업 데이터를 바로 덮어씁니다.</template>
+      <template v-else>이 모드에서는 데이터를 수정하지 않습니다.</template>
     </p>
 
     <ol ref="log" class="ollama-chat-log" aria-live="polite">
-      <li v-if="turns.length === 0" class="ollama-chat-empty">메시지를 입력해 대화를 시작하세요.</li>
+      <li v-if="turns.length === 0" class="ollama-chat-empty">메시지를 입력해 대화를 시작하세요. 예: "丁의 획 정보를 알려줘"</li>
       <li v-for="(turn, index) in turns" :key="index" class="ollama-chat-turn" :class="`is-${turn.role}`">
         <p>{{ turn.content }}</p>
-        <div v-if="turn.edits?.length" class="ollama-chat-edits">
-          <strong>수정 제안</strong>
+        <p v-if="turn.toolLog?.length" class="ollama-chat-tools">조회: {{ turn.toolLog.join(' · ') }}</p>
+        <div v-for="(proposal, proposalIndex) in turn.proposals ?? []" :key="proposalIndex" class="ollama-chat-edits">
+          <strong>수정 제안 · {{ proposal.char }} ({{ proposal.unicode }})</strong>
           <ul>
-            <li v-for="(edit, editIndex) in turn.edits" :key="editIndex">{{ describeEdit(edit) }}</li>
+            <li v-for="(edit, editIndex) in proposal.edits" :key="editIndex">{{ describeEdit(edit) }}</li>
           </ul>
-          <button type="button" class="primary" :disabled="turn.applied || locked" @click="applyTurn(turn)">
-            {{ turn.applied ? '적용함' : locked ? '레이어 잠김' : '적용' }}
+          <p v-if="blockedReason(proposal) && proposal.state === 'pending'" class="ollama-chat-hint">{{ blockedReason(proposal) }}</p>
+          <button
+            type="button"
+            class="primary"
+            :disabled="proposal.state === 'applied' || Boolean(blockedReason(proposal))"
+            @click="applyProposal(proposal)"
+          >
+            {{ proposal.state === 'applied' ? '적용함' : '적용' }}
           </button>
         </div>
       </li>
@@ -146,7 +166,7 @@ defineExpose({ open })
         placeholder="메시지 입력 (Enter 전송, Shift+Enter 줄바꿈)"
         @keydown.enter.exact.prevent="send"
       />
-      <button type="submit" class="primary" :disabled="!canSend || editBlocked">보내기</button>
+      <button type="submit" class="primary" :disabled="!canSend">보내기</button>
     </form>
   </dialog>
 </template>

@@ -1,6 +1,6 @@
 import { computed, type Ref } from 'vue'
 import { CANVAS } from '../../shared/constants.ts'
-import { pathsBBox, strokesBBox, type BBox } from '../lib/vectorEdit.ts'
+import { pathsBBox, strokesBBox, type BBox } from '../../shared/vectorEdit.ts'
 import type { LayerRecord, Pt, StrokeRecord } from '../../shared/types.ts'
 
 export function visibleWorkStrokes(strokes: StrokeRecord[], shown: number): StrokeRecord[] {

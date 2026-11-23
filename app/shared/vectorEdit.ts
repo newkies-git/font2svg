@@ -1,9 +1,9 @@
-import { strokeWidthCap } from '../../shared/clamp.ts'
-import { COORD_DECIMALS, MEDIAN_MIN_POINTS, MIN_STROKE_WIDTH } from '../../shared/constants.ts'
-import { warnOnce } from '../../shared/log.ts'
-import { parseCommands, pathBBox, round1 } from '../../shared/paths.ts'
-import { computeOptimalStrokeWidth, recoverMedian } from '../../shared/strokeCut.ts'
-import type { Pt, StrokeRecord } from '../../shared/types.ts'
+import { strokeWidthCap } from './clamp.ts'
+import { COORD_DECIMALS, MEDIAN_MIN_POINTS, MIN_STROKE_WIDTH } from './constants.ts'
+import { warnOnce } from './log.ts'
+import { parseCommands, pathBBox, round1 } from './paths.ts'
+import { computeOptimalStrokeWidth, recoverMedian } from './strokeCut.ts'
+import type { Pt, StrokeRecord } from './types.ts'
 
 export type BBox = { minX: number; minY: number; maxX: number; maxY: number }
 

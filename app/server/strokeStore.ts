@@ -1,6 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite'
 import { clampStrokeWidth } from '../shared/clamp.ts'
 import { DEFAULT_STROKE_WIDTH } from '../shared/constants.ts'
+import type { WriteMode } from '../shared/types.ts'
 import { parseAnimSvg } from './animSvg.ts'
 import { markCharacterEdited, setCharacterStrokeCount } from './characterWrites.ts'
 import { validate } from './compileOutput.ts'
@@ -111,6 +112,14 @@ export function createStrokeStore(db: DatabaseSync) {
     return row ? itemsOf(row) : []
   }
 
+  // 화면에 보이는 작업 획. 승인된 strokes가 있으면 그것을, 없으면 승인 전 작업 데이터를 쓴다.
+  function currentWorkItems(unicode: string): StrokeItem[] {
+    const confirmed = readStrokes(unicode)
+    if (confirmed.length > 0) return confirmed
+    const working = readWorkingRow(unicode)
+    return working ? itemsOf(working) : []
+  }
+
   function pushHistory(row: StrokeRow, action: string, by: string, undoable: 0 | 1) {
     db.prepare(`
       INSERT INTO strokes_history (char, radical, font_outline, stroke_outlines, median_line, origin, origin_url,
@@ -212,6 +221,14 @@ export function createStrokeStore(db: DatabaseSync) {
     })
   }
 
+  // write가 append이고 이어 붙일 획(existing, 기본은 현재 작업 획)이 있으면 기존 획 뒤에 items를 붙여 저장하고 기존 획 수를 돌려준다.
+  // 돌려준 수는 새 획 번호가 밀린 만큼이다(unmatched 번호 보정용). 붙이지 않았으면(교체이거나 기존 획이 없으면) null이며 아무것도 저장하지 않는다.
+  function appendStrokes(unicode: string, write: WriteMode, items: StrokeItem[], action: string, existing: StrokeItem[] = currentWorkItems(unicode)): number | null {
+    if (write !== 'append' || existing.length === 0) return null
+    updateStrokes(unicode, [...existing, ...items], `${action} 추가`)
+    return existing.length
+  }
+
   // AnimCJK 형식 SVG를 작업 데이터로 가져온다. 승인 전에는 strokes를 건드리지 않으므로 strokes에 이미 있는 글자는 받지 않는다.
   function importSvg(unicode: string, svg: string) {
     const character = requireCharacter(unicode)
@@ -262,11 +279,13 @@ export function createStrokeStore(db: DatabaseSync) {
     readStrokeRow,
     readWorkingRow,
     readStrokes,
+    currentWorkItems,
     itemsOf,
     writeStrokes,
     replaceStrokes,
     writeWorking,
     updateStrokes,
+    appendStrokes,
     importSvg,
     approve,
     undo,

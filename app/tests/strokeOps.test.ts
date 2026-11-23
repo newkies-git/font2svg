@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { boxAlignTransform, moveItem, pointsToClosedPath, restrokeFromOutline, roundPt, separatePath, separateStroke, shownAfterSplit, splitStrokeAtKnife, withCap, withMedianPoints } from '../src/lib/strokeOps.ts'
+import { boxAlignTransform, moveItem, pointsToClosedPath, restrokeFromOutline, roundPt, separatePath, separateStroke, shownAfterSplit, splitStrokeAtKnife, withCap, withMedianPoints } from '../shared/strokeOps.ts'
 import { pathBounds, rectPath, strokeOf } from './helpers.ts'
 
 test('roundPt·pointsToClosedPath: 소수 첫째 자리로 반올림해 닫힌 경로를 만든다', () => {

@@ -3,14 +3,14 @@ import { LAYER_ID } from '../../shared/constants.ts'
 import type { Ref } from 'vue'
 import { autoFitLayer, autoFitStroke } from '../lib/autoFit.ts'
 import { pruneHiddenIndices, remapHiddenAfterDelete, remapHiddenAfterMerge, remapHiddenAfterMove } from '../lib/hiddenItems.ts'
-import { moveItem, withCap, withMedianPoints } from '../lib/strokeOps.ts'
+import { moveItem, withCap, withMedianPoints } from '../../shared/strokeOps.ts'
 import { toPercent } from '../lib/percent.ts'
 import {
   mergeTwoStrokes,
   reverseMedian,
   transformPath,
   transformStroke,
-} from '../lib/vectorEdit.ts'
+} from '../../shared/vectorEdit.ts'
 import type { CapType, LayerRecord, Pt, StrokeRecord } from '../../shared/types.ts'
 import { cloneStroke } from './layerClone.ts'
 import type { LayerEditorState } from './layerEditorState.ts'

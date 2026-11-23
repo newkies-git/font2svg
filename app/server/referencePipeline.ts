@@ -5,7 +5,7 @@ import path from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
 import { ACJK_BATCH_LIMIT, ACJK_FILE_LIMIT } from '../shared/constants.ts'
 import { isReferenceKind, type ReferenceKind } from '../shared/layerKind.ts'
-import type { Pt } from '../shared/types.ts'
+import type { Pt, WriteMode } from '../shared/types.ts'
 import { transaction } from './db.ts'
 import type { ImportedStrokes } from './geometry.ts'
 import {
@@ -136,29 +136,18 @@ export function createReferencePipeline(
     })
   }
 
-  // 화면에 보이는 작업 획. 승인된 strokes가 있으면 그것을, 없으면 승인 전 작업 데이터를 쓴다.
-  function currentWorkItems(unicode: string) {
-    const confirmed = strokes.readStrokes(unicode)
-    if (confirmed.length > 0) return confirmed
-    const working = strokes.readWorkingRow(unicode)
-    return working ? strokes.itemsOf(working) : []
-  }
-
   // 획순이 틀린 글자를 사람이 지정해 네이버 한자사전 획순으로 바꾼다. 사람이 고친 글자도 바꾸며(실행 취소로 되돌린다),
   // 바뀌기 전 strokes 행은 strokes_history에 남고 같은 글자의 작업 데이터는 지워진다. 네이버에 없으면 아무것도 바꾸지 않는다.
   // write가 append이고 작업 획이 있으면 기존 획 뒤에 붙인다. 비어 있으면 교체와 같다.
-  async function applyNaver(unicode: string, write: 'replace' | 'append' = 'replace') {
+  async function applyNaver(unicode: string, write: WriteMode = 'replace') {
     const character = strokes.requireCharacter(unicode)
     const naver = await loadSource(unicode, 'NAVER', naverUrl(character.char), () => fetchNaver(character.char))
     const imported = naver ? hanjaStrokes(naver.value) : null
     if (!naver || !imported) throw new Error('네이버 한자사전에서 이 글자의 획순을 찾지 못했습니다.')
     const fitted = fitOrGiven(character.char, imported.medians, imported.outlines)
     const items = toItems(fitted.glyph, new Set(naver.value.radical))
-    const existing = currentWorkItems(unicode)
-    if (write === 'append' && existing.length > 0) {
-      strokes.updateStrokes(unicode, [...existing, ...items], `${ACTION_NAVER} 추가`)
-      return { unmatched: fitted.unmatched.map((order) => order + existing.length), status: fitted.status }
-    }
+    const kept = strokes.appendStrokes(unicode, write, items, ACTION_NAVER)
+    if (kept !== null) return { unmatched: fitted.unmatched.map((order) => order + kept), status: fitted.status }
     saveImported(unicode, 'NAVER', naver.url, naver.value.radical, fitted.glyph, ACTION_NAVER)
     return { unmatched: fitted.unmatched, status: fitted.status }
   }

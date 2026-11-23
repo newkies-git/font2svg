@@ -1,6 +1,6 @@
 import type { Ref } from 'vue'
-import { roundPt, withMedianPoints } from '../lib/strokeOps.ts'
-import { insertMedianPoint, removeMedianPoint } from '../lib/vectorEdit.ts'
+import { roundPt, withMedianPoints } from '../../shared/strokeOps.ts'
+import { insertMedianPoint, removeMedianPoint } from '../../shared/vectorEdit.ts'
 import type { Pt, StrokeRecord } from '../../shared/types.ts'
 import type { LayerEditorState } from './layerEditorState.ts'
 

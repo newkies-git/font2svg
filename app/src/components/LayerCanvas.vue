@@ -6,7 +6,7 @@ import { useCanvasFit, visibleWorkStrokes } from '../composables/useCanvasFit.ts
 import { useCanvasLoupe } from '../composables/useCanvasLoupe.ts'
 import { BADGE_RADIUS, CANVAS } from '../../shared/constants.ts'
 import { handleDirsFor, handlePoint, type TransformMode } from '../lib/transformMath.ts'
-import { pathsBBox, strokesBBox, type BBox } from '../lib/vectorEdit.ts'
+import { pathsBBox, strokesBBox, type BBox } from '../../shared/vectorEdit.ts'
 import { bezierNodesOf, polylinePoints, strokeDash } from '../lib/canvasGeometry.ts'
 import { FULL_CANVAS_VIEW, isFullView, panView, viewFromSelection, zoomViewAt, type CanvasView } from '../lib/canvasView.ts'
 import type { CharacterDetail, EditorTool, LayerRecord, Pt, StrokeRecord } from '../../shared/types.ts'

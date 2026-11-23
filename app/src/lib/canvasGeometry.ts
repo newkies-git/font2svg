@@ -1,5 +1,5 @@
 import type { Pt, StrokeRecord } from '../../shared/types.ts'
-import { parseEditablePath } from './vectorEdit.ts'
+import { parseEditablePath } from '../../shared/vectorEdit.ts'
 
 // 캔버스 그리기에 쓰는 순수 계산(화면 상태 없음).
 

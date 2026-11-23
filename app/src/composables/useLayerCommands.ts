@@ -2,7 +2,7 @@ import { LAYER_ID } from '../../shared/constants.ts'
 import type { Ref } from 'vue'
 import { apiRequest, characterUrl } from '../lib/api.ts'
 import { isContourLayer, isReferenceKind } from '../../shared/layerKind.ts'
-import type { CharacterDetail, LayerRecord, Pt, StrokeRecord } from '../../shared/types.ts'
+import type { CharacterDetail, LayerRecord, Pt, StrokeRecord, WriteMode } from '../../shared/types.ts'
 import { createBusyRunner } from './useBusyAction.ts'
 import { cloneLayer } from './layerClone.ts'
 import type { LayerEditorState } from './layerEditorState.ts'
@@ -18,7 +18,7 @@ type LayerCommandsDeps = {
   guardUnlocked: () => LayerRecord | null
   updateTargetStrokes: (nextStrokes: StrokeRecord[], statusMsg?: string) => void
   // 참고 레이어를 작업 획으로 가져올 때. 작업 획이 있을 때만 부른다. 확인 창이 없으면 undefined.
-  confirmImport?: () => Promise<'replace' | 'append' | null | undefined>
+  confirmImport?: () => Promise<WriteMode | null | undefined>
 }
 
 // 서버에 저장할 레이어 내용: 윤곽만 있는 궁서체 레이어는 paths만, 나머지는 획과 paths를 보낸다.
@@ -154,7 +154,7 @@ export function useLayerCommands(state: LayerEditorState, deps: LayerCommandsDep
     const current = selected.value
     if (!current) return
     const layer = layers.value.find((item) => item.id === layerId)
-    let write: 'replace' | 'append' = 'replace'
+    let write: WriteMode = 'replace'
     if (layer && isReferenceKind(layer.kind) && (strokesLayer.value?.strokes.length ?? 0) > 0) {
       const choice = confirmImport ? await confirmImport() : undefined
       if (choice !== 'replace' && choice !== 'append') return

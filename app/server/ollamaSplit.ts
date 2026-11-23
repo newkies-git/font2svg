@@ -4,7 +4,6 @@ import {
   MEDIAN_MIN_POINTS,
   MEDIAN_SIMPLIFY_TOLERANCE,
   MIN_STROKE_AREA_RATIO,
-  OLLAMA_TIMEOUT_MS,
 } from '../shared/constants.ts'
 import { warnOnce } from '../shared/log.ts'
 import { round1 } from '../shared/paths.ts'
@@ -22,7 +21,7 @@ import {
   toPoints,
   type ImportedStrokes,
 } from './geometry.ts'
-import { OLLAMA_MODEL, ollamaUrl } from './ids.ts'
+import { OLLAMA_MODEL, postOllama } from './ids.ts'
 
 export type OllamaSplitSource = 'NAVER' | 'MMH'
 
@@ -118,18 +117,13 @@ async function askOllamaForStrokeSplit(params: {
   ].join('\n')
 
   try {
-    const response = await fetch(ollamaUrl('/api/generate'), {
-      method: 'POST',
-      signal: AbortSignal.timeout(OLLAMA_TIMEOUT_MS),
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model,
-        stream: false,
-        think: false,
-        format: OLLAMA_SPLIT_SCHEMA,
-        options: { temperature: 0, seed: OLLAMA_SEED },
-        prompt,
-      }),
+    const response = await postOllama('/api/generate', {
+      model,
+      stream: false,
+      think: false,
+      format: OLLAMA_SPLIT_SCHEMA,
+      options: { temperature: 0, seed: OLLAMA_SEED },
+      prompt,
     })
     if (!response.ok) return null
     const data = (await response.json()) as { response?: string }

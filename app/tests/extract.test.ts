@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { extractStrokeAlongGuide } from '../shared/strokeCut.ts'
-import { extractStrokeAtGuide } from '../src/lib/strokeOps.ts'
+import { extractStrokeAtGuide } from '../shared/strokeOps.ts'
 import { pathBounds, pathCovers, strokeOf } from './helpers.ts'
 
 // 十: 가로 y 460~540(x 200~800), 세로 x 460~540(y 200~800). 교차부는 가운데 80×80 정사각형

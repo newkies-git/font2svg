@@ -7,7 +7,7 @@ import {
   type BBox,
   type EditableSeg,
   type HandleRef,
-} from '../lib/vectorEdit.ts'
+} from '../../shared/vectorEdit.ts'
 import { dragTransform, type HandleDir, type TransformMode } from '../lib/transformMath.ts'
 import type { LayerRecord, Pt, StrokeRecord } from '../../shared/types.ts'
 import { cloneStroke } from './layerClone.ts'

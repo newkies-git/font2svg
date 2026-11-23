@@ -1,6 +1,6 @@
-import type { CapType, KnifeMode, Pt, StrokeRecord } from '../../shared/types.ts'
-import { round1 } from '../../shared/paths.ts'
-import { applyCapAtFace, applyCapShape, capLength, extractStrokeAlongGuide, isCapShape, KNIFE_OVERLAP, matchMedianEnd, recoverMedian, splitStrokeByKnife, type CapShape } from '../../shared/strokeCut.ts'
+import type { CapType, KnifeMode, Pt, StrokeRecord } from './types.ts'
+import { round1 } from './paths.ts'
+import { applyCapAtFace, applyCapShape, capLength, extractStrokeAlongGuide, isCapShape, KNIFE_OVERLAP, matchMedianEnd, recoverMedian, splitStrokeByKnife, type CapShape } from './strokeCut.ts'
 import type { BBox } from './vectorEdit.ts'
 import { recomputeStrokeWidth } from './vectorEdit.ts'
 

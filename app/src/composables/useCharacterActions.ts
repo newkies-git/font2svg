@@ -1,6 +1,6 @@
 import type { Ref } from 'vue'
 import { LAYER_ID, type ImageSplit } from '../../shared/constants.ts'
-import type { AppliedCharacterDetail, CharacterDetail, CharacterSummary } from '../../shared/types.ts'
+import type { AppliedCharacterDetail, CharacterDetail, CharacterSummary, WriteMode } from '../../shared/types.ts'
 import { apiRequest, apiUrl, applyOllamaIds, characterUrl, splitFontWithOllama } from '../lib/api.ts'
 import { buildImageImport } from '../lib/imageDecode.ts'
 import { issueLabel } from '../lib/labels.ts'
@@ -18,7 +18,7 @@ type CharacterActionsDeps = {
   // 작업 획을 덮어써도 되는지 사용자에게 묻는다. 확인 창이 없으면 undefined.
   confirmReplace: () => Promise<boolean | undefined>
   // 참고 획을 작업 획으로 가져올 때 초기화(replace)와 추가(append) 중 고른다. 확인 창이 없으면 undefined.
-  confirmImport: () => Promise<'replace' | 'append' | null | undefined>
+  confirmImport: () => Promise<WriteMode | null | undefined>
   // 가져온 뒤 맞지 않는 획을 작업 획에서 바로 고를 수 있게 한다.
   focusWorkStroke?: (index: number) => void
 }
@@ -131,7 +131,7 @@ export function useCharacterActions(studio: StudioState, deps: CharacterActionsD
   async function applyNaver() {
     const current = selected.value
     if (!current) return
-    let write: 'replace' | 'append' = 'replace'
+    let write: WriteMode = 'replace'
     if (workStrokeCount() > 0) {
       const choice = await confirmImport()
       if (choice !== 'replace' && choice !== 'append') return
@@ -188,7 +188,7 @@ export function useCharacterActions(studio: StudioState, deps: CharacterActionsD
   async function applyOllama(options: { model?: string; ids?: string } = {}): Promise<boolean> {
     const current = selected.value
     if (!current) return false
-    let write: 'replace' | 'append' = 'replace'
+    let write: WriteMode = 'replace'
     if (workStrokeCount() > 0) {
       const choice = await confirmImport()
       if (choice !== 'replace' && choice !== 'append') return false
@@ -216,7 +216,7 @@ export function useCharacterActions(studio: StudioState, deps: CharacterActionsD
   async function applyOllamaSplit(options: { source: 'NAVER' | 'MMH'; model?: string }): Promise<boolean> {
     const current = selected.value
     if (!current) return false
-    let write: 'replace' | 'append' = 'replace'
+    let write: WriteMode = 'replace'
     if (workStrokeCount() > 0) {
       const choice = await confirmImport()
       if (choice !== 'replace' && choice !== 'append') return false

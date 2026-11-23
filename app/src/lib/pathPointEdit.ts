@@ -1,7 +1,7 @@
 import { round1 } from '../../shared/paths.ts'
 import { simplifyPolyline } from '../../shared/strokeCut.ts'
 import type { Pt } from '../../shared/types.ts'
-import type { BBox, EditableSeg } from './vectorEdit.ts'
+import type { BBox, EditableSeg } from '../../shared/vectorEdit.ts'
 
 const SEAM_EPSILON = 0.5
 const SPLIT_T_MIN = 0.05

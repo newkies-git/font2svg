@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { flattenContours, samplePath } from '../shared/paths.ts'
 import { autoFitLayer, autoFitStroke } from '../src/lib/autoFit.ts'
-import { transformStroke } from '../src/lib/vectorEdit.ts'
+import { transformStroke } from '../shared/vectorEdit.ts'
 import { rectPath, strokeOf } from './helpers.ts'
 
 // 글자: 서로 떨어진 두 덩어리. 획: 같은 모양인데 위치·각도가 틀어진 레이어.

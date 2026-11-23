@@ -23,7 +23,7 @@ import {
 } from '../../shared/constants.ts'
 import { flattenContours, round1 } from '../../shared/paths.ts'
 import { computeOptimalStrokeWidth, recoverMedian, segmentOutlineByMedians, simplifyPolyline } from '../../shared/strokeCut.ts'
-import { transformStroke } from './vectorEdit.ts'
+import { transformStroke } from '../../shared/vectorEdit.ts'
 import type { Pt, StrokeRecord } from '../../shared/types.ts'
 
 type Loop = { x: number; y: number }[]

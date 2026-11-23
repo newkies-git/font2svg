@@ -21,7 +21,6 @@ import { useStudioShortcuts } from './composables/useStudioShortcuts.ts'
 import { useStudioState } from './composables/useStudioState.ts'
 import { useTheme } from './composables/useTheme.ts'
 import { LAYER_ID } from '../shared/constants.ts'
-import type { ChatEditActions } from './lib/chatEdits.ts'
 import type { CapType } from '../shared/types.ts'
 
 const studio = useStudioState()
@@ -31,14 +30,6 @@ const conversionsDialog = ref<InstanceType<typeof ConversionsDialog> | null>(nul
 const ollamaChat = ref<InstanceType<typeof OllamaChatDialog> | null>(null)
 const importChoice = ref<InstanceType<typeof ImportChoiceDialog> | null>(null)
 const { status: ollamaStatus, activeModelLabel, refreshStatus: refreshOllamaStatus } = useOllamaStatus()
-const chatActions: ChatEditActions = {
-  setRadical: (index, value) => setStrokeRadical(index, value),
-  setCap: (index, end, value) => setStrokeCap(index, end, value),
-  reverse: (index) => reverseActiveStrokeMedian(index),
-  move: (index, delta) => moveStrokeInActive(index, delta),
-  remove: (index) => deleteStrokeAt(index),
-  mergeNext: (index) => mergeStrokeWithNext(index),
-}
 const confirmImport = () => importChoice.value?.ask() ?? Promise.resolve(undefined)
 
 const { chars, query, statusFilter, filteredChars, statusCounts, loadList, clearSearch } = useCharacterList(error)
@@ -130,7 +121,7 @@ const {
   deleteActiveCustomLayer,
 } = useLayerWorkspace(studio, { onReloadList: loadList, stopPlayback: stop, confirmImport })
 
-const { uploadInitial, openChar, openFirst, undo, approve, compileChar, applyNaver, importSvg, importImage } = useCharacterActions(studio, {
+const { uploadInitial, openChar, openFirst, undo, approve, compileChar, applyNaver, importSvg, importImage, reload } = useCharacterActions(studio, {
   chars,
   loadList,
   syncFromDetail,
@@ -201,6 +192,11 @@ useStudioShortcuts({
   cancelKnife,
   cancelConnect,
 })
+
+async function onChatApplied(unicode: string) {
+  if (selected.value?.unicode === unicode) await reload()
+  await loadList()
+}
 
 onMounted(() => {
   void loadList()
@@ -418,10 +414,9 @@ onMounted(() => {
     </ImportChoiceDialog>
     <OllamaChatDialog
       ref="ollamaChat"
-      :selected="selected"
-      :layer="editableLayer"
-      :locked="isEditableLocked"
-      :actions="chatActions"
+      :selected="selected ? { unicode: selected.unicode, char: selected.char } : null"
+      :dirty="dirtyIds.size > 0"
+      @applied="onChatApplied"
     />
     <ConversionsDialog
       ref="conversionsDialog"

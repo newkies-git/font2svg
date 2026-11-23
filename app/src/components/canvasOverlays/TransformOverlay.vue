@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import type { ResizeDir } from '../../composables/useCanvasDrag.ts'
 import type { TransformMode } from '../../lib/transformMath.ts'
-import type { BBox } from '../../lib/vectorEdit.ts'
+import type { BBox } from '../../../shared/vectorEdit.ts'
 import { TRANSFORM_HANDLE_SIZE } from '../../lib/canvasMetrics.ts'
 
 const props = defineProps<{

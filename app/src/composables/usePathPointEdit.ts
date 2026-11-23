@@ -10,7 +10,7 @@ import {
   simplifyEditablePath,
   togglePathSegmentCurve,
 } from '../lib/pathPointEdit.ts'
-import { parseEditablePath, serializeEditablePath } from '../lib/vectorEdit.ts'
+import { parseEditablePath, serializeEditablePath } from '../../shared/vectorEdit.ts'
 import type { Pt } from '../../shared/types.ts'
 import type { LayerEditorState } from './layerEditorState.ts'
 

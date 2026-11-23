@@ -6,6 +6,8 @@ type RefSource = 'MMH' | 'ACJK' | 'NAVER' | 'IDS' | 'OLLAMA_IDS' | 'MANUAL' | 'F
 export type IssueStatus = 'OPEN' | 'DRAFT' | 'APPROVED'
 export type FitStatus = 'fitted' | 'partial' | 'copied' | 'no-font'
 export type CapType = (typeof CAP_TYPES)[number]
+// 가져온 획을 작업 획에 반영하는 방식: 교체 또는 기존 획 뒤에 추가.
+export type WriteMode = 'replace' | 'append'
 export type ThemeMode = 'system' | 'light' | 'dark'
 export type StatusFilter = 'ALL' | IssueStatus
 
@@ -147,25 +149,8 @@ type ChatRole = 'user' | 'assistant'
 export type ChatMessage = { role: ChatRole; content: string }
 export type ChatMode = 'chat' | 'edit'
 
-// 채팅 모델에 알려주는 현재 획 요약. 번호는 1부터.
-export type ChatStrokeSummary = {
-  order: number
-  points: number
-  width: number
-  is_radical: 0 | 1
-  start_cap: CapType
-  end_cap: CapType
-  start: Pt
-  end: Pt
-}
-
-export type ChatContext = {
-  char: string
-  reading?: string
-  meaning?: string
-  layerName: string
-  strokes: ChatStrokeSummary[]
-}
+// 사용자가 지금 보고 있는 글자(채팅 모델에 알려 주는 정보)
+export type ChatCurrent = { unicode: string; char: string }
 
 // 모델이 제안하는 데이터 수정. stroke는 1부터 센 획 번호다.
 export type ChatEdit =
@@ -176,7 +161,10 @@ export type ChatEdit =
   | { op: 'delete'; stroke: number }
   | { op: 'merge_next'; stroke: number }
 
-export type ChatReply = { reply: string; edits: ChatEdit[]; model: string }
+// 모델이 도구로 등록한 수정 제안. 사용자가 승인해야 DB에 반영된다.
+export type ChatProposal = { unicode: string; char: string; edits: ChatEdit[] }
+
+export type ChatReply = { reply: string; proposals: ChatProposal[]; toolLog: string[]; model: string }
 
 export type ConversionRecord = {
   id: number

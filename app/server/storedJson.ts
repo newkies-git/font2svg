@@ -1,3 +1,4 @@
+import { isRecord } from '../shared/guards.ts'
 import type { Pt } from '../shared/types.ts'
 import type { MedianLine, StrokeOutline } from './model.ts'
 
@@ -16,7 +17,6 @@ function invalid(label: string): Error {
   return new Error(`저장된 ${label} 데이터의 형식이 올바르지 않습니다.`)
 }
 
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null
 const isPoint = (value: unknown): value is Pt => Array.isArray(value) && value.length === 2 && value.every((n) => typeof n === 'number' && Number.isFinite(n))
 
 export function parseStringArray(text: string, label: string): string[] {

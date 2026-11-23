@@ -1,3 +1,4 @@
+import type { WriteMode } from '../../shared/types.ts'
 import { useLayerAppearance } from './useLayerAppearance.ts'
 import { useLayerCommands } from './useLayerCommands.ts'
 import { useLayerSession } from './useLayerSession.ts'
@@ -10,7 +11,7 @@ export function useLayerWorkspace(
   hooks: {
     onReloadList: () => Promise<void>
     stopPlayback: () => void
-    confirmImport?: () => Promise<'replace' | 'append' | null | undefined>
+    confirmImport?: () => Promise<WriteMode | null | undefined>
   },
 ) {
   const { selected, shown, reveal, message, error, busy } = studio

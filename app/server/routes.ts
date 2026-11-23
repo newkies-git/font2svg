@@ -1,9 +1,11 @@
 import { ACJK_BATCH_LIMIT, FONT_BATCH_LIMIT } from '../shared/constants.ts'
 import type { LayerMetaPatch } from '../shared/types.ts'
+import { parseWriteMode } from '../shared/writeMode.ts'
 import { HTTP_BAD_REQUEST, HTTP_NOT_FOUND, HTTP_OK } from './http.ts'
 import { sanitizeLayerStrokes } from './layerData.ts'
 import { parseLayerSavePayload } from './layerRequests.ts'
-import { chatWithOllama, parseChatRequest } from './ollamaChat.ts'
+import { OLLAMA_ROUTES } from './ollamaRoutes.ts'
+import { optionalText, type Route } from './routeKit.ts'
 import type { Workspace } from './workspace.ts'
 
 export type ApiResult = { status: number; body: unknown }
@@ -17,21 +19,6 @@ export type ApiRequest = {
   readBody: () => Promise<Record<string, unknown>>
 }
 
-type RouteContext = {
-  ws: Workspace
-  // 경로의 :이름 구간 값(URL 디코딩됨)
-  params: Record<string, string>
-  searchParams: URLSearchParams
-  body: () => Promise<Record<string, unknown>>
-}
-
-type Route = {
-  method: string
-  // '/' 로 구분한 구간. ':이름'은 값을 받는 구간이고, 이름이 unicode면 U+로 시작해야 한다.
-  pattern: string
-  handler: (context: RouteContext) => unknown | Promise<unknown>
-}
-
 const NOT_FOUND_API = '없는 API입니다.'
 const NOT_FOUND_CHARACTER = '없는 글자입니다.'
 const UNICODE_PREFIX = 'U+'
@@ -41,14 +28,10 @@ function limitOf(value: unknown, fallback: number): number {
   return Number.isFinite(limit) ? limit : fallback
 }
 
-// 문자열이고 비어 있지 않을 때만 값으로 본다.
-const optionalText = (value: unknown): string | undefined => (typeof value === 'string' && value ? value : undefined)
-
 const ROUTES: Route[] = [
+  ...OLLAMA_ROUTES,
   { method: 'GET', pattern: 'characters', handler: ({ ws, searchParams }) => ws.listCharacters(searchParams.get('q') ?? '') },
   { method: 'GET', pattern: 'radicals', handler: ({ ws }) => ws.listRadicals() },
-  { method: 'POST', pattern: 'ollama/chat', handler: async ({ body }) => chatWithOllama(parseChatRequest(await body())) },
-  { method: 'GET', pattern: 'ollama/status', handler: ({ ws }) => ws.getOllamaStatus() },
   {
     method: 'POST',
     pattern: 'import',
@@ -103,39 +86,7 @@ const ROUTES: Route[] = [
     method: 'POST',
     pattern: 'characters/:unicode/apply-naver',
     handler: async ({ ws, params, body }) => {
-      const write = (await body()).write === 'append' ? 'append' : 'replace'
-      return ws.applyNaver(params.unicode, write)
-    },
-  },
-  {
-    method: 'POST',
-    pattern: 'characters/:unicode/ollama-ids',
-    handler: async ({ ws, params, body }) => {
-      const payload = await body()
-      const model = optionalText(payload.model)
-      if (payload.mode === 'infer') {
-        return ws.inferOllamaIds(params.unicode, {
-          model,
-          ids: typeof payload.ids === 'string' ? payload.ids : undefined,
-        })
-      }
-      const write = payload.write === 'append' ? 'append' : 'replace'
-      return ws.applyOllamaIds(params.unicode, {
-        model,
-        ids: optionalText(payload.ids),
-        write,
-      })
-    },
-  },
-  {
-    method: 'POST',
-    pattern: 'characters/:unicode/ollama-split',
-    handler: async ({ ws, params, body }) => {
-      const payload = await body()
-      const source = payload.source === 'MMH' ? 'MMH' : 'NAVER'
-      const model = optionalText(payload.model)
-      const write = payload.write === 'append' ? 'append' : 'replace'
-      return ws.splitFontWithOllama(params.unicode, { source, model, write })
+      return ws.applyNaver(params.unicode, parseWriteMode((await body()).write))
     },
   },
   { method: 'POST', pattern: 'characters/:unicode/compile', handler: ({ ws, params }) => ws.compile(params.unicode) },
@@ -188,7 +139,7 @@ const ROUTES: Route[] = [
     handler: async ({ ws, params, body }) => {
       const payload = await body()
       const mode = payload.mode === 'fit_font' ? 'fit_font' : 'direct'
-      const write = payload.write === 'append' ? 'append' : 'replace'
+      const write = parseWriteMode(payload.write)
       return ws.applyLayerToStrokes(params.unicode, params.layerId, mode, write)
     },
   },

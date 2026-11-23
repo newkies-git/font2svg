@@ -1,7 +1,7 @@
 import { isContourLayer } from '../../shared/layerKind.ts'
 import { LAYER_ID } from '../../shared/constants.ts'
 import type { Ref } from 'vue'
-import { separatePath, separateStroke, shownAfterSplit } from '../lib/strokeOps.ts'
+import { separatePath, separateStroke, shownAfterSplit } from '../../shared/strokeOps.ts'
 import type { KnifeMode, LayerRecord, Pt, StrokeRecord } from '../../shared/types.ts'
 import { cloneStroke } from './layerClone.ts'
 import type { LayerEditorState } from './layerEditorState.ts'

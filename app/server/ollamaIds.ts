@@ -2,7 +2,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
 import { DEFAULT_STROKE_WIDTH } from '../shared/constants.ts'
-import type { Pt } from '../shared/types.ts'
+import type { Pt, WriteMode } from '../shared/types.ts'
+import { parseWriteMode } from '../shared/writeMode.ts'
 import { transaction } from './db.ts'
 import { ribbonPath, type ImportedStrokes } from './geometry.ts'
 import { askOllama, IDS_BOOK, IDS_FILE, OLLAMA_MODEL, ollamaUrl, parseIds, parseIdsFile } from './ids.ts'
@@ -95,13 +96,6 @@ export function createOllamaIdsPipeline(
     }
   }
 
-  function currentWorkItems(unicode: string) {
-    const confirmed = strokes.readStrokes(unicode)
-    if (confirmed.length > 0) return confirmed
-    const working = strokes.readWorkingRow(unicode)
-    return working ? strokes.itemsOf(working) : []
-  }
-
   function currentFontOutline(unicode: string): string[] {
     const working = strokes.readWorkingRow(unicode)
     return working?.font_outline ? parseStringArray(working.font_outline, '궁서체 윤곽') : []
@@ -130,11 +124,11 @@ export function createOllamaIdsPipeline(
 
   async function applyIds(
     unicode: string,
-    options: { model?: string; ids?: string; write?: 'replace' | 'append' } = {},
+    options: { model?: string; ids?: string; write?: WriteMode } = {},
   ): Promise<FitResult & { ids: string; model: string }> {
     const character = strokes.requireCharacter(unicode)
     const model = options.model?.trim() || OLLAMA_MODEL
-    const write = options.write === 'append' ? 'append' : 'replace'
+    const write = parseWriteMode(options.write)
     const rawIds = options.ids?.trim() || (await askOllama(character.char, model))
     if (!rawIds) {
       throw new Error('로컬 Ollama에서 IDS를 추론하지 못했습니다. Ollama 실행 상태와 모델을 확인하거나 IDS를 직접 입력하세요.')
@@ -151,14 +145,11 @@ export function createOllamaIdsPipeline(
     const outlines = medians.map((m) => ribbonPath(m, DEFAULT_STROKE_WIDTH))
     const fitted = fitOrGiven(character.char, medians, outlines)
     const items = toItems(fitted.glyph, new Set())
-    const existing = currentWorkItems(unicode)
     const originUrl = ollamaUrl('/api/generate')
     const fontOutline = fitted.glyph.fontOutline ?? currentFontOutline(unicode)
 
-    if (write === 'append' && existing.length > 0) {
-      strokes.updateStrokes(unicode, [...existing, ...items], 'Ollama IDS 추가')
-      return { ...fitted, unmatched: fitted.unmatched.map((order) => order + existing.length), ids: rawIds, model }
-    }
+    const kept = strokes.appendStrokes(unicode, write, items, 'Ollama IDS')
+    if (kept !== null) return { ...fitted, unmatched: fitted.unmatched.map((order) => order + kept), ids: rawIds, model }
 
     if (strokes.readStrokeRow(unicode)) {
       transaction(db, () => {
