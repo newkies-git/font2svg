@@ -2,7 +2,7 @@ import { AREA_FLATNESS, FIT_GRID, FIT_MARGIN, CANVAS, DEFAULT_STROKE_WIDTH, OUTL
 import { flattenContours, pointSegmentDistance, polygonArea, round1, type Pt as Point } from '../shared/paths.ts'
 import { computeOptimalStrokeWidth, recoverMedian, segmentOutlineByMedians, simplifyPolyline } from '../shared/strokeCut.ts'
 import type { Pt } from '../shared/types.ts'
-import { CELL, fillMask, loopsOf } from '../shared/fitCore.ts'
+import { CELL, fillMask, loopsOf, type Loop } from '../shared/fitCore.ts'
 import { medianTurns } from '../shared/medianShape.ts'
 import { registerMedians } from './registration.ts'
 
@@ -97,8 +97,8 @@ export function contourIndicesOfOutline(outline: string, contourLoops: Point[][]
 
 // 길잡이 중심선을 궁서체 윤곽에 맞춘 뒤 획마다 나눈다. 윤곽을 못 찾은 획은 띠 모양으로 남기고 unmatched에 획 번호(1부터)를 넣는다.
 // 나눌 수 없으면 null이다. 그 획은 작업 획에서 그대로 편집한다.
-export function fitGuideToFont(contours: string[], guide: Pt[][]): (ImportedStrokes & { unmatched: number[] }) | null {
-  const pieces = splitOutlinePieces(contours, guide)
+export function fitGuideToFont(contours: string[], guide: Pt[][], guideOutlines?: string[]): (ImportedStrokes & { unmatched: number[] }) | null {
+  const pieces = splitOutlinePieces(contours, guide, guideOutlines)
   if (!pieces) return null
   return {
     medians: pieces.map((piece) => piece.median),
@@ -112,19 +112,27 @@ export function fitGuideToFont(contours: string[], guide: Pt[][]): (ImportedStro
 // splitByContours와 달리 품질 검사에 실패해도 전체를 버리지 않고, 윤곽을 못 찾은 획만 contours를 비워(미매핑) 돌려준다.
 // 미매핑 획의 윤곽은 길잡이 중심선을 따라 띠 모양으로 만든다. 사람이 나중에 윤곽을 직접 매핑한다.
 // 길잡이를 bbox로만 맞춘 결과와 획마다 등록한 결과를 둘 다 나눠 보고, 미매핑 획이 더 적은 쪽을 쓴다(같으면 bbox 쪽).
-export function splitOutlinePieces(contours: string[], guide: Pt[][]): OutlinePiece[] | null {
+// guideOutlines는 길잡이 획의 실제 윤곽(굵기를 가진 모양)이다. 주면 등록에서 띠 대신 쓴다.
+export function splitOutlinePieces(contours: string[], guide: Pt[][], guideOutlines?: string[]): OutlinePiece[] | null {
   if (contours.length === 0 || guide.length === 0) return null
   const boxFitted = fitMediansToOutline(guide, contours)
   const plain = piecesForGuide(contours, boxFitted)
   if (!plain) return null
   if (unmatchedCount(plain) === 0) return plain
-  const registered = piecesForGuide(contours, registerMedians(boxFitted, contours, ribbonPath))
+  const registered = piecesForGuide(contours, registerMedians(boxFitted, contours, ribbonPath, guideShapes(guide, contours, guideOutlines)))
   return registered && unmatchedCount(registered) < unmatchedCount(plain) ? registered : plain
 }
 
 // 참고 중심선을 윤곽 안쪽 판정에 쓸 때의 표본 간격(글꼴 좌표)과 최소 안쪽 비율
 const GUIDE_SAMPLE_STEP = 8
 const GUIDE_INSIDE_RATIO = 0.85
+
+// 길잡이 윤곽을 중심선과 같은 bbox 변환으로 옮긴 점열. 윤곽이 없는 획은 빈 배열이다(그 획은 띠로 잰다).
+function guideShapes(guide: Pt[][], contours: string[], outlines?: string[]): Loop[][] | undefined {
+  const map = bboxMapper(guide, contours)
+  if (!map || !outlines || outlines.length !== guide.length) return undefined
+  return outlines.map((outline) => (outline ? loopsOf([outline]).map((loop) => loop.map((point) => { const [x, y] = map(point.x, point.y); return { x, y } })) : []))
+}
 
 const unmatchedCount = (pieces: OutlinePiece[]): number => pieces.filter((piece) => piece.contours.length === 0).length
 
@@ -181,17 +189,20 @@ function piecesForGuide(contours: string[], fitted: Pt[][]): OutlinePiece[] | nu
 
 // 합성한 중심선 묶음의 bbox를 글자 윤곽의 bbox(중심선이 윤곽 안쪽에 있으므로 INSET만큼 줄인 것)에 맞춰 늘이고 옮긴다.
 export function fitMediansToOutline(medians: Pt[][], contours: string[]): Pt[][] {
+  const map = bboxMapper(medians, contours)
+  return map ? medians.map((line) => line.map(([x, y]): Pt => [round1(map(x, y)[0]), round1(map(x, y)[1])])) : medians
+}
+
+// 중심선 묶음의 bbox를 글자 윤곽의 bbox에 맞추는 좌표 변환. 맞출 수 없으면 null.
+function bboxMapper(medians: Pt[][], contours: string[]): ((x: number, y: number) => Pt) | null {
   const flatMedians = medians.flat()
   const outlinePts = contours.flatMap(pathPoints)
-  if (contours.length === 0 || outlinePts.length === 0 || flatMedians.length === 0) return medians
+  if (contours.length === 0 || outlinePts.length === 0 || flatMedians.length === 0) return null
   const outline = boundsOf(outlinePts)
   const source = boundsOf(flatMedians)
   const scaleX = (outline.maxX - outline.minX - 2 * MEDIAN_BBOX_INSET) / Math.max(1, source.maxX - source.minX)
   const scaleY = (outline.maxY - outline.minY - 2 * MEDIAN_BBOX_INSET) / Math.max(1, source.maxY - source.minY)
-  return medians.map((line) => line.map(([x, y]): Pt => [
-    round1(outline.minX + MEDIAN_BBOX_INSET + (x - source.minX) * scaleX),
-    round1(outline.minY + MEDIAN_BBOX_INSET + (y - source.minY) * scaleY),
-  ]))
+  return (x, y) => [outline.minX + MEDIAN_BBOX_INSET + (x - source.minX) * scaleX, outline.minY + MEDIAN_BBOX_INSET + (y - source.minY) * scaleY]
 }
 
 export function pathPoints(d: string): Pt[] {

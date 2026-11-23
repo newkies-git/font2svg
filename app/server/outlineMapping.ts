@@ -1,25 +1,14 @@
 import type { DatabaseSync } from 'node:sqlite'
 import { DEFAULT_STROKE_WIDTH, LAYER_ID } from '../shared/constants.ts'
-import { matchStrokeOrder, reorderByMatch } from '../shared/strokeOrder.ts'
 import type { LayerRecord, StrokeRecord } from '../shared/types.ts'
 import { contourIndicesOfOutline, contourLoopsOf, ribbonPath, splitOutlinePieces } from './geometry.ts'
 import { fontContoursOf, fontFingerprint } from './layers.ts'
 import { patchLayersMeta, saveNonStrokeLayerContent } from './layerWrites.ts'
 import { requireFound } from './model.ts'
+import { orderedReferenceLayer } from './referenceLayers.ts'
 
 const OUTLINE_LAYER_ID = LAYER_ID.outline
 const SOURCE_FALLBACK_IDS = [LAYER_ID.naver, LAYER_ID.mmh] as const
-
-// 네이버와 Hanzi 레이어의 획 수가 같으면, 모양은 Hanzi(굵기·시작·끝·꺾임) 순서는 네이버를 따른 길잡이 레이어를 만든다.
-function orderedReferenceLayer(layers: LayerRecord[]): LayerRecord | null {
-  const naver = layers.find((item) => item.id === LAYER_ID.naver)
-  const mmh = layers.find((item) => item.id === LAYER_ID.mmh)
-  if (!naver || !mmh) return null
-  const match = matchStrokeOrder(naver.strokes.map((stroke) => stroke.median_points), mmh.strokes.map((stroke) => stroke.median_points))
-  if (!match) return null
-  const strokes = reorderByMatch(mmh.strokes, match).map((stroke, index) => ({ ...stroke, stroke_order: index + 1 }))
-  return { ...mmh, strokes }
-}
 
 // 중심선 길잡이로 쓸 레이어: 지정한 레이어 → 작업 획 → (네이버 순서+Hanzi 모양) → 네이버 → MMH 순으로 획이 있는 첫 레이어.
 function pickGuideLayer(layers: LayerRecord[], sourceLayerId?: string): LayerRecord {
@@ -59,7 +48,7 @@ export function createOutlineMapping(db: DatabaseSync, deps: { getCharacter: (un
     const detail = requireDetail(unicode)
     const contours = requireFontContours(detail)
     const guide = pickGuideLayer(detail.layers, sourceLayerId)
-    const pieces = splitOutlinePieces(contours, guide.strokes.map((stroke) => stroke.median_points))
+    const pieces = splitOutlinePieces(contours, guide.strokes.map((stroke) => stroke.median_points), guide.strokes.map((stroke) => stroke.outline_path))
     if (!pieces) throw new Error('궁서체 윤곽을 획으로 나누지 못했습니다. 길잡이 레이어를 바꿔 보세요.')
 
     const hash = fontFingerprint(contours)

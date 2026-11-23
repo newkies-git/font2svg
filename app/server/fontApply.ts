@@ -49,7 +49,7 @@ export function createFontApply(
   // 궁서체에 맞추되, 맞지 않는 획은 버리지 않는다. 글자가 폰트에 없으면 받은 윤곽을 그대로 둔다.
   function fitOrGiven(char: string, medians: Pt[][], outlines: string[]) {
     const contours = getFont()?.contours(char) ?? []
-    const fitted = contours.length > 0 ? fitGuideToFont(contours, medians) : null
+    const fitted = contours.length > 0 ? fitGuideToFont(contours, medians, outlines) : null
     if (fitted) {
       return {
         glyph: fitted,

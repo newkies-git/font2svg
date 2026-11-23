@@ -107,6 +107,18 @@ test('레이어를 작업 획에 적용(fit_font): 궁서체 윤곽으로 나누
   assert.throws(() => ws.applyLayerToStrokes('U+56DB', 'naver', 'fit_font'), /궁서체 윤곽이 없어/)
 })
 
+test('레이어를 작업 획에 적용(direct): 네이버·Hanzi가 모두 있으면 획순은 네이버, 모양은 Hanzi로 합쳐 적용한다', () => {
+  const unicode = 'U+4E94'
+  const upperShape = rectPath(100, 690, 900, 740)
+  const lowerShape = rectPath(100, 180, 900, 250)
+  cacheReference(unicode, 'NAVER', { strokes: [rectPath(100, 650, 900, 750), rectPath(100, 150, 900, 250)], medians: [[[150, 700], [850, 700]], [[150, 200], [850, 200]]] })
+  // Hanzi는 아래 획이 먼저 오고 모양(굵기)이 다르다.
+  cacheReference(unicode, 'MMH', { strokes: [lowerShape, upperShape], medians: [[[150, 215], [850, 215]], [[150, 715], [850, 715]]] })
+  const detail = ws.applyLayerToStrokes(unicode, 'mmh', 'direct')!
+  assert.equal(detail.origin, 'NAVER', '순서를 정한 출처가 네이버다')
+  assert.deepEqual(detail.strokes.map((stroke) => stroke.outline_path), [upperShape, lowerShape])
+})
+
 test('중심선 재분할: 입력을 검증하고 궁서체 윤곽을 나눈 결과를 준다', () => {
   const result = ws.resegmentLayer('U+4E00', [barMedian])
   assert.equal(result.outlines.length, 1)

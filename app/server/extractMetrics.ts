@@ -51,10 +51,10 @@ export function measureOutline(path: string): Pick<StrokeMeasure, 'vertices' | '
 }
 
 // 궁서체 윤곽(contours)에 길잡이 중심선(guide)을 맞춰 나눈 결과를 획마다 잰다. 나눌 수 없으면 fitted=false.
-export function measureExtraction(char: string, contours: string[], guide: Pt[][]): CharMeasure {
+export function measureExtraction(char: string, contours: string[], guide: Pt[][], guideOutlines?: string[]): CharMeasure {
   let fit: ReturnType<typeof fitGuideToFont> = null
   try {
-    fit = fitGuideToFont(contours, guide)
+    fit = fitGuideToFont(contours, guide, guideOutlines)
   } catch {
     fit = null
   }

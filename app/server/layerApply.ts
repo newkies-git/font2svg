@@ -8,6 +8,7 @@ import { fitGuideToFont, splitByContours } from './geometry.ts'
 import type { createIssues } from './issues.ts'
 import { parseResegmentMedians } from './layerRequests.ts'
 import { fontContoursOf } from './layers.ts'
+import { orderedReferenceLayer } from './referenceLayers.ts'
 import { ACTOR_USER, ORIGIN_MANUAL, requireFound, type StrokeItem } from './model.ts'
 import { splitFontByOllamaGuide, type OllamaSplitSource } from './ollamaSplit.ts'
 import type { createReferencePipeline } from './referencePipeline.ts'
@@ -111,8 +112,10 @@ export function createLayerApply(
     write: WriteMode = 'replace',
   ): AppliedDetail | null {
     const detail = requireFound(getCharacter(unicode))
-    const layer = detail.layers.find((item) => item.id === layerId)
-    if (!layer || layer.strokes.length === 0) throw new Error('적용할 획 데이터가 없는 레이어입니다.')
+    const picked = detail.layers.find((item) => item.id === layerId)
+    if (!picked || picked.strokes.length === 0) throw new Error('적용할 획 데이터가 없는 레이어입니다.')
+    // 참고 레이어(네이버·Hanzi)는 획순은 네이버, 모양은 Hanzi로 합쳐 적용한다. 합칠 수 없으면 고른 레이어를 그대로 쓴다.
+    const layer = isReferenceKind(picked.kind) ? (orderedReferenceLayer(detail.layers) ?? picked) : picked
     const source = isReferenceKind(layer.kind) ? layer.kind : ORIGIN_MANUAL
     const radicals = layer.strokes.flatMap((stroke, index) => (stroke.is_radical ? [index] : []))
     const kept = detail.strokes.length
@@ -140,7 +143,7 @@ export function createLayerApply(
       if (contours.length === 0) {
         if (mode === 'fit_font') throw new Error('궁서체 윤곽이 없어 자동 분할을 적용할 수 없습니다.')
       } else {
-        const fitted = fitGuideToFont(contours, guide)
+        const fitted = fitGuideToFont(contours, guide, layer.strokes.map((stroke) => stroke.outline_path))
         if (fitted) {
           const glyph = { medians: fitted.medians, outlines: fitted.outlines, widths: fitted.widths, fontOutline: fitted.fontOutline }
           const saved = commit(toItems(glyph, new Set(radicals)), `${layer.name} 획을 궁서체에 맞춤`, glyph)

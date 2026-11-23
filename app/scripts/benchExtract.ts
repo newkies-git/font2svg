@@ -59,8 +59,8 @@ for (const char of sample) {
     referenceCurveRatios.push(counted.curveRatio)
   }
   referenceMedians.push(...guide.medians)
-  measures.push(measureExtraction(char, contours, guide.medians))
-  if (sheetFile) sheet.push({ char, outlines: fitGuideToFont(contours, guide.medians)?.outlines ?? [] })
+  measures.push(measureExtraction(char, contours, guide.medians, guide.outlines))
+  if (sheetFile) sheet.push({ char, outlines: fitGuideToFont(contours, guide.medians, guide.outlines)?.outlines ?? [] })
 }
 const summary = { ...summarizeExtraction(measures, { vertices: referenceVertices, curveRatios: referenceCurveRatios, medians: referenceMedians }), seconds: Number(((Date.now() - started) / 1000).toFixed(1)), referenceShape: 'MMH', referenceOrder: LAYER_ID.naver }
 console.log(JSON.stringify(summary, null, 2))
