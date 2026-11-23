@@ -114,7 +114,26 @@ function pathForStroke(
     if (!bridged) return null
     subpaths.push(bridged)
   }
-  return subpaths.length > 0 ? subpaths.join(' ') : null
+  return subpaths.length > 0 ? dropFragments(subpaths).join(' ') : null
+}
+
+// 한 획의 서브패스 가운데 가장 큰 것의 면적 대비 이 비율에 못 미치고 같은 방향으로 감긴 것은, 다른 획의 외곽선에서 가장 가까운 점이
+// 몇 개 이 획으로 잘못 붙어 생긴 파편이다. 구멍(반대 방향)은 모양의 일부라 남기되, 점 몇 개 크기(HOLE_MIN_AREA 미만)는 잡음으로 본다.
+const FRAGMENT_AREA_RATIO = 0.05
+// 구멍으로 인정하는 최소 면적(글꼴 좌표의 제곱)
+const HOLE_MIN_AREA = 100
+const FRAGMENT_FLATNESS = 1.2
+
+export function dropFragments(subpaths: string[]): string[] {
+  if (subpaths.length < 2) return subpaths
+  const areas = subpaths.map((subpath) => flattenContours(subpath, FRAGMENT_FLATNESS).reduce((sum, loop) => sum + polygonArea(loop), 0))
+  const largest = areas.reduce((best, area) => (Math.abs(area) > Math.abs(best) ? area : best), 0)
+  const kept = subpaths.filter((_, index) => {
+    const area = Math.abs(areas[index])
+    const isHole = areas[index] !== 0 && Math.sign(areas[index]) !== Math.sign(largest)
+    return isHole ? area >= HOLE_MIN_AREA : area >= Math.abs(largest) * FRAGMENT_AREA_RATIO
+  })
+  return kept.length > 0 ? kept : subpaths
 }
 
 function silhouetteEndpoint(
