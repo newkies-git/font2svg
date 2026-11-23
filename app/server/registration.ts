@@ -38,9 +38,9 @@ function uncoveredBy(fontMask: Uint8Array, region: Uint8Array, shapes: Loop[][] 
 
 // guide: bbox로 먼저 맞춘 중심선들. shapes는 같은 변환을 거친 각 획의 실제 윤곽(참고 출처의 굵기를 가진 모양)이고,
 // 있으면 띠 대신 그것으로 겹침을 잰다(굵기가 맞아 띠보다 정확하다). 맞출 수 없으면 입력을 그대로 돌려준다.
-export function registerMedians(guide: Pt[][], contours: string[], ribbon: Ribbon, shapes?: Loop[][]): Pt[][] {
+export function registerMedians(guide: Pt[][], contours: string[], ribbon: Ribbon, shapes?: Loop[][]): { medians: Pt[][]; shapes: Loop[][] | null } {
   const fontLoops = loopsOf(contours)
-  if (fontLoops.length === 0 || guide.length === 0) return guide
+  if (fontLoops.length === 0 || guide.length === 0) return { medians: guide, shapes: shapes ?? null }
   const fontMask = fillMask(fontLoops)
   let medians = guide
   let outlineLoops = shapes && shapes.length === guide.length ? shapes : null
@@ -70,5 +70,5 @@ export function registerMedians(guide: Pt[][], contours: string[], ribbon: Ribbo
     })
     if (outlineLoops) outlineLoops = nextLoops
   }
-  return medians
+  return { medians, shapes: outlineLoops }
 }

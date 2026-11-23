@@ -13,16 +13,16 @@ const centerY = (line: Pt[]) => line.reduce((sum, point) => sum + point[1], 0) /
 
 test('등록: 어긋난 참고 중심선이 글자의 획 위치로 옮겨진다', () => {
   const shifted: Pt[][] = [[[160, 560], [840, 560]]]
-  const [registered] = registerMedians(shifted, [BAR], ribbonPath)
+  const [registered] = registerMedians(shifted, [BAR], ribbonPath).medians
   assert.ok(Math.abs(centerY(registered) - 500) < Math.abs(centerY(shifted[0]) - 500), `y ${centerY(registered)}`)
   assert.equal(registered.length, shifted[0].length)
 })
 
 test('등록: 이미 맞은 중심선은 거의 그대로 두고, 윤곽이 없거나 중심선이 없으면 입력을 돌려준다', () => {
   const exact: Pt[][] = [[[160, 500], [840, 500]]]
-  const [kept] = registerMedians(exact, [BAR], ribbonPath)
+  const [kept] = registerMedians(exact, [BAR], ribbonPath).medians
   assert.ok(Math.abs(centerY(kept) - 500) < NEAR, `y ${centerY(kept)}`)
-  assert.equal(registerMedians(exact, [], ribbonPath), exact)
+  assert.equal(registerMedians(exact, [], ribbonPath).medians, exact)
   const none: Pt[][] = []
-  assert.equal(registerMedians(none, [BAR], ribbonPath), none)
+  assert.equal(registerMedians(none, [BAR], ribbonPath).medians, none)
 })

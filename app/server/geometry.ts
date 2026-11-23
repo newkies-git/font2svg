@@ -3,6 +3,7 @@ import { flattenContours, pointSegmentDistance, polygonArea, round1, type Pt as 
 import { computeOptimalStrokeWidth, recoverMedian, segmentOutlineByMedians, simplifyPolyline } from '../shared/strokeCut.ts'
 import type { Pt } from '../shared/types.ts'
 import { CELL, fillMask, loopsOf, type Loop } from '../shared/fitCore.ts'
+import { fitClosedLoop } from '../shared/strokeCut/curveFit.ts'
 import { medianTurns, softenKinks } from '../shared/medianShape.ts'
 import { registerMedians } from './registration.ts'
 
@@ -116,16 +117,24 @@ export function fitGuideToFont(contours: string[], guide: Pt[][], guideOutlines?
 export function splitOutlinePieces(contours: string[], guide: Pt[][], guideOutlines?: string[]): OutlinePiece[] | null {
   if (contours.length === 0 || guide.length === 0) return null
   const boxFitted = fitMediansToOutline(guide, contours)
-  const plain = piecesForGuide(contours, boxFitted)
+  const boxShapes = guideShapes(guide, contours, guideOutlines)
+  const plain = piecesForGuide(contours, boxFitted, boxShapes)
   if (!plain) return null
   if (unmatchedCount(plain) === 0) return plain
-  const registered = piecesForGuide(contours, registerMedians(boxFitted, contours, ribbonPath, guideShapes(guide, contours, guideOutlines)))
+  const registration = registerMedians(boxFitted, contours, ribbonPath, boxShapes)
+  const registered = piecesForGuide(contours, registration.medians, registration.shapes ?? undefined)
   return registered && unmatchedCount(registered) < unmatchedCount(plain) ? registered : plain
 }
 
 // 참고 중심선을 윤곽 안쪽 판정에 쓸 때의 표본 간격(글꼴 좌표)과 최소 안쪽 비율
 const GUIDE_SAMPLE_STEP = 8
 const GUIDE_INSIDE_RATIO = 0.85
+
+// 길잡이 모양의 점열들을 곡선 경로로 만든다. 그릴 수 없으면 null.
+function outlineOfLoops(loops: Loop[]): string | null {
+  const parts = loops.map((loop) => fitClosedLoop(loop.map(({ x, y }) => ({ x, y })))).filter((part): part is string => part !== null)
+  return parts.length > 0 ? parts.join(' ') : null
+}
 
 // 길잡이 윤곽을 중심선과 같은 bbox 변환으로 옮긴 점열. 윤곽이 없는 획은 빈 배열이다(그 획은 띠로 잰다).
 function guideShapes(guide: Pt[][], contours: string[], outlines?: string[]): Loop[][] | undefined {
@@ -165,7 +174,7 @@ function lineInsideOutline(line: Pt[], outline: string): boolean {
   return total > 0 && inside / total >= GUIDE_INSIDE_RATIO
 }
 
-function piecesForGuide(contours: string[], fitted: Pt[][]): OutlinePiece[] | null {
+function piecesForGuide(contours: string[], fitted: Pt[][], shapes?: Loop[][]): OutlinePiece[] | null {
   const split = segmentOutlineByMedians(contours, fitted.map(toPoints))
   if (split.strokes.length !== fitted.length) return null
   const glyphArea = Math.abs(contours.reduce((sum, d) => sum + contourArea(d), 0))
@@ -176,6 +185,9 @@ function piecesForGuide(contours: string[], fitted: Pt[][]): OutlinePiece[] | nu
     const usable = Boolean(outline) && !whole.has(outline) && Math.abs(contourArea(outline)) >= glyphArea * MIN_STROKE_AREA_RATIO
     const recovered = usable ? recoverMedian(outline).median : []
     if (recovered.length < MEDIAN_MIN_POINTS) {
+      // 다른 획에 덮여 고유한 잉크가 없는 획이다. 등록된 길잡이 모양이 있으면 그 모양과 굵기로, 없으면 고정 폭 띠로 남긴다(둘 다 미매핑).
+      const own = shapes?.[index] ? outlineOfLoops(shapes[index]) : null
+      if (own) return { outline: own, median: line, width: computeOptimalStrokeWidth(own, toPoints(line)), contours: [] }
       return { outline: ribbonPath(line, DEFAULT_STROKE_WIDTH), median: line, width: DEFAULT_STROKE_WIDTH, contours: [] }
     }
     const simplified = simplifyPolyline(orientLike(recovered, line), MEDIAN_SIMPLIFY_TOLERANCE)

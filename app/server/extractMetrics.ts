@@ -121,5 +121,7 @@ export function summarizeExtraction(measures: CharMeasure[], reference: { vertic
     ribbon: rate(strokes.filter((stroke) => stroke.ribbon).length, strokes.length),
     charsWithRibbon: rate(charsWith((stroke) => stroke.ribbon), fitted.length),
     unmatchedUsable: rate(strokes.filter((stroke) => stroke.unmatchedUsable).length, strokes.length),
+    // 윤곽을 못 찾은 획 전체: 고정 폭 띠(ribbon)와 길잡이 모양으로 남긴 획(unmatchedUsable)의 합
+    unmatched: rate(strokes.filter((stroke) => stroke.ribbon || stroke.unmatchedUsable).length, strokes.length),
   }
 }
