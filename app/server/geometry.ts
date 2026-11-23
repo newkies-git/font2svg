@@ -2,6 +2,7 @@ import { AREA_FLATNESS, CANVAS, DEFAULT_STROKE_WIDTH, OUTLINE_CONTOUR_MATCH_RATI
 import { flattenContours, pointSegmentDistance, polygonArea, round1, type Pt as Point } from '../shared/paths.ts'
 import { computeOptimalStrokeWidth, recoverMedian, segmentOutlineByMedians, simplifyPolyline } from '../shared/strokeCut.ts'
 import type { Pt } from '../shared/types.ts'
+import { registerMedians } from './registration.ts'
 
 export type Box = [number, number, number, number]
 
@@ -108,9 +109,20 @@ export function fitGuideToFont(contours: string[], guide: Pt[][]): (ImportedStro
 
 // splitByContours와 달리 품질 검사에 실패해도 전체를 버리지 않고, 윤곽을 못 찾은 획만 contours를 비워(미매핑) 돌려준다.
 // 미매핑 획의 윤곽은 길잡이 중심선을 따라 띠 모양으로 만든다. 사람이 나중에 윤곽을 직접 매핑한다.
+// 길잡이를 bbox로만 맞춘 결과와 획마다 등록한 결과를 둘 다 나눠 보고, 미매핑 획이 더 적은 쪽을 쓴다(같으면 bbox 쪽).
 export function splitOutlinePieces(contours: string[], guide: Pt[][]): OutlinePiece[] | null {
   if (contours.length === 0 || guide.length === 0) return null
-  const fitted = fitMediansToOutline(guide, contours)
+  const boxFitted = fitMediansToOutline(guide, contours)
+  const plain = piecesForGuide(contours, boxFitted)
+  if (!plain) return null
+  if (unmatchedCount(plain) === 0) return plain
+  const registered = piecesForGuide(contours, registerMedians(boxFitted, contours, ribbonPath))
+  return registered && unmatchedCount(registered) < unmatchedCount(plain) ? registered : plain
+}
+
+const unmatchedCount = (pieces: OutlinePiece[]): number => pieces.filter((piece) => piece.contours.length === 0).length
+
+function piecesForGuide(contours: string[], fitted: Pt[][]): OutlinePiece[] | null {
   const split = segmentOutlineByMedians(contours, fitted.map(toPoints))
   if (split.strokes.length !== fitted.length) return null
   const glyphArea = Math.abs(contours.reduce((sum, d) => sum + contourArea(d), 0))
