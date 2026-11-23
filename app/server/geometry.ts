@@ -145,12 +145,18 @@ function guideShapes(guide: Pt[][], contours: string[], outlines?: string[]): Lo
 
 const unmatchedCount = (pieces: OutlinePiece[]): number => pieces.filter((piece) => piece.contours.length === 0).length
 
-// 골격에서 복원한 중심선이 급히 꺾였는데 등록된 참고 중심선(사람이 정한 모양)은 꺾이지 않고 그 획 윤곽 안에 놓여 있으면, 꺾임은 접합부 골격이 휜 잡음이므로 참고 중심선을 쓴다.
-// 참고 중심선을 쓸 수 없을 때(윤곽 밖에 있을 때)는 복원 중심선의 급한 꺾임을 깎아 부드럽게 한다. 참고 중심선도 꺾인 획(갈고리 등)은 그대로 둔다.
+// 복원 중심선(골격)과 등록된 참고 중심선(사람이 정한 모양) 중 어느 쪽을 쓸지 정한다.
+// - 복원 쪽만 급히 꺾였으면 접합부 골격이 휜 잡음이다: 참고선이 윤곽 안에 있으면 참고선을, 아니면 복원선의 꺾임을 깎아 쓴다.
+// - 참고선만 꺾였으면(갈고리 등 진짜 꺾임을 복원이 둥글게 잃었으면) 참고선이 윤곽 안에 있을 때 참고선으로 되살린다.
+// - 둘 다 꺾였거나 둘 다 곧으면 복원선 그대로다.
 export function steadierMedian(recovered: Point[], guideLine: Pt[], outline: string): Point[] {
   const recoveredLine = recovered.map((point): Pt => [point.x, point.y])
-  if (!medianTurns(recoveredLine).kink || medianTurns(guideLine).kink) return recovered
-  return lineInsideOutline(guideLine, outline) ? toPoints(guideLine) : toPoints(softenKinks(recoveredLine))
+  const recoveredKinked = medianTurns(recoveredLine).kink
+  const guideKinked = medianTurns(guideLine).kink
+  if (recoveredKinked === guideKinked) return recovered
+  const guideInside = lineInsideOutline(guideLine, outline)
+  if (recoveredKinked) return guideInside ? toPoints(guideLine) : toPoints(softenKinks(recoveredLine))
+  return guideInside ? toPoints(guideLine) : recovered
 }
 
 // 선을 일정 간격으로 훑어 윤곽 안쪽에 있는 비율이 GUIDE_INSIDE_RATIO 이상이면 참

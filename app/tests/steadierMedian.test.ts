@@ -30,3 +30,13 @@ test('중심선 선택: 참고선도 꺾여 있으면(갈고리 등) 복원 중�
   const hooked: Pt[] = [[150, 500], [800, 500], [800, 440]]
   assert.equal(steadierMedian(KINKED, hooked, BAR), KINKED, '참고선도 꺾였으면 깎지 않는다')
 })
+
+test('중심선 선택: 복원 중심선이 갈고리 꺾임을 잃었고 참고선이 꺾였으며 윤곽 안이면 참고선으로 되살린다', () => {
+  // 가로 막대 끝에서 아래로 꺾이는 참고선(꺾임 90°)과, 그 꺾임을 둥글게 잃은 복원선
+  const hookedBar = rectPath(100, 440, 900, 540)
+  const hooked: Pt[] = [[150, 500], [800, 500], [800, 450]]
+  const rounded = toPoints([[150, 500], [700, 500], [780, 490], [820, 470], [850, 460]])
+  assert.deepEqual(steadierMedian(rounded, hooked, hookedBar), toPoints(hooked))
+  const outside: Pt[] = [[150, 800], [800, 800], [800, 750]]
+  assert.equal(steadierMedian(rounded, outside, hookedBar), rounded, '참고선이 윤곽 밖이면 복원선을 쓴다')
+})
