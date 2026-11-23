@@ -122,6 +122,8 @@ function pathForStroke(
 const FRAGMENT_AREA_RATIO = 0.05
 // 구멍으로 인정하는 최소 면적(글꼴 좌표의 제곱)
 const HOLE_MIN_AREA = 100
+// 구멍은 가장 큰 서브패스 면적의 이 비율 이상이어야 구멍으로 인정한다. 한 획이 글자의 안쪽 빈 곳(counter)을 통째로 둘러싸는 일은 드물다.
+const HOLE_MIN_RATIO = 0.1
 const FRAGMENT_FLATNESS = 1.2
 
 export function dropFragments(subpaths: string[]): string[] {
@@ -131,7 +133,7 @@ export function dropFragments(subpaths: string[]): string[] {
   const kept = subpaths.filter((_, index) => {
     const area = Math.abs(areas[index])
     const isHole = areas[index] !== 0 && Math.sign(areas[index]) !== Math.sign(largest)
-    return isHole ? area >= HOLE_MIN_AREA : area >= Math.abs(largest) * FRAGMENT_AREA_RATIO
+    return isHole ? area >= Math.max(HOLE_MIN_AREA, Math.abs(largest) * HOLE_MIN_RATIO) : area >= Math.abs(largest) * FRAGMENT_AREA_RATIO
   })
   return kept.length > 0 ? kept : subpaths
 }
