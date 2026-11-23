@@ -145,6 +145,55 @@ function guideShapes(guide: Pt[][], contours: string[], outlines?: string[]): Lo
 
 const unmatchedCount = (pieces: OutlinePiece[]): number => pieces.filter((piece) => piece.contours.length === 0).length
 
+// 중심선 끝이 그 획 윤곽의 끝에서 떨어져 있으면 끝 방향으로 윤곽 경계 가까이까지 늘린다.
+// 이웃 획에 잘려 생긴 절단면은 획의 시작·끝이 아니므로, 끝이 절단면에서 멈췄다면 그 너머 이웃 획 안쪽의 실제 끝까지 잇는다.
+const TIP_FLATNESS = 1.5
+// 윤곽 경계에서 이만큼(획 폭 비율) 안쪽에서 멈춘다. 참고(Hanzi) 중심선도 끝에서 폭의 8% 안쪽에서 끝난다.
+const TIP_INSET_RATIO = 0.08
+// 늘릴 거리가 이 폭 비율 미만이면 이미 끝이라고 보고, 이 폭 비율을 넘으면 끝이 아니라 윤곽의 먼 쪽이므로 늘리지 않는다.
+const TIP_MIN_GAP_RATIO = 0.15
+const TIP_MAX_GAP_RATIO = 1.2
+// 끝 방향을 잴 때 끝에서 이만큼 안쪽 점을 본다(글꼴 좌표)
+const TIP_TANGENT_REACH = 24
+
+function rayToOutline(origin: Point, dir: Point, loops: Point[][]): number {
+  let best = Infinity
+  for (const loop of loops) {
+    for (let index = 0; index < loop.length; index++) {
+      const a = loop[index]
+      const b = loop[(index + 1) % loop.length]
+      const ex = b.x - a.x
+      const ey = b.y - a.y
+      const denominator = dir.x * ey - dir.y * ex
+      if (Math.abs(denominator) < 1e-9) continue
+      const along = ((a.x - origin.x) * ey - (a.y - origin.y) * ex) / denominator
+      const across = ((a.x - origin.x) * dir.y - (a.y - origin.y) * dir.x) / denominator
+      if (along > 0 && across >= 0 && across <= 1 && along < best) best = along
+    }
+  }
+  return best
+}
+
+function extendToTips(median: Point[], outline: string, width: number): Point[] {
+  if (median.length < 2) return median
+  const loops = flattenContours(outline, TIP_FLATNESS)
+  if (loops.length === 0) return median
+  const extendEnd = (line: Point[]): Point[] => {
+    const tip = line[line.length - 1]
+    let back = line.length - 2
+    while (back > 0 && Math.hypot(tip.x - line[back].x, tip.y - line[back].y) < TIP_TANGENT_REACH) back--
+    const length = Math.hypot(tip.x - line[back].x, tip.y - line[back].y)
+    if (length < 1e-6) return line
+    const dir = { x: (tip.x - line[back].x) / length, y: (tip.y - line[back].y) / length }
+    const gap = rayToOutline(tip, dir, loops)
+    if (!Number.isFinite(gap) || gap < width * TIP_MIN_GAP_RATIO || gap > width * TIP_MAX_GAP_RATIO) return line
+    const reach = gap - width * TIP_INSET_RATIO
+    return [...line, { x: tip.x + dir.x * reach, y: tip.y + dir.y * reach }]
+  }
+  const forward = extendEnd(median)
+  return extendEnd([...forward].reverse()).reverse()
+}
+
 // 복원 중심선(골격)과 등록된 참고 중심선(사람이 정한 모양) 중 어느 쪽을 쓸지 정한다.
 // - 복원 쪽만 급히 꺾였으면 접합부 골격이 휜 잡음이다: 참고선이 윤곽 안에 있으면 참고선을, 아니면 복원선의 꺾임을 깎아 쓴다.
 // - 참고선만 꺾였으면(갈고리 등 진짜 꺾임을 복원이 둥글게 잃었으면) 참고선이 윤곽 안에 있을 때 참고선으로 되살린다.
@@ -197,7 +246,8 @@ function piecesForGuide(contours: string[], fitted: Pt[][], shapes?: Loop[][]): 
       return { outline: ribbonPath(line, DEFAULT_STROKE_WIDTH), median: line, width: DEFAULT_STROKE_WIDTH, contours: [] }
     }
     const simplified = simplifyPolyline(orientLike(recovered, line), MEDIAN_SIMPLIFY_TOLERANCE)
-    const median = steadierMedian(simplified, line, outline)
+    const steady = steadierMedian(simplified, line, outline)
+    const median = extendToTips(steady, outline, computeOptimalStrokeWidth(outline, steady))
     return {
       outline,
       median: median.map((point): Pt => [round1(point.x), round1(point.y)]),

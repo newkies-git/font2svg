@@ -18,3 +18,16 @@ test('분할한 획의 끝이 이웃 획 안으로 이어진다: 세로 막대�
   assert.ok(stem, '세로 막대 조각')
   assert.ok(pathBounds(stem.outline).maxY > BAR_BOTTOM + 5, `세로 막대 윗끝 ${pathBounds(stem.outline).maxY}가 막대 밑면 ${BAR_BOTTOM}을 넘어야 한다`)
 })
+
+test('중심선 끝이 절단면에서 멈추지 않고 획 윤곽 끝 가까이까지 닿는다', () => {
+  const pieces = splitOutlinePieces([T_GLYPH], [BAR, STEM])
+  assert.ok(pieces)
+  const stem = pieces.find((piece) => pathBounds(piece.outline).maxX - pathBounds(piece.outline).minX < 200)
+  assert.ok(stem, '세로 막대 조각')
+  const bounds = pathBounds(stem.outline)
+  const top = Math.max(...stem.median.map(([, y]) => y))
+  const bottom = Math.min(...stem.median.map(([, y]) => y))
+  const tipMargin = stem.width
+  assert.ok(top >= bounds.maxY - tipMargin, `윗끝 ${top}이 윤곽 끝 ${bounds.maxY}에서 ${tipMargin} 이내여야 한다`)
+  assert.ok(bottom <= bounds.minY + tipMargin, `아랫끝 ${bottom}이 윤곽 끝 ${bounds.minY}에서 ${tipMargin} 이내여야 한다`)
+})

@@ -1,0 +1,81 @@
+{
+  "chars": {
+    "sampled": 199,
+    "fitted": 199,
+    "rejected": 0
+  },
+  "strokes": 2082,
+  "reference": {
+    "medianVertices": 10,
+    "meanCurveRatio": 0.8556,
+    "kink": {
+      "count": 345,
+      "total": 2082,
+      "percent": 16.6
+    },
+    "reversal": {
+      "count": 47,
+      "total": 2082,
+      "percent": 2.3
+    }
+  },
+  "outline": {
+    "medianVertices": 12,
+    "p90Vertices": 31,
+    "meanCurveRatio": 0.9375
+  },
+  "median": {
+    "medianPoints": 7,
+    "kink": {
+      "count": 272,
+      "total": 2082,
+      "percent": 13.1
+    },
+    "reversal": {
+      "count": 25,
+      "total": 2082,
+      "percent": 1.2
+    },
+    "charsWithReversal": {
+      "count": 24,
+      "total": 199,
+      "percent": 12.1
+    }
+  },
+  "sliver": {
+    "count": 4,
+    "total": 2082,
+    "percent": 0.2
+  },
+  "length": {
+    "medianRatio": 1.0869,
+    "short": {
+      "count": 266,
+      "total": 2038,
+      "percent": 13.1
+    }
+  },
+  "ribbon": {
+    "count": 0,
+    "total": 2082,
+    "percent": 0
+  },
+  "charsWithRibbon": {
+    "count": 0,
+    "total": 199,
+    "percent": 0
+  },
+  "unmatchedUsable": {
+    "count": 44,
+    "total": 2082,
+    "percent": 2.1
+  },
+  "unmatched": {
+    "count": 44,
+    "total": 2082,
+    "percent": 2.1
+  },
+  "seconds": 84.9,
+  "referenceShape": "MMH",
+  "referenceOrder": "naver"
+}
