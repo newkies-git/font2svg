@@ -9,6 +9,7 @@
     "typecheck": "vue-tsc --noEmit",
     "backup": "node scripts/backupDb.ts",
     "prefetch:refs": "node scripts/prefetchReferences.ts",
+    "bench:extract": "node scripts/benchExtract.ts",
     "test": "node --test \"tests/**/*.test.ts\"",
     "knip": "knip",
     "lint": "eslint ."

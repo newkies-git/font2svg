@@ -1,0 +1,57 @@
+{
+  "chars": {
+    "sampled": 199,
+    "fitted": 199,
+    "rejected": 0
+  },
+  "strokes": 2082,
+  "reference": {
+    "medianVertices": 11,
+    "meanCurveRatio": 0.5021
+  },
+  "outline": {
+    "medianVertices": 110,
+    "p90Vertices": 264,
+    "meanCurveRatio": 0.0172
+  },
+  "median": {
+    "medianPoints": 6,
+    "kink": {
+      "count": 617,
+      "total": 2082,
+      "percent": 29.6
+    },
+    "reversal": {
+      "count": 59,
+      "total": 2082,
+      "percent": 2.8
+    },
+    "charsWithReversal": {
+      "count": 52,
+      "total": 199,
+      "percent": 26.1
+    }
+  },
+  "sliver": {
+    "count": 495,
+    "total": 2082,
+    "percent": 23.8
+  },
+  "ribbon": {
+    "count": 104,
+    "total": 2082,
+    "percent": 5
+  },
+  "charsWithRibbon": {
+    "count": 61,
+    "total": 199,
+    "percent": 30.7
+  },
+  "unmatchedUsable": {
+    "count": 0,
+    "total": 2082,
+    "percent": 0
+  },
+  "seconds": 85.7,
+  "referenceLayer": "naver"
+}
