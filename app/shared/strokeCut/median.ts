@@ -248,10 +248,30 @@ function coverRadii(path: string, median: Pt[]): number[] {
   })
 }
 
+// 골격 경로의 계단 잡음을 줄이는 이동평균 반경(점 개수). 양 끝점은 그대로 둔다.
+const MEDIAN_SMOOTH_RADIUS = 3
+
+function smoothPolyline(points: Pt[]): Pt[] {
+  if (points.length <= 2 * MEDIAN_SMOOTH_RADIUS) return points
+  return points.map((point, index) => {
+    if (index === 0 || index === points.length - 1) return point
+    const radius = Math.min(MEDIAN_SMOOTH_RADIUS, index, points.length - 1 - index)
+    let x = 0
+    let y = 0
+    for (let k = index - radius; k <= index + radius; k++) {
+      x += points[k].x
+      y += points[k].y
+    }
+    const size = 2 * radius + 1
+    return { x: x / size, y: y / size }
+  })
+}
+
 function chainMedian(raster: Raster, chain: number[]): Pt[] {
+  const dense = smoothPolyline(chain.map((pixel) => pixelToFont(raster, pixel)))
   const out: Pt[] = []
-  for (let i = 0; i < chain.length; i += 2) out.push(pixelToFont(raster, chain[i]))
-  const last = pixelToFont(raster, chain[chain.length - 1])
+  for (let i = 0; i < dense.length; i += 2) out.push(dense[i])
+  const last = dense[dense.length - 1]
   const tail = out[out.length - 1]
   if (!tail || tail.x !== last.x || tail.y !== last.y) out.push(last)
   return out

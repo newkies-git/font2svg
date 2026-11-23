@@ -33,7 +33,7 @@ test('추출 측정: 나눌 수 없으면 fitted=false, 요약은 비율과 중�
   const stroke = { vertices: 10, curveRatio: 0.5, medianPoints: 3, kink: true, reversal: false, sliver: false, ribbon: true, unmatchedUsable: false }
   const summary = summarizeExtraction(
     [{ char: '一', fitted: true, strokes: [stroke, { ...stroke, kink: false, ribbon: false }] }, { char: '二', fitted: false, strokes: [] }],
-    { vertices: [8, 12, 10], curveRatios: [1, 1, 1] },
+    { vertices: [8, 12, 10], curveRatios: [1, 1, 1], medians: [[[0, 0], [10, 0], [10, 10]], [[0, 0], [10, 0]]] },
   )
   assert.deepEqual(summary.chars, { sampled: 2, fitted: 1, rejected: 1 })
   assert.equal(summary.strokes, 2)
@@ -42,10 +42,11 @@ test('추출 측정: 나눌 수 없으면 fitted=false, 요약은 비율과 중�
   assert.deepEqual(summary.charsWithRibbon, { count: 1, total: 1, percent: 100 })
   assert.equal(summary.reference.medianVertices, 10)
   assert.equal(summary.reference.meanCurveRatio, 1)
+  assert.deepEqual(summary.reference.kink, { count: 1, total: 2, percent: 50 })
 })
 
 test('추출 측정: 빈 입력도 0으로 요약한다', () => {
-  const summary = summarizeExtraction([], { vertices: [], curveRatios: [] })
+  const summary = summarizeExtraction([], { vertices: [], curveRatios: [], medians: [] })
   assert.equal(summary.strokes, 0)
   assert.equal(summary.outline.medianVertices, 0)
   assert.equal(summary.ribbon.percent, 0)

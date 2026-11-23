@@ -7,6 +7,7 @@ import { measureExtraction, measureOutline, summarizeExtraction, type CharMeasur
 import { loadFont } from '../server/font.ts'
 import { hanjaStrokes, parseHanja } from '../server/references.ts'
 import { fitGuideToFont } from '../server/geometry.ts'
+import type { Pt } from '../shared/types.ts'
 import { REFERENCE_PRIORITY } from '../shared/layerKind.ts'
 
 // 궁서체 윤곽에 참고 중심선(NAVER 우선)을 맞춰 획을 나눈 결과를 숫자로 잰다. DB는 읽기만 한다.
@@ -45,6 +46,7 @@ const sample = candidates.filter((_, index) => index % step === 0).slice(0, size
 
 const referenceVertices: number[] = []
 const referenceCurveRatios: number[] = []
+const referenceMedians: Pt[][] = []
 const measures: CharMeasure[] = []
 const sheet: { char: string; outlines: string[] }[] = []
 const started = Date.now()
@@ -58,10 +60,11 @@ for (const char of sample) {
     referenceVertices.push(counted.vertices)
     referenceCurveRatios.push(counted.curveRatio)
   }
+  referenceMedians.push(...guide.medians)
   measures.push(measureExtraction(char, contours, guide.medians))
   if (sheetFile) sheet.push({ char, outlines: fitGuideToFont(contours, guide.medians)?.outlines ?? [] })
 }
-const summary = { ...summarizeExtraction(measures, { vertices: referenceVertices, curveRatios: referenceCurveRatios }), seconds: Number(((Date.now() - started) / 1000).toFixed(1)), referenceLayer: LAYER_ID.naver }
+const summary = { ...summarizeExtraction(measures, { vertices: referenceVertices, curveRatios: referenceCurveRatios, medians: referenceMedians }), seconds: Number(((Date.now() - started) / 1000).toFixed(1)), referenceLayer: LAYER_ID.naver }
 console.log(JSON.stringify(summary, null, 2))
 if (outFile) fs.writeFileSync(outFile, JSON.stringify(summary, null, 2) + '\n')
 if (sheetFile) fs.writeFileSync(sheetFile, contactSheet(sheet))

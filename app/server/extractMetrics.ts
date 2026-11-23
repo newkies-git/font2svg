@@ -116,14 +116,20 @@ const rate = (count: number, total: number): { count: number; total: number; per
 const mean = (values: number[]): number => (values.length === 0 ? 0 : Number((values.reduce((sum, value) => sum + value, 0) / values.length).toFixed(RATIO_DIGITS)))
 
 // 글자별 측정을 하나의 보고용 요약으로 모은다. reference는 사람이 그린 참고 윤곽(NAVER)의 같은 지표다.
-export function summarizeExtraction(measures: CharMeasure[], reference: { vertices: number[]; curveRatios: number[] }) {
+export function summarizeExtraction(measures: CharMeasure[], reference: { vertices: number[]; curveRatios: number[]; medians: Pt[][] }) {
   const fitted = measures.filter((item) => item.fitted)
   const strokes = fitted.flatMap((item) => item.strokes)
   const charsWith = (test: (stroke: StrokeMeasure) => boolean) => fitted.filter((item) => item.strokes.some(test)).length
   return {
     chars: { sampled: measures.length, fitted: fitted.length, rejected: measures.length - fitted.length },
     strokes: strokes.length,
-    reference: { medianVertices: median(reference.vertices), meanCurveRatio: mean(reference.curveRatios) },
+    reference: {
+      medianVertices: median(reference.vertices),
+      meanCurveRatio: mean(reference.curveRatios),
+      // 사람이 정한 참고 중심선에도 갈고리 등으로 급한 꺾임이 있다. 추출 결과의 꺾임·되돌림은 이 값과 견준다.
+      kink: rate(reference.medians.filter((line) => medianTurns(line).kink).length, reference.medians.length),
+      reversal: rate(reference.medians.filter((line) => medianTurns(line).reversal).length, reference.medians.length),
+    },
     outline: {
       medianVertices: median(strokes.map((stroke) => stroke.vertices)),
       p90Vertices: percentile90(strokes.map((stroke) => stroke.vertices)),

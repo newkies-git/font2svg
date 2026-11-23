@@ -1,8 +1,8 @@
 import { polygonArea, type Pt } from '../paths.ts'
 import { dilate, enclosedHoles } from './mask.ts'
+import { fitClosedLoop } from './curveFit.ts'
 import { pixelPointToFont, type Raster } from './raster.ts'
 
-const OUTLINE_SIMPLIFY = 1.5
 const MIN_LOOP_POINTS = 12
 const MIN_LOOP_AREA = 20
 // Chaikin 코너 깎기: 가까운 점/먼 점 가중치
@@ -114,23 +114,17 @@ function pointLineDistance(p: Pt, a: Pt, b: Pt): number {
   return Math.abs(dy * p.x - dx * p.y + b.x * a.y - b.y * a.x) / len
 }
 
+// 격자 좌표 점열을 글꼴 좌표로 옮겨 곡선으로 맞춘다. 맞출 수 없는 작은 윤곽은 건너뛴다.
 function loopsToPath(loops: Pt[][], raster: Raster): string {
   return loops
-    .map((loop) => {
-      const head = pixelPointToFont(raster, loop[0])
-      let d = `M${Math.round(head.x)} ${Math.round(head.y)}`
-      for (let i = 1; i < loop.length; i++) {
-        const point = pixelPointToFont(raster, loop[i])
-        d += `L${Math.round(point.x)} ${Math.round(point.y)}`
-      }
-      return `${d}Z`
-    })
+    .map((loop) => fitClosedLoop(loop.map((point) => pixelPointToFont(raster, point))))
+    .filter((d): d is string => d !== null)
     .join(' ')
 }
 
 // 마스크에서 뽑은 바깥 윤곽 하나를 모서리를 깎고 단순화해 글꼴 좌표 경로로 만든다.
 export function outlineOfLoop(loop: Pt[], raster: Raster): string {
-  return loopsToPath([rdp(chaikin(loop), OUTLINE_SIMPLIFY)], raster)
+  return loopsToPath([chaikin(loop)], raster)
 }
 
 // 마스크의 윤곽 경로: 바깥 윤곽에 안쪽 구멍 윤곽(감는 방향을 거꾸로)을 더한다. 잉크가 없으면 null.

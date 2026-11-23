@@ -1,3 +1,4 @@
+import { fitOpenPolyline } from './curveFit.ts'
 import { flattenContours, pointSegmentDistance, polygonArea, round1, type Pt } from '../paths.ts'
 import {
   buildOverlapCubic,
@@ -203,10 +204,12 @@ function bridgeRuns(
   for (let r = 0; r < runs.length; r++) {
     const leave = cut[r].leave
     let i = cut[(r - 1 + runs.length) % runs.length].enter
+    const walked = [ring[i]]
     while (i !== leave) {
       i = (i + 1) % n
-      cmds.push(`L ${fmt(ring[i])}`)
+      walked.push(ring[i])
     }
+    cmds.push(fitOpenPolyline(walked))
     const a = ring[leave]
     const b = ring[cut[r].enter]
     const chordLen = Math.hypot(b.x - a.x, b.y - a.y)
