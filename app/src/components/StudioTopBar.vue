@@ -115,7 +115,7 @@ function runMenuAction(fn: () => void) {
       <span
         v-if="locked && editableLayer && isReferenceKind(editableLayer.kind)"
         class="ctx-unlock-chip"
-        title="네이버·AnimCJK·Hanzi는 작업 획으로 가져온 뒤 편집합니다."
+        title="네이버·Hanzi는 작업 획으로 가져온 뒤 편집합니다."
       >
         참고 전용
       </span>

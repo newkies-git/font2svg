@@ -46,12 +46,6 @@ export function createFontApply(
     return font
   }
 
-  // 궁서체 윤곽이 있으면 그 윤곽을 중심선으로 나눈다. TTF에 글자가 없거나 분리가 어긋나면 받은 윤곽을 그대로 쓴다(없으면 띠 모양).
-  function fontOrGiven(char: string, medians: Pt[][], outlines: string[]): ImportedStrokes {
-    const contours = getFont()?.contours(char)
-    return (contours && splitByContours(contours, medians)) || { medians, outlines }
-  }
-
   // 궁서체에 맞추되, 맞지 않는 획은 버리지 않는다. 글자가 폰트에 없으면 받은 윤곽을 그대로 둔다.
   function fitOrGiven(char: string, medians: Pt[][], outlines: string[]) {
     const contours = getFont()?.contours(char) ?? []
@@ -118,5 +112,5 @@ export function createFontApply(
     return { processed: rows.length, counts, rejected, noGlyph, next: rows.length === limit ? rows[rows.length - 1].unicode : null }
   }
 
-  return { getFont, fontOrGiven, fitOrGiven, applyFontBatch }
+  return { getFont, fitOrGiven, applyFontBatch }
 }

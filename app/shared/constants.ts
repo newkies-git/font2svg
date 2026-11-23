@@ -4,7 +4,6 @@ export const LAYER_ID = {
   font: 'font',
   outline: 'outline',
   mmh: 'mmh',
-  acjk: 'acjk',
   naver: 'naver',
   strokes: 'strokes',
   medians: 'medians',
@@ -51,8 +50,9 @@ export const MAX_COVERED_AREA_RATIO = 1.7
 export const FONT_BATCH_LIMIT = 10
 export const AREA_FLATNESS = 2
 export const IDS_MAX_DEPTH = 3
-export const ACJK_FILE_LIMIT = 32 * 1024 * 1024
-export const ACJK_BATCH_LIMIT = 200
+// 참고 획순(Hanzi·네이버) 일괄 수신: 동시에 받는 글자 수와 진행 상황을 알리는 간격(글자 수)
+export const REFERENCE_PREFETCH_CONCURRENCY = 4
+export const REFERENCE_PREFETCH_LOG_STEP = 100
 // OUTLINE 매핑: 획 윤곽의 꼭짓점이 궁서체 윤곽선에서 이 거리 이내면 그 윤곽에 속한 것으로 본다.
 export const OUTLINE_CONTOUR_TOLERANCE = 6
 // 획 윤곽 꼭짓점 중 이 비율 이상이 한 궁서체 윤곽 위에 있으면 그 윤곽에 매핑한다.

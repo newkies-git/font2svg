@@ -94,8 +94,50 @@ function dropStatusColumn(db: DatabaseSync) {
   db.exec('ALTER TABLE characters DROP COLUMN status')
 }
 
+// AnimCJK는 참고 출처에서 제거됐다(docs/references/animcjk.md). 옛 DB를 읽는 마이그레이션이라 여기에서만 옛 이름을 쓴다.
+const LEGACY_ACJK = 'ACJK'
+const LEGACY_ACJK_LAYER_ID = 'acjk'
+const LEGACY_ACJK_ACTOR = 'system:acjk'
+// 작업자 기록은 사람이 아니라 마이그레이션이 바꾼 것으로 남긴다. 출처가 ACJK였던 획은 출처를 알 수 없는 수작업으로 본다.
+const RETIRED_ORIGIN = 'MANUAL'
+
+function tableHasColumn(db: DatabaseSync, table: string, column: string): boolean {
+  return (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).some((info) => info.name === column)
+}
+
+function tableExists(db: DatabaseSync, table: string): boolean {
+  return Boolean(db.prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?`).get(table))
+}
+
+// AnimCJK의 값 흔적(수신 원본, 레이어 행, 작업자·출처 값)을 지운다. CHECK가 ACJK를 아직 허용하는 옛 표에서도 안전하고 여러 번 실행해도 같다.
+function retireAcjkData(db: DatabaseSync) {
+  transaction(db, () => {
+    if (tableExists(db, 'reference_data')) db.prepare('DELETE FROM reference_data WHERE source = ?').run(LEGACY_ACJK)
+    if (tableExists(db, 'character_layers')) db.prepare('DELETE FROM character_layers WHERE layer_id = ? OR kind = ?').run(LEGACY_ACJK_LAYER_ID, LEGACY_ACJK)
+    for (const table of ['strokes', 'strokes_history']) {
+      if (tableHasColumn(db, table, 'origin')) db.prepare(`UPDATE ${table} SET origin = ? WHERE origin = ?`).run(RETIRED_ORIGIN, LEGACY_ACJK)
+    }
+    for (const [table, column] of [['characters', 'last_modified_by'], ['strokes', 'last_modified_by'], ['working_data', 'last_modified_by'], ['strokes_history', 'state_modified_by'], ['strokes_history', 'changed_by']]) {
+      if (tableHasColumn(db, table, column)) db.prepare(`UPDATE ${table} SET ${column} = ? WHERE ${column} = ?`).run(ACTOR_MIGRATION, LEGACY_ACJK_ACTOR)
+    }
+  })
+}
+
+// CHECK 제약에 ACJK가 남은 표를 새 표로 갈아끼운다(SQLite는 CHECK를 바꿀 수 없다).
+function rebuildWithoutAcjk(db: DatabaseSync, table: string, ddl: string) {
+  const row = db.prepare(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?`).get(table) as { sql: string } | undefined
+  if (!row || !row.sql.includes(`'${LEGACY_ACJK}'`)) return
+  transaction(db, () => {
+    db.exec(`ALTER TABLE ${table} RENAME TO ${table}_previous`)
+    db.exec(ddl)
+    db.exec(`INSERT INTO ${table} SELECT * FROM ${table}_previous`)
+    db.exec(`DROP TABLE ${table}_previous`)
+  })
+}
+
 // 옛 형식 DB를 지금 형식으로 맞춘다. 각 단계가 sqlite_master/table_info를 검사해 이미 맞으면 건너뛰므로 여러 번 실행해도 안전하다.
 export function upgradeToV2(db: DatabaseSync) {
+  retireAcjkData(db)
   upgradeCharactersTable(db)
   dropStatusColumn(db)
   upgradeStrokesTable(db)
@@ -154,6 +196,13 @@ export function upgradeToV2(db: DatabaseSync) {
 // 변환 이력(conversions)을 추가한다. CREATE ... IF NOT EXISTS라 여러 번 실행해도 안전하다.
 export function upgradeToV3(db: DatabaseSync) {
   db.exec(CONVERSIONS_DDL)
+}
+
+// 참고 출처에서 AnimCJK를 제거한다: 수신 원본·레이어 행·값 흔적을 지우고, strokes.origin과 character_layers.kind의 CHECK에서 ACJK를 뺀다.
+export function upgradeToV4(db: DatabaseSync) {
+  retireAcjkData(db)
+  rebuildWithoutAcjk(db, 'strokes', STROKES_DDL)
+  rebuildWithoutAcjk(db, 'character_layers', CHARACTER_LAYERS_DDL)
 }
 
 // 작업 데이터(working_data)를 도입하면서, strokes에 있던 IDS·Ollama·수작업 초안을 승인 대기 작업 데이터로 되돌린다.

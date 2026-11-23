@@ -1,7 +1,7 @@
 import { backupDatabase, backupPathFor } from '../dbBackup.ts'
 import type { DatabaseSync } from 'node:sqlite'
 import { PRE_MIGRATION_TAG } from '../../shared/constants.ts'
-import { upgradeToV2, upgradeToV3 } from './upgrades.ts'
+import { upgradeToV2, upgradeToV3, upgradeToV4 } from './upgrades.ts'
 
 type Migration = {
   // 적용 뒤 PRAGMA user_version에 기록되는 값
@@ -12,10 +12,11 @@ type Migration = {
 }
 
 // 새 스키마 변경은 여기에 버전을 올려 추가한다. 이미 적용된 항목은 고치지 않는다.
-// v1: 버전 기록을 처음 도입한 시점의 DB(별도 코드 없음). v2: v1 이전의 옛 형식 보정 + 레이어 종류 OUTLINE 추가. v3: 변환 이력(conversions) 추가.
+// v1: 버전 기록을 처음 도입한 시점의 DB(별도 코드 없음). v2: v1 이전의 옛 형식 보정 + 레이어 종류 OUTLINE 추가. v3: 변환 이력(conversions) 추가. v4: 참고 출처에서 AnimCJK 제거.
 export const MIGRATIONS: readonly Migration[] = [
   { version: 2, name: '옛 형식 보정과 OUTLINE 레이어 종류', up: upgradeToV2 },
   { version: 3, name: '변환 이력 테이블', up: upgradeToV3 },
+  { version: 4, name: 'AnimCJK 제거', up: upgradeToV4 },
 ]
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version

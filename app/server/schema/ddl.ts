@@ -13,7 +13,7 @@ export const STROKES_DDL = `
       CHECK (json_valid(median_line) AND json_type(median_line) = 'array' AND json_array_length(median_line) = json_array_length(stroke_outlines)),
     last_modified_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     last_modified_by TEXT NOT NULL,
-    origin TEXT NOT NULL CHECK (origin IN ('MMH', 'ACJK', 'NAVER', 'IDS', 'OLLAMA_IDS', 'MANUAL', 'NONE')),
+    origin TEXT NOT NULL CHECK (origin IN ('MMH', 'NAVER', 'IDS', 'OLLAMA_IDS', 'MANUAL', 'NONE')),
     origin_url TEXT
   )
 `
@@ -116,7 +116,7 @@ export const CHARACTER_LAYERS_DDL = `
   CREATE TABLE IF NOT EXISTS character_layers (
     char TEXT NOT NULL REFERENCES characters(char) ON DELETE CASCADE,
     layer_id TEXT NOT NULL,
-    kind TEXT NOT NULL CHECK (kind IN ('FONT', 'OUTLINE', 'MMH', 'ACJK', 'NAVER', 'STROKES', 'MEDIANS', 'NUMBERS', 'CUSTOM')),
+    kind TEXT NOT NULL CHECK (kind IN ('FONT', 'OUTLINE', 'MMH', 'NAVER', 'STROKES', 'MEDIANS', 'NUMBERS', 'CUSTOM')),
     name TEXT NOT NULL,
     z_index INTEGER NOT NULL,
     visible INTEGER NOT NULL DEFAULT 1 CHECK (visible IN (0, 1)),

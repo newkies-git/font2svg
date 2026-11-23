@@ -114,7 +114,7 @@ export function saveNonStrokeLayerContent(
   const current = currentLayerMeta(existing, builtin)
   if (!current) throw new Error('존재하지 않는 레이어입니다.')
   if (isReferenceKind(current.kind)) {
-    throw new Error('참고 레이어(네이버·AnimCJK·Hanzi)는 편집하지 않습니다. 작업 획으로 가져온 뒤 고치세요.')
+    throw new Error('참고 레이어(네이버·Hanzi)는 편집하지 않습니다. 작업 획으로 가져온 뒤 고치세요.')
   }
   if (current.kind === 'MEDIANS' || current.kind === 'NUMBERS') {
     throw new Error('오버레이 레이어는 직접 도형을 저장하지 않습니다.')

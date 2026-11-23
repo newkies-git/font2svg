@@ -25,7 +25,6 @@ export const BUILTIN_LAYERS: readonly BuiltinLayerSpec[] = [
   { id: LAYER_ID.font, kind: 'FONT', name: '궁서체 (TTF)', z_index: 0, visible: true, opacity: 0.35, locked: true, label_color: 'slate' },
   { id: LAYER_ID.outline, kind: 'OUTLINE', name: '획 윤곽 (매핑)', z_index: 1, visible: false, opacity: 0.7, locked: false, label_color: 'rose' },
   { id: LAYER_ID.mmh, kind: 'MMH', name: 'Hanzi (MMH)', z_index: 2, visible: false, opacity: 0.6, locked: true, label_color: 'violet' },
-  { id: LAYER_ID.acjk, kind: 'ACJK', name: 'AnimCJK', z_index: 3, visible: false, opacity: 0.6, locked: true, label_color: 'blue' },
   { id: LAYER_ID.naver, kind: 'NAVER', name: '네이버 획순', z_index: 4, visible: false, opacity: 0.65, locked: true, label_color: 'green' },
   { id: LAYER_ID.strokes, kind: 'STROKES', name: '작업 획', z_index: 5, visible: true, opacity: 1.0, locked: false, label_color: 'ink' },
   { id: LAYER_ID.medians, kind: 'MEDIANS', name: '중심선', z_index: 6, visible: true, opacity: 1.0, locked: false, label_color: 'amber' },

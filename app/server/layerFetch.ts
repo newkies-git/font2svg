@@ -2,13 +2,13 @@ import type { DatabaseSync } from 'node:sqlite'
 import { LAYER_ID } from '../shared/constants.ts'
 import type { createCharacterCatalog } from './characterCatalog.ts'
 import { patchLayersMeta } from './layerWrites.ts'
-import { ACJK_BLOB, fetchHanja, fetchNaver, hanjaUrl, naverUrl } from './references.ts'
+import { fetchHanja, fetchNaver, hanjaUrl, naverUrl } from './references.ts'
 import type { createReferencePipeline } from './referencePipeline.ts'
 import type { StrokeStore } from './strokeStore.ts'
 
 type CharacterLookup = ReturnType<typeof createCharacterCatalog>['getCharacter']
 
-// 외부 참고 레이어(네이버·AnimCJK·Hanzi)를 내려받아 표시 상태로 만든다.
+// 외부 참고 레이어(네이버·Hanzi)를 내려받아 표시 상태로 만든다.
 export function createLayerFetch(
   db: DatabaseSync,
   deps: { strokes: StrokeStore; references: ReturnType<typeof createReferencePipeline>; getCharacter: CharacterLookup },
@@ -21,10 +21,6 @@ export function createLayerFetch(
       retryMiss: true,
       notFound: '네이버 한자사전에서 이 글자의 획순을 찾지 못했습니다.',
       load: (unicode, char) => references.loadSource(unicode, 'NAVER', naverUrl(char), () => fetchNaver(char)),
-    },
-    [LAYER_ID.acjk]: {
-      notFound: 'AnimCJK에서 이 글자 데이터를 찾지 못했습니다.',
-      load: (unicode, char) => references.loadSource(unicode, 'ACJK', ACJK_BLOB, () => references.fetchAcjk(char)),
     },
     [LAYER_ID.mmh]: {
       notFound: 'Hanzi(MMH)에서 이 글자 데이터를 찾지 못했습니다.',

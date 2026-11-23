@@ -41,13 +41,13 @@ app/
   src/      Vue 화면: components(표시), composables(상태·동작), lib(순수 계산)
   scripts/  보조 스크립트(DB 백업)
   tests/    node:test 테스트
-database/   작업 DB, 내려받은 공개 데이터(IDS, AnimCJK)와 백업 — Git 추적 제외
+database/   작업 DB, 내려받은 공개 데이터(IDS)와 백업 — Git 추적 제외
 output/     컴파일 산출물(`compiled/<글자>.json`, `.svg`). 개발 서버를 켤 때 만들어지며 — Git 추적 제외
 ```
 
 ### 레이어
 
-한 글자는 여러 레이어로 보인다: 궁서체(FONT), 획 윤곽(OUTLINE, 궁서체 윤곽 ↔ 획 매핑), 외부 레퍼런스(Hanzi MMH · AnimCJK · 네이버 획순), 작업 획(STROKES), 중심선·번호 오버레이, 사용자 레이어(CUSTOM). 레퍼런스 종류는 `shared/layerKind.ts`의 `REFERENCE_KINDS` 한 곳에서 정의한다. 잠긴 레이어의 내용 저장은 서버도 거부한다.
+한 글자는 여러 레이어로 보인다: 궁서체(FONT), 획 윤곽(OUTLINE, 궁서체 윤곽 ↔ 획 매핑), 외부 레퍼런스(Hanzi MMH · 네이버 획순. 획 정보는 네이버 우선, AnimCJK는 참고 문서만 `docs/references/animcjk.md`에 둔다), 작업 획(STROKES), 중심선·번호 오버레이, 사용자 레이어(CUSTOM). 레퍼런스 종류는 `shared/layerKind.ts`의 `REFERENCE_KINDS` 한 곳에서 정의한다. 잠긴 레이어의 내용 저장은 서버도 거부한다.
 
 ### 데이터와 마이그레이션
 

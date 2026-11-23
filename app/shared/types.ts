@@ -2,7 +2,7 @@ import type { CAP_TYPES } from './constants.ts'
 
 export type Pt = [number, number]
 
-type RefSource = 'MMH' | 'ACJK' | 'NAVER' | 'IDS' | 'OLLAMA_IDS' | 'MANUAL' | 'FONT' | 'NONE'
+type RefSource = 'MMH' | 'NAVER' | 'IDS' | 'OLLAMA_IDS' | 'MANUAL' | 'FONT' | 'NONE'
 export type IssueStatus = 'OPEN' | 'DRAFT' | 'APPROVED'
 export type FitStatus = 'fitted' | 'partial' | 'copied' | 'no-font'
 export type CapType = (typeof CAP_TYPES)[number]
@@ -11,7 +11,7 @@ export type WriteMode = 'replace' | 'append'
 export type ThemeMode = 'system' | 'light' | 'dark'
 export type StatusFilter = 'ALL' | IssueStatus
 
-export type LayerKind = 'FONT' | 'OUTLINE' | 'MMH' | 'ACJK' | 'NAVER' | 'STROKES' | 'MEDIANS' | 'NUMBERS' | 'CUSTOM'
+export type LayerKind = 'FONT' | 'OUTLINE' | 'MMH' | 'NAVER' | 'STROKES' | 'MEDIANS' | 'NUMBERS' | 'CUSTOM'
 export type LayerColor = 'none' | 'ink' | 'slate' | 'blue' | 'violet' | 'green' | 'amber' | 'rose'
 export type EditorTool = 'select' | 'bezier' | 'median' | 'knife' | 'connect'
 // 칼 도구의 모드: cut은 칼 선으로 자르기, extract는 안내선을 따라 획을 뽑는 교차 분리

@@ -77,7 +77,7 @@ export const IDS_LAYOUTS: Record<string, Box[]> = {
 }
 
 export type IdsNode = { leaf: string } | { op: string; children: IdsNode[] }
-export const IDS_OPERATOR = /[\u2FF0-\u2FFF]/
+const IDS_OPERATOR = /[\u2FF0-\u2FFF]/
 const IDS_UNSUPPORTED = /[{}\\&;]/
 
 // IDS 문자열을 트리로 바꾼다. 지원하지 않는 연산자·조합 표기가 있거나 문자열이 남으면 null.

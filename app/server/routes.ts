@@ -1,4 +1,4 @@
-import { ACJK_BATCH_LIMIT, FONT_BATCH_LIMIT } from '../shared/constants.ts'
+import { FONT_BATCH_LIMIT } from '../shared/constants.ts'
 import type { LayerMetaPatch } from '../shared/types.ts'
 import { parseWriteMode } from '../shared/writeMode.ts'
 import { HTTP_BAD_REQUEST, HTTP_NOT_FOUND, HTTP_OK } from './http.ts'
@@ -46,14 +46,6 @@ const ROUTES: Route[] = [
     handler: async ({ ws, body }) => {
       const payload = await body()
       return ws.applyFontBatch(String(payload.after ?? ''), limitOf(payload.limit, FONT_BATCH_LIMIT))
-    },
-  },
-  {
-    method: 'POST',
-    pattern: 'apply-acjk',
-    handler: async ({ ws, body }) => {
-      const payload = await body()
-      return ws.applyAcjkBatch(String(payload.after ?? ''), limitOf(payload.limit, ACJK_BATCH_LIMIT))
     },
   },
   {

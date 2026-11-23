@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
 import { DEFAULT_STROKE_WIDTH } from '../shared/constants.ts'
+import { referenceRank } from '../shared/layerKind.ts'
 import type { Pt, WriteMode } from '../shared/types.ts'
 import { parseWriteMode } from '../shared/writeMode.ts'
 import { transaction } from './db.ts'
@@ -78,8 +79,8 @@ export function createOllamaIdsPipeline(
           FROM reference_data r
           JOIN characters c ON c.unicode = r.unicode
           WHERE c.char = ? AND r.found = 1 AND r.raw_data IS NOT NULL
-          ORDER BY CASE r.source WHEN 'MMH' THEN 1 WHEN 'ACJK' THEN 2 WHEN 'NAVER' THEN 3 ELSE 4 END
         `).all(char) as Array<{ source: string; raw_data: string }>
+        refRows.sort((a, b) => referenceRank(a.source) - referenceRank(b.source))
 
         for (const row of refRows) {
           const glyph = parseHanja(row.raw_data)

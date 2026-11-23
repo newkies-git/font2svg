@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
-import test from 'node:test'
-import { hanjaStrokes, hanjaUrl, medianOrRecovered, naverUrl, parseHanja } from '../server/references.ts'
+import test, { mock } from 'node:test'
+import { fetchNaver, hanjaStrokes, hanjaUrl, medianOrRecovered, naverUrl, parseHanja } from '../server/references.ts'
 import { rectPath } from './helpers.ts'
 
 test('parseHanja: hanzi-writer JSON(medians/strokes/radStrokes)', () => {
@@ -47,11 +47,50 @@ test('hanjaStrokes: 중심선이 없는 획은 복원하고 복원 불가면 nul
   assert.equal(hanjaStrokes({ medians: [[[0, 0]]], outlines: [], radical: [] }), null)
 })
 
-test('parseAcjkLine: 글자가 있는 줄만 받고 acjk는 문자열일 때만 남긴다', async () => {
-  const { parseAcjkLine } = await import('../server/references.ts')
-  assert.deepEqual(parseAcjkLine('{"character":"一","strokes":["M 0 0 Z"],"acjk":"一"}'), { character: '一', strokes: ['M 0 0 Z'], acjk: '一' })
-  assert.equal(parseAcjkLine('{"character":"一","acjk":5}').acjk, undefined)
-  assert.throws(() => parseAcjkLine('{"strokes":[]}'), /형식이 올바르지 않습니다/)
-  assert.throws(() => parseAcjkLine('null'), /형식이 올바르지 않습니다/)
-  assert.throws(() => parseAcjkLine('{broken'))
+const naverSvgOf = (codePoint: number) => {
+  const id = `U${codePoint.toString(16).toUpperCase()}`
+  return `<svg id="${id}ani"><g transform="scale(1,-1) translate(0, -900)"><path id="${id}d1" d="M 0 0 L 10 0 L 10 10 Z"/><path clip-path="url(#${id}c1)" d="M 1 1 L 9 9"/></g></svg>`
+}
+
+test('fetchNaver: 기본 코드에 없으면 호환 한자 코드를 찾아 받고 실제로 받은 주소를 돌려준다', async () => {
+  const requested: string[] = []
+  mock.method(globalThis, 'fetch', async (input: string | URL | Request) => {
+    const url = String(input)
+    requested.push(url)
+    return url === naverUrl('\uF90A') ? new Response(naverSvgOf(0xf90a), { status: 200 }) : new Response('not found', { status: 404 })
+  })
+  try {
+    const result = await fetchNaver('金')
+    assert.equal(result.url, naverUrl('\uF90A'))
+    assert.match(result.url, /\/F900\/F90A\.svg$/)
+    assert.equal(result.value?.medians.length, 1)
+    assert.equal(requested[0], naverUrl('金'))
+  } finally {
+    mock.restoreAll()
+  }
+})
+
+test('fetchNaver: 호환 한자 코드까지 모두 404이면 없음이다', async () => {
+  mock.method(globalThis, 'fetch', async () => new Response('not found', { status: 404 }))
+  try {
+    const result = await fetchNaver('金')
+    assert.equal(result.value, null)
+    assert.equal(result.url, naverUrl('金'))
+  } finally {
+    mock.restoreAll()
+  }
+})
+
+test('fetchNaver: 호환 한자가 없는 글자는 요청을 한 번만 한다', async () => {
+  const requested: string[] = []
+  mock.method(globalThis, 'fetch', async (input: string | URL | Request) => {
+    requested.push(String(input))
+    return new Response('not found', { status: 404 })
+  })
+  try {
+    assert.equal((await fetchNaver('丁')).value, null)
+    assert.equal(requested.length, 1)
+  } finally {
+    mock.restoreAll()
+  }
 })

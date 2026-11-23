@@ -310,7 +310,7 @@ function onShapePointerDown(layerId: string, index: number, event: PointerEvent)
           />
         </g>
 
-        <!-- 2. 레퍼런스 및 커스텀 레이어 (MMH / ACJK / NAVER / CUSTOM) -->
+        <!-- 2. 레퍼런스 및 커스텀 레이어 (MMH / NAVER / CUSTOM) -->
         <g
           v-else-if="layer.visible && (layer.kind === 'OUTLINE' || isReferenceKind(layer.kind) || layer.kind === 'CUSTOM')"
           class="svg-layer layer-ref"

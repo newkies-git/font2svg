@@ -221,3 +221,40 @@ test('v2 DB를 v3으로 올리면 변환 이력 테이블이 생기고 기존 �
     fs.rmSync(dir, { recursive: true, force: true })
   }
 })
+
+test('AnimCJK 제거(v4): 수신 원본·레이어·작업자 흔적을 지우고 CHECK에서 ACJK를 뺀다', () => {
+  const tableSql = (db: DatabaseSync, name: string) => (db.prepare(`SELECT sql FROM sqlite_master WHERE name = ?`).get(name) as { sql: string }).sql
+  const dir = tempDir()
+  try {
+    const file = path.join(dir, 'chusa1817.db')
+    const db = new DatabaseSync(file)
+    db.exec('PRAGMA foreign_keys = ON')
+    migrate(db, { backupBasePath: file })
+    insertChar(db, 'U+4E01', '丁')
+    // v3 시절 모양: strokes.origin과 character_layers.kind가 ACJK를 허용했다.
+    for (const [name, ddlSql] of [['strokes', tableSql(db, 'strokes')], ['character_layers', tableSql(db, 'character_layers')]]) {
+      db.exec(`DROP TABLE ${name}`)
+      db.exec(ddlSql.replace(`'MMH', `, `'ACJK', 'MMH', `))
+    }
+    db.exec(`INSERT INTO strokes (char, radical, font_outline, stroke_outlines, median_line, last_modified_by, origin)
+             VALUES ('丁', 0, '[]', '[{"order":1,"path":"M 0 0 Z","radical":0}]', '[{"order":1,"points":[[0,0],[1,1]],"width":70}]', 'system:acjk', 'ACJK')`)
+    db.exec(`INSERT INTO character_layers (char, layer_id, kind, name, z_index) VALUES ('丁', 'acjk', 'ACJK', 'AnimCJK', 1), ('丁', 'mmh', 'MMH', 'Hanzi', 2)`)
+    db.exec(`INSERT INTO reference_data (unicode, source, source_version, raw_data, found) VALUES ('U+4E01', 'ACJK', 'x', '{}', 1), ('U+4E01', 'NAVER', 'x', '{}', 1)`)
+    db.exec(`UPDATE characters SET last_modified_by = 'system:acjk'`)
+    db.exec('PRAGMA user_version = 3')
+
+    migrate(db, { backupBasePath: file })
+
+    assert.equal(userVersion(db), SCHEMA_VERSION)
+    assert.ok(!tableSql(db, 'strokes').includes('ACJK'))
+    assert.ok(!tableSql(db, 'character_layers').includes('ACJK'))
+    assert.deepEqual(db.prepare('SELECT source FROM reference_data').all().map((row) => ({ ...row })), [{ source: 'NAVER' }])
+    assert.deepEqual(db.prepare('SELECT layer_id FROM character_layers').all().map((row) => ({ ...row })), [{ layer_id: 'mmh' }])
+    assert.deepEqual({ ...db.prepare('SELECT origin, last_modified_by FROM strokes').get() }, { origin: 'MANUAL', last_modified_by: 'system:migration' })
+    assert.equal((db.prepare('SELECT last_modified_by AS who FROM characters').get() as { who: string }).who, 'system:migration')
+    assert.equal(db.prepare('PRAGMA integrity_check').get()?.integrity_check, 'ok')
+    db.close()
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})

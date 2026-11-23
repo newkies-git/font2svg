@@ -78,13 +78,13 @@ test('외부 수신: 네이버에 있으면 레이어를 표시하고, 없거나
   await assert.rejects(ws.fetchLayer('U+56DB', 'strokes'), /외부 수신을 지원하지 않는/)
   await assert.rejects(ws.fetchLayer('U+56DB', 'constructor'), /외부 수신을 지원하지 않는/, '객체 기본 속성 이름이 수신 방법으로 잡히지 않는다')
   await assert.rejects(ws.fetchLayer('U+56DB', 'mmh'), /Hanzi\(MMH\)에서/)
-  await assert.rejects(ws.fetchLayer('U+56DB', 'acjk'), /AnimCJK에서/)
+  await assert.rejects(ws.fetchLayer('U+56DB', 'acjk'), /외부 수신을 지원하지 않는/, '제거된 AnimCJK 레이어는 수신 대상이 아니다')
 })
 
 test('레이어를 작업 획에 적용(direct): 레퍼런스 종류가 출처가 되고 레이어가 없으면 던진다', () => {
   const unicode = 'U+4E8C'
   cacheReference(unicode, 'MMH', barGlyph)
-  assert.throws(() => ws.applyLayerToStrokes(unicode, 'acjk'), /적용할 획 데이터가 없는/)
+  assert.throws(() => ws.applyLayerToStrokes(unicode, 'naver'), /적용할 획 데이터가 없는/)
   const detail = ws.applyLayerToStrokes(unicode, 'mmh')!
   assert.equal(detail.origin, 'MMH')
   assert.equal(detail.strokes.length, 1)

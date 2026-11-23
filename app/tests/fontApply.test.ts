@@ -79,13 +79,3 @@ test('일괄 적용: limit만큼 처리하고 다음 위치를 돌려준다', ()
   assert.equal(page.next, 'U+4E00')
   assert.equal(apply.applyFontBatch(page.next!, 1).processed, 1)
 })
-
-test('fontOrGiven: 글리프가 있으면 윤곽을 글꼴로 나누고, 없으면 받은 것을 그대로 쓴다', () => {
-  const { apply } = project({ font: true })
-  const medians: [number, number][][] = [[[150, 460], [870, 460]]]
-  const given = ['M 0 0 L 1 0 L 1 1 Z']
-  const split = apply.fontOrGiven('一', medians, given)
-  assert.ok(split.fontOutline && split.fontOutline.length > 0, '글꼴 윤곽이 붙는다')
-  const fallback = apply.fontOrGiven('二', medians, given)
-  assert.deepEqual(fallback, { medians, outlines: given })
-})

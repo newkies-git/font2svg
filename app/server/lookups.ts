@@ -3,7 +3,7 @@ import type { ReferenceKind } from '../shared/layerKind.ts'
 
 // 여러 모듈이 같은 모양으로 읽던 조회를 한곳에 둔다.
 
-// 외부 레퍼런스(MMH·AnimCJK·네이버)를 받아 둔 기록. found가 0이면 "그 출처에 없음"을 캐시한 것이다.
+// 외부 레퍼런스(MMH·네이버)를 받아 둔 기록. found가 0이면 "그 출처에 없음"을 캐시한 것이다.
 export type ReferenceRow = { found: number; raw_data: string | null; source_url: string | null }
 
 export function readReferenceRow(db: DatabaseSync, unicode: string, source: ReferenceKind): ReferenceRow | undefined {

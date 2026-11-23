@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
+import path from 'node:path'
 import test from 'node:test'
+import { DatabaseSync } from 'node:sqlite'
 import { HTTP_BAD_REQUEST, HTTP_OK } from '../server/http.ts'
 import { listOllamaStatus } from '../server/ids.ts'
 import { handleApi } from '../server/routes.ts'
@@ -129,6 +131,31 @@ test('ollama-ids 라우트: 추론 미리보기(infer)와 작업 획 적용(appl
     assert.equal(replaced.strokes.length, 2)
     assert.ok(replaced.history_count >= 1)
   } finally {
+    ws.close()
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('IDS 합성: 부품 획을 같은 글자의 Hanzi와 NAVER 중 NAVER 획순에서 가져온다', async () => {
+  const dir = tempDir()
+  const ws = createWorkspace(dir)
+  const side = new DatabaseSync(path.join(dir, 'database', 'chusa1817.db'))
+  try {
+    ws.importInitial([{ 한자: '一', 음: '일' }, { 한자: '二', 음: '이' }])
+    // 같은 부품 '一'에 출처마다 다른 중심선을 둔다: NAVER는 가로, Hanzi는 대각선.
+    const insert = side.prepare(`INSERT INTO reference_data (unicode, source, source_version, raw_data, found) VALUES ('U+4E00', ?, 'test', ?, 1)`)
+    const glyph = (median: number[][]) => JSON.stringify({ strokes: ['M 100 450 L 900 450 L 900 550 L 100 550 Z'], medians: [median] })
+    insert.run('MMH', glyph([[100, 100], [900, 900]]))
+    insert.run('NAVER', glyph([[100, 500], [900, 500]]))
+    const detail = await ws.applyOllamaIds('U+4E8C', { ids: '⿱一一' })
+    assert.ok(detail)
+    assert.equal(detail.strokes.length, 2)
+    for (const stroke of detail.strokes) {
+      const [first, last] = [stroke.median_points[0], stroke.median_points[stroke.median_points.length - 1]]
+      assert.equal(first[1], last[1], '가로 중심선(NAVER)이어야 한다')
+    }
+  } finally {
+    side.close()
     ws.close()
     fs.rmSync(dir, { recursive: true, force: true })
   }

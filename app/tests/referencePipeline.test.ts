@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import test, { after, afterEach, beforeEach, mock } from 'node:test'
 import { DatabaseSync } from 'node:sqlite'
-import { ACJK_VARIANTS, naverUrl } from '../server/references.ts'
+import { hanjaUrl, naverUrl } from '../server/references.ts'
 import { createWorkspace } from '../server/workspace.ts'
 import { rectPath, strokeOf, tempDir } from './helpers.ts'
 
@@ -44,14 +44,6 @@ function naverSvg(codePoint: number, count: number): string {
   return `<svg id="${id}ani"><g transform="scale(1,-1) translate(0, -900)">${paths}</g></svg>`
 }
 
-// AnimCJK 데이터 파일(database/graphics*.txt, dictionary*.txt)을 미리 둬서 내려받지 않게 한다. 戊·己만 들어 있다.
-fs.mkdirSync(path.join(root, 'database'), { recursive: true })
-for (const variant of ACJK_VARIANTS) {
-  const entries = variant === 'Ja' ? ['戊', '己'] : []
-  fs.writeFileSync(path.join(root, 'database', `graphics${variant}.txt`), entries.map((character) => JSON.stringify({ character, strokes: [bar(100)], medians: [median(100)] })).join('\n') + '\n')
-  fs.writeFileSync(path.join(root, 'database', `dictionary${variant}.txt`), entries.map((character) => JSON.stringify({ character, acjk: `${character}` })).join('\n') + '\n')
-}
-
 ws.importInitial([
   { 한자: '丁', 음: '정', 구분: '중등' },
   { 한자: '丙', 음: '병', 구분: '중등' },
@@ -87,25 +79,91 @@ test('applyNaver: 기존 획을 네이버 획순으로 바꾸고 이전 상태�
   assert.equal(added.origin, 'NAVER')
 })
 
-test('applyAcjkBatch: 교체·사람이 고친 글자·이미 적용·AnimCJK에 없음을 구분해 센다', async () => {
-  // 己는 사람이 고친 상태로 만든다(작업 데이터의 마지막 수정자가 사용자).
-  ws.updateStrokes('U+5DF1', [strokeOf(bar(300), median(300))] as never, '수작업')
-  const first = await ws.applyAcjkBatch('', 200)
-  assert.equal(first.counts.REPLACED, 1)
-  assert.equal(first.counts.EDITED, 1)
-  assert.deepEqual(first.edited, ['己'])
-  assert.equal(first.counts.NOT_IN_ACJK, first.processed - 2 - first.counts.ALREADY)
-  assert.equal(first.next, null)
-  assert.equal(detailOf('U+620A').origin, 'ACJK')
-  const second = await ws.applyAcjkBatch('', 200)
-  assert.equal(second.counts.REPLACED, 0)
-  assert.equal(second.counts.ALREADY, 1)
+const savedRows = (source: string) => sideDb.prepare('SELECT unicode, found FROM reference_data WHERE source = ? ORDER BY unicode').all(source) as { unicode: string; found: number }[]
+const hanjaJson = JSON.stringify({ strokes: [bar(100)], medians: [median(100)] })
+
+test('prefetchReferences: Hanzi를 모두 받은 뒤 네이버를 받아 reference_data에 저장하고, 이미 저장된 글자는 건너뛴다', async () => {
+  responses.set(hanjaUrl('丁'), hanjaJson)
+  responses.set(naverUrl('丁'), naverSvg(0x4e01, 1))
+  failing.add(naverUrl('丙'))
+  const [hanja, naver] = await ws.prefetchReferences(undefined, { concurrency: 2 })
+
+  assert.equal(hanja.source, 'MMH')
+  assert.equal(hanja.found, 1)
+  assert.equal(hanja.missing + hanja.found + hanja.cached, hanja.total)
+  assert.deepEqual(hanja.failed, [])
+  assert.equal(naver.source, 'NAVER')
+  assert.equal(naver.found, 1)
+  assert.deepEqual(naver.failed, ['丙'])
+  // 받지 못한 글자는 저장하지 않아 다음 실행에서 다시 시도한다.
+  assert.equal(savedRows('NAVER').some((row) => row.unicode === 'U+4E19'), false)
+  assert.equal(savedRows('MMH').find((row) => row.unicode === 'U+4E01')?.found, 1)
+  // 순서: Hanzi 요청이 모두 끝난 뒤에 네이버 요청이 시작된다.
+  const lastHanja = calls.map((url) => url.includes('hanzi-writer-data')).lastIndexOf(true)
+  const firstNaver = calls.findIndex((url) => url.includes('pstatic.net'))
+  assert.ok(lastHanja >= 0 && firstNaver > lastHanja)
+
+  // 다시 실행하면 받지 못한 글자만 요청한다.
+  calls.length = 0
+  failing.clear()
+  const again = await ws.prefetchReferences(undefined, { concurrency: 2 })
+  assert.deepEqual(calls, [naverUrl('丙')])
+  assert.equal(again[0].cached, again[0].total)
+  assert.deepEqual(again[1].failed, [])
 })
 
-test('applyAcjkBatch: limit만큼만 처리하고 다음 위치를 돌려준다', async () => {
-  const page = await ws.applyAcjkBatch('', 2)
-  assert.equal(page.processed, 2)
-  assert.ok(page.next)
-  const rest = await ws.applyAcjkBatch(page.next!, 200)
-  assert.equal(rest.next, null)
+test('prefetchReferences: retryMissing이면 "없음"으로 저장된 글자를 다시 받는다', async () => {
+  const before = savedRows('MMH').filter((row) => row.found === 0).length
+  assert.ok(before > 0)
+  calls.length = 0
+  responses.set(hanjaUrl('丙'), hanjaJson)
+  const [summary] = await ws.prefetchReferences(['MMH'], { retryMissing: true })
+  assert.equal(calls.length, before)
+  assert.equal(summary.found, 1)
+  assert.equal(savedRows('MMH').find((row) => row.unicode === 'U+4E19')?.found, 1)
+})
+
+const strokeCountOf = (unicode: string) => {
+  const row = sideDb.prepare('SELECT stroke_count AS n, last_modified_by AS by FROM characters WHERE unicode = ?').get(unicode) as { n: number; by: string }
+  return { n: row.n, by: row.by }
+}
+const forgetNaver = (unicode: string) => sideDb.prepare("DELETE FROM reference_data WHERE unicode = ? AND source = 'NAVER'").run(unicode)
+
+test('NAVER를 새로 받으면 작업 획이 없는 글자의 획수를 NAVER 기준으로 맞춘다(수정자는 그대로)', async () => {
+  const unicode = 'U+5E9A'
+  forgetNaver(unicode)
+  const before = strokeCountOf(unicode)
+  assert.equal(before.n, 0)
+  responses.set(naverUrl('庚'), naverSvg(0x5e9a, 3))
+  await ws.fetchLayer(unicode, 'naver')
+  assert.deepEqual(strokeCountOf(unicode), { n: 3, by: before.by })
+})
+
+test('작업 획이 있는 글자는 NAVER를 받아도 획수를 바꾸지 않는다', async () => {
+  const unicode = 'U+4E59'
+  ws.updateStrokes(unicode, [strokeOf(bar(100), median(100))] as never, '초기')
+  const before = strokeCountOf(unicode)
+  forgetNaver(unicode)
+  responses.set(naverUrl('乙'), naverSvg(0x4e59, 4))
+  await ws.fetchLayer(unicode, 'naver')
+  assert.deepEqual(strokeCountOf(unicode), before)
+  // 작업 획을 승인해 strokes 행이 생겨도 같다.
+  ws.approve(unicode)
+  const approved = strokeCountOf(unicode)
+  forgetNaver(unicode)
+  await ws.fetchLayer(unicode, 'naver')
+  assert.equal(approved.n, 1)
+  assert.equal(strokeCountOf(unicode).n, 1)
+})
+
+test('syncStrokeCountsFromNaver: 저장된 NAVER 원본으로 획수를 맞추고, 다시 실행해도 결과가 같다', () => {
+  const unicode = 'U+4E19'
+  forgetNaver(unicode)
+  sideDb.prepare("UPDATE characters SET stroke_count = 9 WHERE unicode = ?").run(unicode)
+  sideDb.prepare("INSERT INTO reference_data (unicode, source, source_version, raw_data, found) VALUES (?, 'NAVER', 'test', ?, 1)").run(unicode, naverSvg(0x4e19, 5))
+  const by = strokeCountOf(unicode).by
+  const first = ws.syncStrokeCountsFromNaver()
+  assert.ok(first.updated >= 1)
+  assert.deepEqual(strokeCountOf(unicode), { n: 5, by })
+  assert.equal(ws.syncStrokeCountsFromNaver().updated, 0)
 })

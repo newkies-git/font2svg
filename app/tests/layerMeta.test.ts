@@ -41,8 +41,8 @@ test('불투명도와 색상은 허용 범위·목록을 벗어나면 현재 값
   assert.equal(merge({ label_color: 'none' }).label_color, 'none')
 })
 
-test('참고 레이어(MMH·ACJK·NAVER)는 항상 잠금(1)을 유지한다', () => {
-  for (const kind of ['MMH', 'ACJK', 'NAVER'] as const) {
+test('참고 레이어(MMH·NAVER)는 항상 잠금(1)을 유지한다', () => {
+  for (const kind of ['MMH', 'NAVER'] as const) {
     const ref = { ...current, kind, locked: 0 }
     assert.equal(mergeLayerMeta(ref, { id: 'x' }).locked, 1, `${kind} 빈 패치`)
     assert.equal(mergeLayerMeta(ref, { id: 'x', locked: false }).locked, 1, `${kind} 잠금 해제 시도`)

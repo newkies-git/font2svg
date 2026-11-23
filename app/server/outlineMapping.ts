@@ -7,16 +7,16 @@ import { patchLayersMeta, saveNonStrokeLayerContent } from './layerWrites.ts'
 import { requireFound } from './model.ts'
 
 const OUTLINE_LAYER_ID = LAYER_ID.outline
-const SOURCE_FALLBACK_IDS = [LAYER_ID.naver, LAYER_ID.mmh, LAYER_ID.acjk] as const
+const SOURCE_FALLBACK_IDS = [LAYER_ID.naver, LAYER_ID.mmh] as const
 
-// 중심선 길잡이로 쓸 레이어: 지정한 레이어 → 작업 획 → 네이버 → MMH → ACJK 순으로 획이 있는 첫 레이어.
+// 중심선 길잡이로 쓸 레이어: 지정한 레이어 → 작업 획 → 네이버 → MMH 순으로 획이 있는 첫 레이어.
 function pickGuideLayer(layers: LayerRecord[], sourceLayerId?: string): LayerRecord {
   const ids = [sourceLayerId, LAYER_ID.strokes, ...SOURCE_FALLBACK_IDS].filter((id): id is string => Boolean(id))
   for (const id of ids) {
     const layer = layers.find((item) => item.id === id)
     if (layer && layer.strokes.length > 0) return layer
   }
-  throw new Error('중심선을 가져올 획 데이터가 있는 레이어가 없습니다. 네이버/Hanzi/AnimCJK 레이어를 먼저 수신하세요.')
+  throw new Error('중심선을 가져올 획 데이터가 있는 레이어가 없습니다. 네이버/Hanzi 레이어를 먼저 수신하세요.')
 }
 
 type OutlineDetail = { char: string; font_outline: string[]; layers: LayerRecord[] }

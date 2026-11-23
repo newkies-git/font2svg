@@ -8,7 +8,7 @@
 ## 1. 시스템 개요 및 전체 아키텍처
 
 ### 1.1 프로젝트 목적 및 기술 스택
-**추사 1817 | 한자 필순 추출 스튜디오(`font2svg-extract`)**는 궁서체 TTF(`app/fonts/Gungseouche.ttf`) 글리프 윤곽을 오픈소스 레퍼런스(Make Me a Hanja, AnimCJK, 네이버 한자사전), 래스터 이미지 트레이싱, IDS 합성 및 로컬 Ollama 추론과 결합하여 획 단위로 분리하고, 클리핑·마스크 기반 필순 애니메이션용 정적 산출물(`output/compiled/<한자>.json`, `.svg`)을 생성하는 로컬 웹 어드민 스튜디오다.
+**추사 1817 | 한자 필순 추출 스튜디오(`font2svg-extract`)**는 궁서체 TTF(`app/fonts/Gungseouche.ttf`) 글리프 윤곽을 오픈소스 레퍼런스(Make Me a Hanja, 네이버 한자사전), 래스터 이미지 트레이싱, IDS 합성 및 로컬 Ollama 추론과 결합하여 획 단위로 분리하고, 클리핑·마스크 기반 필순 애니메이션용 정적 산출물(`output/compiled/<한자>.json`, `.svg`)을 생성하는 로컬 웹 어드민 스튜디오다.
 
 | 계층 | 주요 기술 및 제약 사항 |
 | :--- | :--- |
@@ -16,7 +16,7 @@
 | **개발 서버 & API** | Vite 8 (`app/vite.config.ts`의 `workspaceApi` Connect 미들웨어), 루프백 전용 HTTP API(`/api/*`) |
 | **프론트엔드** | Vue 3.5 (`<script setup lang="ts">`), 외부 UI/상태관리 라이브러리 미사용, 순수 Composable 아키텍처 |
 | **타입/정적 검증** | TypeScript 6 (`npm:@typescript/typescript6`, `vue-tsc` v3 호환성 유지용 별칭), ESLint 10, Knip 6 |
-| **외부 데이터/추론** | `opentype.js` 2.0 (로컬 TTF 파싱), 로컬 Ollama (`127.0.0.1:11434`), MMH/AnimCJK/Naver HTTP 페치 |
+| **외부 데이터/추론** | `opentype.js` 2.0 (로컬 TTF 파싱), 로컬 Ollama (`127.0.0.1:11434`), MMH/Naver HTTP 페치 |
 
 ### 1.2 디렉터리 구조 및 모듈 경계 원칙
 ```text
@@ -26,7 +26,7 @@ app/
   src/        Vue 3 스튜디오 UI: components(표시), composables(상태·도구·명령), lib(순수 계산/API)
   scripts/    독립 CLI 보조 스크립트 (DB 백업)
   tests/      node:test 기반 서버·공유 엔진·화면 순수 로직 단위 테스트
-database/     SQLite DB (chusa1817.db), 내려받은 IDS.TXT·AnimCJK 원본, 백업 파일 (Git 제외)
+database/     SQLite DB (chusa1817.db), 내려받은 IDS.TXT, 백업 파일 (Git 제외)
 output/       컴파일 산출물 (compiled/<한자>.json, .svg) (Git 제외)
 ```
 
@@ -42,7 +42,7 @@ flowchart TD
     MW --> WS["server/workspace.ts (Workspace 파사드)"]
     WS --> DB[("SQLite WAL DB (chusa1817.db)")]
     WS --> TTF["Gungseouche.ttf (server/font.ts)"]
-    WS --> REF["외부 레퍼런스 (MMH / AnimCJK / NAVER)"]
+    WS --> REF["외부 레퍼런스 (MMH / NAVER)"]
     WS --> OL["로컬 Ollama (127.0.0.1:11434)"]
     WS --> COMP["산출물 컴파일 (output/compiled/*.json, *.svg)"]
     WS --> SC["shared/strokeCut.ts (래스터·세선화·분할·캡 엔진)"]
@@ -87,10 +87,10 @@ flowchart TD
 | **`radicals`** | `upgrades.ts` (v2) | `id INTEGER PRIMARY KEY CHECK (id BETWEEN 1 AND 214)`, `radical_char TEXT NOT NULL UNIQUE`, `variant_chars TEXT` (JSON 문자열 배열), `reading`, `meaning`, `stroke_count` |
 | **`characters`** | `ddl.ts` | `unicode TEXT PRIMARY KEY`, `char TEXT NOT NULL UNIQUE`, `grade`, `reading`, `meaning`, `variant_reading JSON` (array 검증), `variant_meaning JSON` (array 검증), `stroke_count DEFAULT 0`, `last_modified_at`, `last_modified_by` |
 | **`issues`** | `ddl.ts` | `char TEXT PRIMARY KEY REFERENCES characters(char) ON DELETE CASCADE`, `reason`, `created_at`, `status CHECK (status IN ('OPEN', 'DRAFT', 'APPROVED')) DEFAULT 'OPEN'`, `in_font CHECK (in_font IN (0, 1)) DEFAULT 0` |
-| **`strokes`** | `ddl.ts` | `char TEXT PRIMARY KEY REFERENCES characters(char) ON DELETE CASCADE`, `radical BETWEEN 0 AND 214`, `font_outline JSON` (array), `stroke_outlines JSON` (array, **길이 >= 1 필수**), `median_line JSON` (array, **`length = stroke_outlines length` 일치 필수**), `last_modified_at`, `last_modified_by`, `origin CHECK (origin IN ('MMH', 'ACJK', 'NAVER', 'IDS', 'OLLAMA_IDS', 'MANUAL', 'NONE'))`, `origin_url` |
+| **`strokes`** | `ddl.ts` | `char TEXT PRIMARY KEY REFERENCES characters(char) ON DELETE CASCADE`, `radical BETWEEN 0 AND 214`, `font_outline JSON` (array), `stroke_outlines JSON` (array, **길이 >= 1 필수**), `median_line JSON` (array, **`length = stroke_outlines length` 일치 필수**), `last_modified_at`, `last_modified_by`, `origin CHECK (origin IN ('MMH', 'NAVER', 'IDS', 'OLLAMA_IDS', 'MANUAL', 'NONE'))`, `origin_url` |
 | **`strokes_history`** | `ddl.ts` | `id INTEGER PRIMARY KEY AUTOINCREMENT`, `char REFERENCES characters(char) ON DELETE CASCADE`, `radical`, `font_outline`, `stroke_outlines`, `median_line`, `origin`, `origin_url`, `state_modified_at`, `state_modified_by`, `action_desc`, `changed_by`, `changed_at`, `undoable CHECK (undoable IN (0, 1)) DEFAULT 1` |
 | **`working_data`** | `ddl.ts` | `char TEXT PRIMARY KEY REFERENCES characters(char) ON DELETE CASCADE`, `source CHECK (source IN ('IDS', 'OLLAMA_IDS', 'MANUAL', 'FONT'))`, `source_url`, `font_outline JSON`, `stroke_outlines JSON` (**0개 허용**), `median_line JSON` (`length = stroke_outlines length`), `last_modified_at`, `last_modified_by` |
-| **`character_layers`** | `ddl.ts` | `char REFERENCES characters(char) ON DELETE CASCADE`, `layer_id`, `kind CHECK (kind IN ('FONT', 'OUTLINE', 'MMH', 'ACJK', 'NAVER', 'STROKES', 'MEDIANS', 'NUMBERS', 'CUSTOM'))`, `name`, `z_index`, `visible (0\|1)`, `opacity [0..1]`, `locked (0\|1)`, `label_color`, `strokes_json JSON`, `paths_json JSON`, `modified (0\|1)`, `updated_at`, **`PRIMARY KEY (char, layer_id)`** |
+| **`character_layers`** | `ddl.ts` | `char REFERENCES characters(char) ON DELETE CASCADE`, `layer_id`, `kind CHECK (kind IN ('FONT', 'OUTLINE', 'MMH', 'NAVER', 'STROKES', 'MEDIANS', 'NUMBERS', 'CUSTOM'))`, `name`, `z_index`, `visible (0\|1)`, `opacity [0..1]`, `locked (0\|1)`, `label_color`, `strokes_json JSON`, `paths_json JSON`, `modified (0\|1)`, `updated_at`, **`PRIMARY KEY (char, layer_id)`** |
 | **`reference_data`** | `upgrades.ts` (v2) | `unicode`, `source`, `source_version`, `source_url`, `raw_data`, `raw_sha256`, `found INTEGER`, `fetched_at`, **`PRIMARY KEY (unicode, source)`**, **`FOREIGN KEY (unicode) REFERENCES characters(unicode) ON DELETE CASCADE`** |
 | **`conversions`** | `ddl.ts` (v3) | `id INTEGER PRIMARY KEY AUTOINCREMENT`, `char REFERENCES characters(char) ON DELETE CASCADE`, `kind CHECK (kind IN ('IMAGE_TO_SVG'))`, `source_name`, `source_mime`, `source_sha256` (길이 64), `source_width > 0`, `source_height > 0`, `threshold BETWEEN 0 AND 255`, `invert (0\|1)`, `mode CHECK (mode IN ('GUIDED', 'COMPONENTS'))`, `destination CHECK (destination IN ('STROKES', 'WORKING'))`, `stroke_count >= 1`, `result_svg`, `created_by`, `created_at` |
 
@@ -98,12 +98,13 @@ flowchart TD
 - **트리거 (`trg_characters_updated`)**: `AFTER UPDATE ON characters WHEN NEW.last_modified_at = OLD.last_modified_at`일 때 `last_modified_at = CURRENT_TIMESTAMP` 자동 갱신.
 
 ### 2.3 스키마 마이그레이션 및 시드 (`migrate.ts`, `upgrades.ts`, `seed.ts`)
-- **버전 관리 (`PRAGMA user_version`)**: 현재 `SCHEMA_VERSION = 3`. 실행 중인 앱보다 DB의 `user_version`이 높으면 다운그레이드 손상을 막기 위해 즉시 예외를 던진다.
+- **버전 관리 (`PRAGMA user_version`)**: 현재 `SCHEMA_VERSION = 4`. 실행 중인 앱보다 DB의 `user_version`이 높으면 다운그레이드 손상을 막기 위해 즉시 예외를 던진다.
 - **마이그레이션 전 자동 백업**: `characters` 테이블이 이미 존재하는 DB에 대기 중인 마이그레이션(`version > current`)이 있으면 적용 직전 `backupDatabase`로 `<DB명>.before-v<current>-<timestamp>.db`를 자동 백업한다.
 - **버전별 업그레이드 내역**:
   - **v1**: `user_version` 추적 도입 기준점.
   - **v2 (`upgradeToV2`)**: 10단계 레거시 보정 및 테이블 보장 — ① `characters` 컬럼 정리(`korean_reading` → `reading`, `variant_*` 추가, `issues` 이관 및 FK 검사), ② 구 `characters.status` 및 인덱스 제거, ③ `strokes.radical` 컬럼 추가 및 `stroke_outlines`의 `radical` 0/1 정규화, ④ `strokes.origin`에 `'NAVER'` 허용 재구성, ⑤ 기본 테이블 8종 및 `trg_characters_updated` 보장, ⑥ `character_layers.kind`에 `'OUTLINE'` 추가, ⑦ `reference_data.source_url` 추가, ⑧ `radicals.name_kr`을 `meaning`/`reading`으로 분리, ⑨ 구 `edit_history` 테이블을 `strokes_history`로 이관 후 삭제, ⑩ `working_data` 테이블이 아직 없을 때만 기존 `strokes`의 초안(`IDS`, `OLLAMA_IDS`, `MANUAL`)을 `strokes_history(undoable=0)`에 기록한 뒤 `working_data`와 `issues(status='DRAFT')`로 이관.
   - **v3 (`upgradeToV3`)**: `CONVERSIONS_DDL` 실행(`conversions` 테이블 및 인덱스 추가).
+  - **v4 (`upgradeToV4`)**: AnimCJK 제거. `reference_data`의 ACJK 행·`acjk` 레이어 행을 지우고, `origin='ACJK'`는 `MANUAL`로, `system:acjk` 작업자는 `system:migration`으로 바꾼 뒤 `strokes`·`character_layers`를 CHECK에서 ACJK를 뺀 새 표로 갈아끼운다(`docs/references/animcjk.md`).
 - **시드 (`seed.ts`, `radicals.ts`)**: `radicals`가 비어 있으면 강희자전 214부수(`KANGXI_RADICALS`)를 삽입하고, `project_meta(id=1)`가 없으면 기본 프로젝트 메타(`'추사 1817'`, `NO_FONT_SHA256 = '0'.repeat(64)`)를 생성한다.
 
 ### 2.4 `working_data` ↔ `strokes` 이중 생명주기 및 파싱 정책
@@ -147,7 +148,6 @@ stateDiagram-v2
 | 3 | `GET` | `/api/ollama/status` | `getOllamaStatus()` | - | `OllamaStatus` (`connected`, `models`, `defaultModel`, `url`, `error?`) |
 | 4 | `POST` | `/api/import` | `importInitial` | 배열 또는 `{ entries: [{ 한자, 구분?, 음?, 훈? }] }` | `{ imported: number }` |
 | 5 | `POST` | `/api/apply-font` | `applyFontBatch` | `{ after?: string, limit?: number }` (기본 `10`) | `{ processed, counts, rejected, noGlyph, next }` |
-| 6 | `POST` | `/api/apply-acjk` | `applyAcjkBatch` | `{ after?: string, limit?: number }` (기본 `200`) | `{ processed, counts, edited, next }` |
 | 7 | `GET` | `/api/characters/:unicode` | `getCharacter` | Path `:unicode` (`U+...`) | `CharacterDetail` (없으면 `404`) |
 | 8 | `POST` | `/api/characters/:unicode/strokes` | `updateStrokes` | `{ strokes: StrokeRecord[], action?: string }` | `CharacterDetail` |
 | 9 | `POST` | `/api/characters/:unicode/import-svg` | `importSvg` | `{ svg?: string }` | `CharacterDetail` |
@@ -169,7 +169,7 @@ stateDiagram-v2
 | 25 | `POST` | `/api/characters/:unicode/layers/:layerId/save` | `saveLayer` | `{ strokes?, paths?, action? }` | `CharacterDetail` |
 | 26 | `POST` | `/api/characters/:unicode/layers/batch` | `saveLayers` | `{ layers: Array<{ id, strokes?, paths?, action? }> }` | `CharacterDetail` |
 | 27 | `POST` | `/api/characters/:unicode/layers/:layerId/reset` | `resetLayer` | - | `CharacterDetail` |
-| 28 | `POST` | `/api/characters/:unicode/layers/:layerId/fetch` | `fetchLayer` | Path `:layerId` (`naver` \| `acjk` \| `mmh`) | `CharacterDetail` |
+| 28 | `POST` | `/api/characters/:unicode/layers/:layerId/fetch` | `fetchLayer` | Path `:layerId` (`naver` \| `mmh`) | `CharacterDetail` |
 | 29 | `POST` | `/api/characters/:unicode/layers/:layerId/apply` | `applyLayerToStrokes` | `{ mode?: 'direct' \| 'fit_font', write?: 'replace' \| 'append' }` | `CharacterDetail` (참고 레이어는 `+ fit_status, unmatched_strokes`) |
 
 ---
@@ -185,11 +185,9 @@ stateDiagram-v2
 ### 4.2 외부 레퍼런스 캐시 및 SVG 변환 (`references.ts`, `referencePipeline.ts`, `animSvg.ts`)
 - **3종 레퍼런스 소스**:
   - `MMH`: `hanzi-writer-data@2.0` CDN JSON (`strokes`, `medians`, `radStrokes`).
-  - `ACJK`: 고정 커밋(`1c8c8ef4...`)에서 `Ja`, `ZhHant`, `Ko` 3개 사전/그래픽 파일을 `database/`에 내려받아 메모리 맵(`acjkIndex`)을 구축한다. 뒤쪽 순서인 **`Ko`(한국)**가 앞선 변형을 덮어써 한국 한자 획순을 최우선한다.
   - `NAVER`: 네이버 한자사전 `aniSVG_2026_04` SVG.
 - **부정 캐시(`found = 0`) 오염 방지**: `fetchHanja`와 `fetchNaver`는 HTTP `404`일 때만 `{ value: null }`을 반환해 `reference_data`에 `found = 0`으로 기록하고, 타임아웃·5xx 오류·SVG 루트 글자 불일치는 예외를 던져 `loadSource`가 `reference_data`에 저장하지 않도록 한다.
 - **`naver` 재시도 정책**: `fetchLayer`에서 `LAYER_ID.naver`는 `retryMiss: true`가 설정되어 있어, 이전에 `found = 0`으로 캐시됐더라도 호출 시 해당 부정 캐시 행을 삭제하고 재수신한다.
-- **AnimCJK 부수 식 파싱 (`radicalStrokes(acjk, total)`)**: 분해식 문자열에서 `.`(부수 표시)과 숫자 획수, `~X` 변형, `:`/`::` 분할 표식을 추적해 부수 획 인덱스 배열을 추출한다. 총합이 `total`과 다르면 `[]`를 반환한다.
 - **`animatedSvg(unicode, outlines, medians, widths)` (`animSvg.ts`)**: `viewBox="0 0 1024 1024"`, `pathLength = 3333` (`ANIM_PATH_LENGTH`), `stroke-dasharray: 3337`, `stroke-dashoffset: 3339` 설정으로 각 획이 `0.8s` 동안 `1s` 간격 지연으로 그려지는 독립 실행 애니메이션 SVG를 생성한다.
 
 ### 4.3 래스터 이미지 → 획 SVG 변환 (`imageRequests.ts`, `conversions.ts`)
@@ -198,12 +196,12 @@ stateDiagram-v2
 3. 기존 `strokes` 행이 있으면 `replaceStrokes`(이력 기록, `destination = 'STROKES'`), 없으면 `working_data`에 저장(`issues.status = 'DRAFT'`, `destination = 'WORKING'`)하고, 결과 `animatedSvg`와 함께 `conversions` 테이블에 단일 트랜잭션으로 기록한다.
 
 ### 4.4 레이어 시스템, 윤곽 매핑 및 분할 품질 검사 (`layers.ts`, `layerWrites.ts`, `outlineMapping.ts`, `geometry.ts`)
-- **기본 레이어 스택 (`BUILTIN_LAYERS`)**: `font` (z=0, 불투명도 0.35, 잠금), `outline` (z=1, 숨김), `mmh` (z=2, 잠금), `acjk` (z=3, 잠금), `naver` (z=4, 잠금), `strokes` (z=5, `working`이면 `'작업 획 (초안)'`), `medians` (z=6), `numbers` (z=7).
+- **기본 레이어 스택 (`BUILTIN_LAYERS`)**: `font` (z=0, 불투명도 0.35, 잠금), `outline` (z=1, 숨김), `mmh` (z=2, 잠금), `naver` (z=4, 잠금), `strokes` (z=5, `working`이면 `'작업 획 (초안)'`), `medians` (z=6), `numbers` (z=7).
 - **불변식**:
-  - 참고 레이어(`MMH`, `ACJK`, `NAVER`)는 DB 설정과 무관하게 항상 `locked: true`로 강제되며 직접 내용 수정이 차단된다.
+  - 참고 레이어(`MMH`, `NAVER`)는 DB 설정과 무관하게 항상 `locked: true`로 강제되며 직접 내용 수정이 차단된다.
   - `OUTLINE` 레이어는 현재 궁서체 윤곽의 SHA-256 앞 12자리(`fontFingerprint`)와 각 획의 `font_hash`를 대조해 불일치 시 `stale: true`를 표시한다.
 - **`OUTLINE` 윤곽 매핑 (`outlineMapping.ts`)**:
-  - `generate`: `sourceLayerId → strokes → naver → mmh → acjk` 순으로 길잡이를 찾아 `splitOutlinePieces`를 실행한다. 기존 `outline` 레이어와 획 수가 같으면 수동 매핑(`map_manual = 1`)된 획을 보존하지만, 수동 매핑 획이 있는 상태에서 획 수가 달라지면 예외를 던져 수작업 유실을 막는다.
+  - `generate`: `sourceLayerId → strokes → naver → mmh` 순으로 길잡이를 찾아 `splitOutlinePieces`를 실행한다. 기존 `outline` 레이어와 획 수가 같으면 수동 매핑(`map_manual = 1`)된 획을 보존하지만, 수동 매핑 획이 있는 상태에서 획 수가 달라지면 예외를 던져 수작업 유실을 막는다.
   - `mapStroke`: `stale` 상태면 차단하며, 전달된 궁서체 윤곽 인덱스를 공백으로 합쳐 `outline_path`로 두고 `map_manual = 1`을 기록한다(빈 배열 전달 시 `ribbonPath`와 `map_manual = 0`으로 매핑 해제).
   - `refresh`: 획 모양은 유지한 채 현재 궁서체 윤곽과의 교차 비율로 `font_contours`와 `font_hash`만 갱신한다.
 - **기하 분할 모드 비교 (`geometry.ts`)**:
@@ -219,7 +217,7 @@ stateDiagram-v2
 2. **로컬 Ollama 상태 및 추론 (`ids.ts`, `ollamaIds.ts`)**:
    - `listOllamaStatus()`: `http://127.0.0.1:11434/api/tags` (`3000ms` 타임아웃)를 조회해 연결 상태와 모델 목록을 반환하며, 이름에 `'embedding'`이 포함된 모델은 생성 모델 목록이 비어있지 않은 한 제외한다.
    - `askOllama(char, model = 'qwen3.5:9b')`: `/api/generate`에 `stream: false`, `think: false`, `temperature: 0`, `seed: 1`, JSON Schema(`format`), `60초` 타임아웃으로 IDS 문자열을 질의한다.
-   - `ollamaIds.ts`: `knownMedians(char)`를 `strokes` → `working_data` → `reference_data (MMH → ACJK → NAVER)` 순으로 조회한다. `inferIds`는 DB 변경 없이 유효성·합성 가능성·예상 획수를 반환하고, `applyIds`는 `fitOrGiven`을 거쳐 `working_data` (`source = 'OLLAMA_IDS'`, `DRAFT`) 또는 기존 `strokes`에 반영한다.
+   - `ollamaIds.ts`: `knownMedians(char)`를 `strokes` → `working_data` → `reference_data (NAVER → MMH)` 순으로 조회한다. `inferIds`는 DB 변경 없이 유효성·합성 가능성·예상 획수를 반환하고, `applyIds`는 `fitOrGiven`을 거쳐 `working_data` (`source = 'OLLAMA_IDS'`, `DRAFT`) 또는 기존 `strokes`에 반영한다.
 3. **로컬 Ollama 궁서체 획 분리 (`ollamaSplit.ts`)**:
    - 현재 기준 궁서체 윤곽(`fontContoursOf`) 각각의 바운딩 박스/중심점과 `NAVER` 또는 `MMH` 길잡이 획순(`1..N`)의 좌표를 프롬프트로 구성하고, JSON Schema(`strokes: [{ strokeOrder, contourIndices, median }]`)로 보정된 중심선과 윤곽 인덱스를 받는다.
    - 받은 `median`(`[0..1024]` 클램프, 누락 획은 원본 길잡이 폴백)으로 `segmentOutlineByMedians`를 실행한다. 만약 기하 분할이 실패하거나 전체 윤곽을 쪼개지 못했는데 Ollama가 해당 획에 **단독으로 1개 윤곽만 매핑(`assigned.length === 1 && contourUseCount === 1`)**했고 면적 조건(`>= 0.005 * glyphArea`)을 충족하면 그 윤곽을 그대로 채택하는 보완 로직이 포함되어 있다. 최종 매칭 실패 획은 `ribbonPath`와 `unmatched_strokes`로 반환된다.
@@ -335,5 +333,5 @@ Node.js 24 환경(`working-directory: app`)에서 5단계 파이프라인을 실
 ### 7.2 유지보수 시 유의해야 할 설계 불변식 및 특이사항
 1. **획 폭 상한 1px 미세 차이**: `shared/clamp.ts`의 `clampStrokeWidth`는 상한에 `Math.round(135 * 2.5) = 338`을, `shared/strokeCut/median.ts`의 `computeOptimalStrokeWidth`는 `Math.floor(135 * 2.5) = 337`을 사용한다.
 2. **이력 추적 범위**: `strokes_history`와 `undo`는 본선 `strokes` 테이블에 대한 변경만 기록하며, `working_data` 초안 단계 편집이나 비획 레이어 편집은 로컬 스냅샷(`baselines`) 또는 DB 덮어쓰기로 처리된다.
-3. **참고 레이어 불변 보호**: `MMH`, `ACJK`, `NAVER` 레이어는 `layers.ts`·`layerWrites.ts`·`workspace.ts` 3중 계층에서 잠금과 직접 편집 차단이 강제되며, 작업 획으로 복사하거나 맞춤 적용한 뒤에만 편집할 수 있다.
+3. **참고 레이어 불변 보호**: `MMH`, `NAVER` 레이어는 `layers.ts`·`layerWrites.ts`·`workspace.ts` 3중 계층에서 잠금과 직접 편집 차단이 강제되며, 작업 획으로 복사하거나 맞춤 적용한 뒤에만 편집할 수 있다.
 4. **TypeScript 6 별칭**: `app/package.json`의 `"typescript": "npm:@typescript/typescript6@^6.0.2"`는 `vue-tsc` v3.3.x가 TS 7에서 제거된 내부 JS API에 의존하기 때문에 유지되고 있다.

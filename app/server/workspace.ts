@@ -65,10 +65,9 @@ export function createWorkspace(rootDir: string) {
     strokes,
     fontContours: (char) => font.getFont()?.contours(char) ?? null,
   })
-  const references = createReferencePipeline(db, rootDir, {
+  const references = createReferencePipeline(db, {
     strokes,
     issues,
-    fontOrGiven: font.fontOrGiven,
     fitOrGiven: font.fitOrGiven,
   })
   const ollamaIds = createOllamaIdsPipeline(db, rootDir, {
@@ -147,8 +146,8 @@ export function createWorkspace(rootDir: string) {
 
   // 레이어 하나를 저장한다(응답은 만들지 않는다). 작업 획 레이어는 이력이 남는 획 저장을 쓴다.
   function writeLayer(unicode: string, char: string, layerId: string, payload: LayerSavePayload) {
-    if (layerId === LAYER_ID.mmh || layerId === LAYER_ID.acjk || layerId === LAYER_ID.naver) {
-      throw new Error('참고 레이어(네이버·AnimCJK·Hanzi)는 편집하지 않습니다. 작업 획으로 가져온 뒤 고치세요.')
+    if (layerId === LAYER_ID.mmh || layerId === LAYER_ID.naver) {
+      throw new Error('참고 레이어(네이버·Hanzi)는 편집하지 않습니다. 작업 획으로 가져온 뒤 고치세요.')
     }
     assertLayerUnlocked(db, char, layerId)
     if (layerId === LAYER_ID.strokes) {
@@ -223,7 +222,8 @@ export function createWorkspace(rootDir: string) {
     splitFontWithOllama: layerApply.splitFontWithOllama,
     applyChatEdits,
     applyFontBatch: font.applyFontBatch,
-    applyAcjkBatch: references.applyAcjkBatch,
+    prefetchReferences: references.prefetchReferences,
+    syncStrokeCountsFromNaver: references.syncStrokeCountsFromNaver,
     compile: output.compile,
     listRadicals: catalog.listRadicals,
     importInitial: catalog.importInitial,
