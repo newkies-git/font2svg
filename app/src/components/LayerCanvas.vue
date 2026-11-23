@@ -4,11 +4,11 @@ import { computed, ref, watch } from 'vue'
 import { useCanvasDrag, type PointMarquee, type ResizeDir } from '../composables/useCanvasDrag.ts'
 import { useCanvasFit, visibleWorkStrokes } from '../composables/useCanvasFit.ts'
 import { useCanvasLoupe } from '../composables/useCanvasLoupe.ts'
+import { useCanvasView } from '../composables/useCanvasView.ts'
 import { BADGE_RADIUS, CANVAS } from '../../shared/constants.ts'
 import { handleDirsFor, handlePoint, type TransformMode } from '../lib/transformMath.ts'
 import { pathsBBox, strokesBBox, type BBox } from '../../shared/vectorEdit.ts'
 import { bezierNodesOf, polylinePoints, strokeDash } from '../lib/canvasGeometry.ts'
-import { FULL_CANVAS_VIEW, isFullView, panView, viewFromSelection, zoomViewAt, type CanvasView } from '../lib/canvasView.ts'
 import type { CharacterDetail, EditorTool, LayerRecord, Pt, StrokeRecord } from '../../shared/types.ts'
 import { MIN_CONNECT_POINTS } from '../composables/useConnectTool.ts'
 import BezierOverlay from './canvasOverlays/BezierOverlay.vue'
@@ -70,92 +70,14 @@ const {
 } = useCanvasLoupe(() => props.tool, fontToScreen, eventToFont)
 
 const svgEl = ref<SVGSVGElement | null>(null)
-const view = ref<CanvasView>({ ...FULL_CANVAS_VIEW })
-const zoomArmed = ref(false)
-const marquee = ref<{ x0: number; y0: number; x1: number; y1: number } | null>(null)
+const { view, zoomArmed, marquee, zoomed, viewBoxAttr, toggleZoomArm, resetView, onZoomPointerDown, zoomByWheel } = useCanvasView(svgEl)
 const pointMarquee = ref<PointMarquee | null>(null)
-const zoomed = computed(() => !isFullView(view.value))
-const viewBoxAttr = computed(() => `${view.value.x} ${view.value.y} ${view.value.w} ${view.value.h}`)
 const overlayScale = computed(() => Math.max(view.value.w, view.value.h) / (CANVAS * contentScale.value))
 
 watch(() => props.selected?.char, () => {
-  view.value = { ...FULL_CANVAS_VIEW }
-  zoomArmed.value = false
-  marquee.value = null
+  resetView()
   pointMarquee.value = null
 })
-
-function clientToSvg(event: PointerEvent | WheelEvent): { x: number; y: number } | null {
-  const ctm = svgEl.value?.getScreenCTM()
-  if (!ctm) return null
-  const pt = new DOMPoint(event.clientX, event.clientY).matrixTransform(ctm.inverse())
-  return { x: pt.x, y: pt.y }
-}
-
-function toggleZoomArm() {
-  zoomArmed.value = !zoomArmed.value
-  marquee.value = null
-}
-
-function resetView() {
-  view.value = { ...FULL_CANVAS_VIEW }
-  zoomArmed.value = false
-  marquee.value = null
-}
-
-function startMarquee(event: PointerEvent) {
-  const origin = clientToSvg(event)
-  if (!origin) return
-  marquee.value = { x0: origin.x, y0: origin.y, x1: origin.x, y1: origin.y }
-  const move = (moveEvent: PointerEvent) => {
-    const cur = clientToSvg(moveEvent)
-    if (!cur || !marquee.value) return
-    marquee.value = { ...marquee.value, x1: cur.x, y1: cur.y }
-  }
-  const up = () => {
-    window.removeEventListener('pointermove', move)
-    window.removeEventListener('pointerup', up)
-    const box = marquee.value
-    marquee.value = null
-    zoomArmed.value = false
-    if (!box) return
-    const next = viewFromSelection(box.x0, box.y0, box.x1, box.y1)
-    if (next) view.value = next
-  }
-  window.addEventListener('pointermove', move)
-  window.addEventListener('pointerup', up)
-}
-
-function startPan(event: PointerEvent) {
-  const ctm = svgEl.value?.getScreenCTM()
-  if (!ctm || ctm.a === 0 || ctm.d === 0) return
-  const scaleX = ctm.a
-  const scaleY = ctm.d
-  const originX = event.clientX
-  const originY = event.clientY
-  const start = { ...view.value }
-  const move = (moveEvent: PointerEvent) => {
-    view.value = panView(start, (moveEvent.clientX - originX) / scaleX, (moveEvent.clientY - originY) / scaleY)
-  }
-  const up = () => {
-    window.removeEventListener('pointermove', move)
-    window.removeEventListener('pointerup', up)
-  }
-  window.addEventListener('pointermove', move)
-  window.addEventListener('pointerup', up)
-}
-
-function onZoomPointerDown(event: PointerEvent) {
-  if (event.button === 1) {
-    event.preventDefault()
-    event.stopPropagation()
-    startPan(event)
-    return
-  }
-  if (!zoomArmed.value || event.button !== 0) return
-  event.stopPropagation()
-  startMarquee(event)
-}
 
 function onCanvasWheel(event: WheelEvent) {
   if (event.altKey && loupeEnabled.value && !zoomed.value && !zoomArmed.value) {
@@ -163,10 +85,7 @@ function onCanvasWheel(event: WheelEvent) {
     stepLoupeZoom(event.deltaY)
     return
   }
-  const at = clientToSvg(event)
-  if (!at) return
-  event.preventDefault()
-  view.value = zoomViewAt(view.value, at.x, at.y, event.deltaY < 0)
+  zoomByWheel(event)
 }
 
 function isItemHidden(layerId: string, index: number): boolean {
