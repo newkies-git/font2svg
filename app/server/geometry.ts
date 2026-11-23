@@ -1,7 +1,9 @@
-import { AREA_FLATNESS, CANVAS, DEFAULT_STROKE_WIDTH, OUTLINE_CONTOUR_MATCH_RATIO, OUTLINE_CONTOUR_TOLERANCE, MAX_COVERED_AREA_RATIO, MEDIAN_BBOX_INSET, MEDIAN_MIN_POINTS, MEDIAN_SIMPLIFY_TOLERANCE, MIN_COVERED_AREA_RATIO, MIN_STROKE_AREA_RATIO } from '../shared/constants.ts'
+import { AREA_FLATNESS, FIT_GRID, FIT_MARGIN, CANVAS, DEFAULT_STROKE_WIDTH, OUTLINE_CONTOUR_MATCH_RATIO, OUTLINE_CONTOUR_TOLERANCE, MAX_COVERED_AREA_RATIO, MEDIAN_BBOX_INSET, MEDIAN_MIN_POINTS, MEDIAN_SIMPLIFY_TOLERANCE, MIN_COVERED_AREA_RATIO, MIN_STROKE_AREA_RATIO } from '../shared/constants.ts'
 import { flattenContours, pointSegmentDistance, polygonArea, round1, type Pt as Point } from '../shared/paths.ts'
 import { computeOptimalStrokeWidth, recoverMedian, segmentOutlineByMedians, simplifyPolyline } from '../shared/strokeCut.ts'
 import type { Pt } from '../shared/types.ts'
+import { CELL, fillMask, loopsOf } from '../shared/fitCore.ts'
+import { medianTurns } from '../shared/medianShape.ts'
 import { registerMedians } from './registration.ts'
 
 export type Box = [number, number, number, number]
@@ -120,7 +122,38 @@ export function splitOutlinePieces(contours: string[], guide: Pt[][]): OutlinePi
   return registered && unmatchedCount(registered) < unmatchedCount(plain) ? registered : plain
 }
 
+// 참고 중심선을 윤곽 안쪽 판정에 쓸 때의 표본 간격(글꼴 좌표)과 최소 안쪽 비율
+const GUIDE_SAMPLE_STEP = 8
+const GUIDE_INSIDE_RATIO = 0.85
+
 const unmatchedCount = (pieces: OutlinePiece[]): number => pieces.filter((piece) => piece.contours.length === 0).length
+
+// 골격에서 복원한 중심선이 급히 꺾였는데 등록된 참고 중심선(사람이 정한 모양)은 꺾이지 않고 그 획 윤곽 안에 놓여 있으면, 꺾임은 접합부 골격이 휜 잡음이므로 참고 중심선을 쓴다.
+export function steadierMedian(recovered: Point[], guideLine: Pt[], outline: string): Point[] {
+  if (!medianTurns(recovered.map((point): Pt => [point.x, point.y])).kink || medianTurns(guideLine).kink) return recovered
+  return lineInsideOutline(guideLine, outline) ? toPoints(guideLine) : recovered
+}
+
+// 선을 일정 간격으로 훑어 윤곽 안쪽에 있는 비율이 GUIDE_INSIDE_RATIO 이상이면 참
+function lineInsideOutline(line: Pt[], outline: string): boolean {
+  const mask = fillMask(loopsOf([outline]))
+  let inside = 0
+  let total = 0
+  for (let index = 0; index < line.length - 1; index++) {
+    const [ax, ay] = line[index]
+    const [bx, by] = line[index + 1]
+    const steps = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) / GUIDE_SAMPLE_STEP))
+    for (let k = 0; k <= steps; k++) {
+      const x = ax + ((bx - ax) * k) / steps
+      const y = ay + ((by - ay) * k) / steps
+      const col = Math.floor((x + FIT_MARGIN) / CELL)
+      const row = Math.floor((y + FIT_MARGIN) / CELL)
+      total++
+      if (col >= 0 && col < FIT_GRID && row >= 0 && row < FIT_GRID && mask[row * FIT_GRID + col]) inside++
+    }
+  }
+  return total > 0 && inside / total >= GUIDE_INSIDE_RATIO
+}
 
 function piecesForGuide(contours: string[], fitted: Pt[][]): OutlinePiece[] | null {
   const split = segmentOutlineByMedians(contours, fitted.map(toPoints))
@@ -135,7 +168,8 @@ function piecesForGuide(contours: string[], fitted: Pt[][]): OutlinePiece[] | nu
     if (recovered.length < MEDIAN_MIN_POINTS) {
       return { outline: ribbonPath(line, DEFAULT_STROKE_WIDTH), median: line, width: DEFAULT_STROKE_WIDTH, contours: [] }
     }
-    const median = simplifyPolyline(orientLike(recovered, line), MEDIAN_SIMPLIFY_TOLERANCE)
+    const simplified = simplifyPolyline(orientLike(recovered, line), MEDIAN_SIMPLIFY_TOLERANCE)
+    const median = steadierMedian(simplified, line, outline)
     return {
       outline,
       median: median.map((point): Pt => [round1(point.x), round1(point.y)]),

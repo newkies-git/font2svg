@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { commandCounts, hasSliver, measureExtraction, measureOutline, medianTurns, summarizeExtraction, turnAngleDeg } from '../server/extractMetrics.ts'
+import { commandCounts, hasSliver, measureExtraction, measureOutline, summarizeExtraction } from '../server/extractMetrics.ts'
+import { medianTurns, turnAngleDeg } from '../shared/medianShape.ts'
 import { rectPath } from './helpers.ts'
 
 test('명령 수와 곡선 비율: L은 직선, C·Q는 곡선으로 센다', () => {
