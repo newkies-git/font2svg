@@ -22,7 +22,7 @@ import {
   saveNonStrokeLayerContent,
 } from './layerWrites.ts'
 import { sanitizeLayerStrokes } from './layerData.ts'
-import { requireFound } from './model.ts'
+import { ACTION_CHAT_EDIT, ACTOR_USER, requireFound } from './model.ts'
 import { applyStrokeEdits, sanitizeEdits, strokesFingerprint } from './strokeEdits.ts'
 import { createOutlineMapping } from './outlineMapping.ts'
 import { createReferencePipeline } from './referencePipeline.ts'
@@ -125,16 +125,19 @@ export function createWorkspace(rootDir: string) {
   }
 
   // 채팅 모델이 제안하고 사용자가 승인한 획 수정을 작업 획에 반영한다. 이력이 남아 실행 취소할 수 있다.
-  function applyChatEdits(unicode: string, rawEdits: unknown, fingerprint: unknown) {
+  function applyChatEdits(unicode: string, rawEdits: unknown, fingerprint: unknown, confirmWorking: unknown) {
     const character = strokes.requireCharacter(unicode)
     const detail = requireFound(getCharacter(unicode))
     if (fingerprint !== strokesFingerprint(detail.strokes)) throw new Error('제안을 받은 뒤 획 데이터가 바뀌어 적용하지 않았습니다. 다시 요청하세요.')
     const edits = sanitizeEdits(rawEdits, detail.strokes.length)
     if (edits.length === 0) throw new Error('적용할 수 있는 수정이 없습니다. 획 번호가 바뀌었는지 확인하세요.')
     assertLayerUnlocked(db, character.char, LAYER_ID.strokes)
+    // 승인 전 글자는 작업 데이터를 바로 덮어써 화면에서 되돌릴 수 없으므로, 사용자가 그 사실을 확인했을 때만 적용한다.
+    if (detail.working && confirmWorking !== true) throw new Error('승인 전 글자는 작업 데이터를 덮어써 되돌릴 수 없습니다. 확인 후 다시 적용하세요.')
     const next = applyStrokeEdits(detail.strokes, edits)
     transaction(db, () => {
-      strokes.updateStrokes(unicode, sanitizeLayerStrokes(next), `Ollama 채팅 수정 (${edits.length}건)`)
+      if (detail.working) strokes.archiveWorking(unicode, ACTION_CHAT_EDIT, ACTOR_USER)
+      strokes.updateStrokes(unicode, sanitizeLayerStrokes(next), `${ACTION_CHAT_EDIT} (${edits.length}건)`)
     })
     return getCharacter(unicode)
   }

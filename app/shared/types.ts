@@ -163,7 +163,8 @@ export type ChatEdit =
 
 // 모델이 도구로 등록한 수정 제안. 사용자가 승인해야 DB에 반영된다.
 // fingerprint: 제안을 받을 때의 획 데이터 지문. 적용할 때 달라졌으면 서버가 거부한다.
-export type ChatProposal = { unicode: string; char: string; edits: ChatEdit[]; fingerprint: string }
+// working: 승인 전 글자(작업 데이터)인지. 적용하면 되돌릴 수 없어 확인 단계가 필요하다.
+export type ChatProposal = { unicode: string; char: string; edits: ChatEdit[]; fingerprint: string; working: boolean }
 
 export type ChatReply = { reply: string; proposals: ChatProposal[]; toolLog: string[]; model: string }
 

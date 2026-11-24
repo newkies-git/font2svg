@@ -6,7 +6,7 @@ import { applyChatEdits, chatWithOllama } from '../lib/api.ts'
 import { describeEdit } from '../lib/chatEdits.ts'
 import { useOllamaStatus } from '../composables/useOllamaStatus.ts'
 
-type Turn = ChatMessage & { toolLog?: string[]; proposals?: (ChatProposal & { state: 'pending' | 'applied' })[] }
+type Turn = ChatMessage & { toolLog?: string[]; proposals?: (ChatProposal & { state: 'pending' | 'armed' | 'applied' })[] }
 
 const props = defineProps<{
   selected: { unicode: string; char: string } | null
@@ -74,10 +74,15 @@ const blockedReason = (proposal: ChatProposal) =>
   props.dirty && proposal.unicode === props.selected?.unicode ? '저장하지 않은 편집이 있어 적용할 수 없습니다. 먼저 저장하거나 되돌리세요.' : ''
 
 async function applyProposal(proposal: Turn['proposals'] extends (infer P)[] | undefined ? P : never) {
-  if (proposal.state !== 'pending' || blockedReason(proposal)) return
+  if (proposal.state === 'applied' || blockedReason(proposal)) return
+  // 승인 전 글자는 되돌릴 수 없으므로 한 번 더 눌러야 적용한다.
+  if (proposal.working && proposal.state === 'pending') {
+    proposal.state = 'armed'
+    return
+  }
   failure.value = ''
   try {
-    await applyChatEdits(proposal.unicode, proposal.edits, proposal.fingerprint)
+    await applyChatEdits(proposal.unicode, proposal.edits, proposal.fingerprint, proposal.working)
     proposal.state = 'applied'
     emit('applied', proposal.unicode)
   } catch (cause) {
@@ -141,14 +146,15 @@ defineExpose({ open })
           <ul>
             <li v-for="(edit, editIndex) in proposal.edits" :key="editIndex">{{ describeEdit(edit) }}</li>
           </ul>
-          <p v-if="blockedReason(proposal) && proposal.state === 'pending'" class="ollama-chat-hint">{{ blockedReason(proposal) }}</p>
+          <p v-if="blockedReason(proposal) && proposal.state !== 'applied'" class="ollama-chat-hint">{{ blockedReason(proposal) }}</p>
+          <p v-else-if="proposal.working && proposal.state !== 'applied'" class="ollama-chat-hint">승인 전 글자라 적용하면 되돌릴 수 없습니다(덮어쓰기 전 상태는 이력 테이블에 남습니다).</p>
           <button
             type="button"
             class="primary"
             :disabled="proposal.state === 'applied' || Boolean(blockedReason(proposal))"
             @click="applyProposal(proposal)"
           >
-            {{ proposal.state === 'applied' ? '적용함' : '적용' }}
+            {{ proposal.state === 'applied' ? '적용함' : proposal.state === 'armed' ? '되돌릴 수 없음 — 한 번 더 눌러 적용' : '적용' }}
           </button>
         </div>
       </li>

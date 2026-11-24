@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
+import path from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import test, { after, afterEach } from 'node:test'
 import { HTTP_BAD_REQUEST, HTTP_OK } from '../server/http.ts'
 import { buildSystemPrompt, chatWithOllama, parseChatRequest } from '../server/ollamaChat.ts'
@@ -110,7 +112,7 @@ test('데이터 수정 채팅: 제안은 모으기만 하고 DB는 바꾸지 않
   ])
   const result = await chatWithOllama(parse('1획을 부수로', 'edit'), ws)
   assert.deepEqual(result.proposals.map(({ fingerprint, ...rest }) => ({ ...rest, hasFingerprint: fingerprint.length > 0 })), [
-    { unicode: 'U+4E01', char: '丁', edits: [{ op: 'set_radical', stroke: 1, value: 1 }], hasFingerprint: true },
+    { unicode: 'U+4E01', char: '丁', edits: [{ op: 'set_radical', stroke: 1, value: 1 }], hasFingerprint: true, working: true },
   ])
   assert.equal(ws.getCharacter('U+4E01')!.strokes[0].is_radical, 0)
 })
@@ -142,11 +144,23 @@ test('POST /api/ollama/chat: 정상은 200, 검증 실패는 400', async () => {
 
 test('승인 적용(승인 전 글자): 작업 획에 반영된다', async () => {
   ws.updateStrokes('U+4E19', [bar(100), bar(300)] as never, '초기')
-  const result = await call('/api/ollama/apply-edits', { unicode: 'U+4E19', fingerprint: fp('U+4E19'), edits: [{ op: 'set_radical', stroke: 1, value: 1 }, { op: 'delete', stroke: 2 }] })
+  const edits = [{ op: 'set_radical', stroke: 1, value: 1 }, { op: 'delete', stroke: 2 }]
+  const unconfirmed = await call('/api/ollama/apply-edits', { unicode: 'U+4E19', fingerprint: fp('U+4E19'), edits })
+  assert.equal(unconfirmed.status, HTTP_BAD_REQUEST)
+  assert.match((unconfirmed.body as { error: string }).error, /되돌릴 수 없습니다/)
+  assert.equal(ws.getCharacter('U+4E19')!.strokes.length, 2, '확인 없이는 데이터를 바꾸지 않는다')
+  const result = await call('/api/ollama/apply-edits', { unicode: 'U+4E19', fingerprint: fp('U+4E19'), confirmWorking: true, edits })
   assert.equal(result.status, HTTP_OK)
   const detail = ws.getCharacter('U+4E19')!
   assert.equal(detail.strokes.length, 1)
   assert.equal(detail.strokes[0].is_radical, 1)
+  // 덮어쓰기 전 상태가 되돌릴 수 없는 이력(undoable=0)으로 남는다.
+  const db = new DatabaseSync(path.join(root, 'database', 'chusa1817.db'), { readOnly: true })
+  const rows = db.prepare(`SELECT action_desc, undoable, stroke_outlines FROM strokes_history WHERE char = ? AND action_desc LIKE 'Ollama 채팅 수정%'`).all(String(detail.char)) as { undoable: number; stroke_outlines: string }[]
+  db.close()
+  assert.equal(rows.length, 1)
+  assert.equal(rows[0].undoable, 0)
+  assert.equal(JSON.parse(rows[0].stroke_outlines).length, 2)
 })
 
 test('승인 적용(승인된 글자): 이력이 남아 실행 취소할 수 있다', async () => {

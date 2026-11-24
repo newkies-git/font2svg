@@ -256,6 +256,26 @@ export function createStrokeStore(db: DatabaseSync) {
 
   // 가장 최근의 되돌릴 수 있는 이전 상태로 되돌린다. 이력은 지우지 않는다: 되돌리기 전 상태는 되돌릴 수 없는 이력으로 남기고,
   // 되돌아간 이력은 더 이상 되돌릴 대상이 아니게 표시한다(연속으로 누르면 그 전 상태로 한 단계씩 간다).
+  // 승인 전 작업 데이터를 덮어쓰기 전에, 되돌릴 수 없는 이력(undoable=0)으로 현재 상태를 남긴다.
+  // 화면의 실행 취소 대상은 아니지만 필요하면 사람이 DB에서 복구할 수 있다.
+  function archiveWorking(unicode: string, action: string, by: string) {
+    const character = requireCharacter(unicode)
+    const row = db.prepare('SELECT * FROM working_data WHERE char = ?').get(character.char) as
+      { source: string; source_url: string | null; font_outline: string; stroke_outlines: string; median_line: string; last_modified_at: string; last_modified_by: string } | undefined
+    if (!row) return
+    pushHistory({
+      char: character.char,
+      radical: 0,
+      font_outline: row.font_outline,
+      stroke_outlines: row.stroke_outlines,
+      median_line: row.median_line,
+      last_modified_at: row.last_modified_at,
+      last_modified_by: row.last_modified_by,
+      origin: row.source,
+      origin_url: row.source_url,
+    }, action, by, 0)
+  }
+
   function undo(unicode: string) {
     const character = requireCharacter(unicode)
     const target = db.prepare('SELECT * FROM strokes_history WHERE char = ? AND undoable = 1 ORDER BY id DESC LIMIT 1')
@@ -284,6 +304,7 @@ export function createStrokeStore(db: DatabaseSync) {
     writeStrokes,
     replaceStrokes,
     writeWorking,
+    archiveWorking,
     updateStrokes,
     appendStrokes,
     importSvg,
