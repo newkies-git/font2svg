@@ -28,7 +28,7 @@ app/
   scripts/    독립 CLI 보조 스크립트 (DB 백업, 참고 데이터 미리 받기 `prefetch:refs`, 추출 품질 측정 `bench:extract`)
   tests/      node:test 기반 서버·공유 엔진·화면 순수 로직 단위 테스트
 database/     SQLite DB (chusa1817.db), 내려받은 공개 데이터(IDS.TXT 등), 백업 파일 (Git 제외)
-docs/         입력 목록, 이 분석 문서, 품질 측정 결과(`benchmarks/extract-*.json`), 참고 자료 조사(`references/animcjk.md`)
+docs/         입력 목록, 이 분석 문서, 품질 측정 기준값(`benchmarks/extract-baseline.json`), 참고 자료 조사(`references/animcjk.md`)
 output/       컴파일 산출물 (compiled/<한자>.json, .svg) (Git 제외)
 ```
 
@@ -240,7 +240,7 @@ stateDiagram-v2
 4. **중심선 복원과 선택 (`piecesForGuide`, `steadierMedian`, `extendToTips`)**: 나눠진 윤곽에서 `recoverMedian`으로 중심선을 복원하고 단순화(`MEDIAN_SIMPLIFY_TOLERANCE = 3`)한다. 복원선과 등록된 참고선 중 한쪽만 급히 꺾였으면(`shared/medianShape.ts`의 `medianTurns`, 꺾임 `60°`·되돌림 `100°` 초과) 참고선이 윤곽 안(표본의 `85%` 이상)에 있을 때 참고선을 쓰고(갈고리 복원), 복원선만 꺾였는데 참고선이 윤곽 밖이면 `softenKinks`로 꺾임을 깎는다. 마지막으로 중심선 끝이 윤곽 끝에서 떨어져 있으면(폭의 `0.15`~`1.2`배) 끝 방향으로 윤곽 경계 `8%` 안쪽까지 늘려(`extendToTips`) 이웃 획에 잘린 절단면을 지나 실제 끝까지 잇는다.
 5. **잉크가 없는 획**: 다른 획에 덮여 고유 잉크가 없는 획은 등록된 길잡이 모양(있으면)이나 고정 폭 띠(`ribbonPath`, `DEFAULT_STROKE_WIDTH`)로 남기고 `contours: []`(미매핑)로 표시한다.
 
-**품질 측정 (`server/extractMetrics.ts`, `scripts/benchExtract.ts`)**: `npm run bench:extract`가 DB를 읽기만 하며 글자 표본(`BENCH_SAMPLE_SIZE = 200`)의 추출 결과를 획마다 정점 수·곡선 비율·중심선 꺾임/되돌림·파편(면적 `5%` 미만 서브패스)·띠 대체로 센다. 사람이 그린 Hanzi 윤곽을 기준선으로 같이 보여 주고, `--out`으로 JSON을, `--sheet`로 접촉 시트 SVG를 남긴다. 단계별 결과는 `docs/benchmarks/extract-*.json`(기준값 `extract-baseline.json`)에 쌓인다.
+**품질 측정 (`server/extractMetrics.ts`, `scripts/benchExtract.ts`)**: `npm run bench:extract`가 DB를 읽기만 하며 글자 표본(`BENCH_SAMPLE_SIZE = 200`)의 추출 결과를 획마다 정점 수·곡선 비율·중심선 꺾임/되돌림·파편(면적 `5%` 미만 서브패스)·띠 대체로 센다. 사람이 그린 Hanzi 윤곽을 기준선으로 같이 보여 주고, `--out`으로 JSON을, `--sheet`로 접촉 시트 SVG를 남긴다. 기준값은 `docs/benchmarks/extract-baseline.json` 하나만 두고, 단계별 결과는 `--out`으로 저장해 비교한 뒤 커밋하지 않는다(과거 단계별 JSON은 git 이력에 있다).
 
 ---
 

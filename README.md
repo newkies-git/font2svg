@@ -48,7 +48,7 @@ app/
   scripts/  보조 스크립트(DB 백업, 참고 데이터 미리 받기, 추출 품질 측정)
   tests/    node:test 테스트
 database/   작업 DB, 내려받은 참고 데이터와 백업 — Git 추적 제외
-docs/       입력 목록, 코드 분석(codebase-logic-analysis.md), 품질 측정 결과(benchmarks/), 참고 자료 조사(references/)
+docs/       입력 목록, 코드 분석(codebase-logic-analysis.md), 품질 측정 기준값(benchmarks/extract-baseline.json), 참고 자료 조사(references/)
 output/     컴파일 산출물(`compiled/<글자>.json`, `.svg`). 개발 서버를 켤 때 만들어지며 — Git 추적 제외
 ```
 
