@@ -373,7 +373,7 @@ Node.js 24 환경(`working-directory: app`)에서 5단계 파이프라인을 실
 5. `npm run build`: `vite build` 프로덕션 번들 생성
 
 ### 7.2 유지보수 시 유의해야 할 설계 불변식 및 특이사항
-1. **획 폭 상한 1px 미세 차이**: `shared/clamp.ts`의 `clampStrokeWidth`는 상한에 `Math.round(135 * 2.5) = 338`을, `shared/strokeCut/median.ts`의 `computeOptimalStrokeWidth`는 `Math.floor(135 * 2.5) = 337`을 사용한다.
+1. **획 폭 상한 단일화**: `shared/clamp.ts`의 `strokeWidthCap`(`floor(defaultStrokeWidth * STROKE_WIDTH_CAP_RATIO)` = 337)을 `clampStrokeWidth`, `computeOptimalStrokeWidth`(`strokeCut/median.ts`), `vectorEdit.ts`가 함께 쓴다. 예전에 있던 338/337의 1px 차이는 없다.
 2. **이력 추적 범위**: `strokes_history`와 `undo`는 본선 `strokes` 테이블에 대한 변경만 기록하며, `working_data` 초안 단계 편집이나 비획 레이어 편집은 로컬 스냅샷(`baselines`) 또는 DB 덮어쓰기로 처리된다.
 3. **참고 레이어 불변 보호**: `MMH`, `NAVER` 레이어는 `layers.ts`·`layerWrites.ts`·`workspace.ts` 3중 계층에서 잠금과 직접 편집 차단이 강제되며, 작업 획으로 복사하거나 맞춤 적용한 뒤에만 편집할 수 있다.
 4. **Ollama 쓰기는 승인 뒤에만**: 채팅 모델은 읽기 도구와 "제안" 도구만 가지며, DB를 바꾸는 `POST /api/ollama/apply-edits`는 사람이 화면에서 적용을 눌러야 호출된다. 서버는 제안 때와 적용 때 각각 검증하고, 잠긴 작업 획 레이어와 저장하지 않은 화면 편집이 있는 글자(화면 쪽)를 막는다. 모델이 만든 SQL을 실행하는 경로는 없다.
