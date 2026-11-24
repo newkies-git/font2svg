@@ -23,6 +23,8 @@ export type StrokeMeasure = {
   kink: boolean
   reversal: boolean
   sliver: boolean
+  // 같은 방향으로 감긴 서브패스가 둘 이상이라 한 획이 여러 조각으로 떨어져 있다.
+  fragmented: boolean
   // 추출한 중심선 길이를 bbox로 맞춘 참고 중심선 길이로 나눈 값. 1보다 많이 작으면 획의 시작이나 끝이 잘린 것이다.
   lengthRatio: number
   // 윤곽을 못 찾아 고정 폭 띠로 대체됐다(추출 실패).
@@ -44,6 +46,12 @@ export function hasSliver(path: string): boolean {
   if (areas.length < 2) return false
   const total = areas.reduce((sum, area) => sum + area, 0)
   return areas.some((area) => area / total < SLIVER_AREA_RATIO)
+}
+
+function isFragmented(path: string): boolean {
+  const areas = flattenContours(path, SLIVER_FLATNESS).map(polygonArea)
+  const total = areas.reduce((sum, area) => sum + area, 0)
+  return areas.filter((area) => Math.sign(area) === Math.sign(total)).length > 1
 }
 
 export function measureOutline(path: string): Pick<StrokeMeasure, 'vertices' | 'curveRatio'> {
@@ -72,6 +80,7 @@ export function measureExtraction(char: string, contours: string[], guide: Pt[][
       lengthRatio: polylineLength(fit.medians[index]) / Math.max(MIN_GUIDE_LENGTH, polylineLength(guideLines[index])),
       ...medianTurns(fit.medians[index]),
       sliver: hasSliver(outline),
+      fragmented: isFragmented(outline),
       ribbon,
       unmatchedUsable: isUnmatched && !ribbon,
     }
@@ -128,6 +137,7 @@ export function summarizeExtraction(measures: CharMeasure[], reference: { vertic
       charsWithReversal: rate(charsWith((stroke) => stroke.reversal), fitted.length),
     },
     sliver: rate(strokes.filter((stroke) => stroke.sliver).length, strokes.length),
+    fragmented: rate(strokes.filter((stroke) => stroke.fragmented).length, strokes.length),
     // 매핑된 획의 중심선 길이 비(추출 ÷ 참고)와 SHORT_LENGTH_RATIO 미만으로 짧은 획
     length: {
       medianRatio: Number(median(mapped.map((stroke) => stroke.lengthRatio)).toFixed(RATIO_DIGITS)),

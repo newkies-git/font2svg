@@ -1,4 +1,5 @@
 import { fitClosedLoop, fitOpenPolyline } from './curveFit.ts'
+import { mergeNearLoops } from './merge.ts'
 import { flattenContours, pointSegmentDistance, polygonArea, round1, type Pt } from '../paths.ts'
 import {
   buildOverlapCubic,
@@ -114,7 +115,7 @@ function pathForStroke(
     if (!bridged) return null
     subpaths.push(bridged)
   }
-  return subpaths.length > 0 ? dropFragments(subpaths).join(' ') : null
+  return subpaths.length > 0 ? mergeNearLoops(dropFragments(subpaths), maxGap * FRAGMENT_JOIN_GAP_RATIO).join(' ') : null
 }
 
 // 한 획의 서브패스 가운데 가장 큰 것의 면적 대비 이 비율에 못 미치고 같은 방향으로 감긴 것은, 다른 획의 외곽선에서 가장 가까운 점이
@@ -125,6 +126,8 @@ const HOLE_MIN_AREA = 100
 // 구멍은 가장 큰 서브패스 면적의 이 비율 이상이어야 구멍으로 인정한다. 한 획이 글자의 안쪽 빈 곳(counter)을 통째로 둘러싸는 일은 드물다.
 const HOLE_MIN_RATIO = 0.1
 const FRAGMENT_FLATNESS = 1.2
+// 한 획의 떨어진 조각을 잇는 최대 간격: 끊긴 곳을 잇는 최대 길이(maxGap) 대비 비율. 이보다 가까이 마주 보는 조각은 한 덩어리로 잇는다.
+const FRAGMENT_JOIN_GAP_RATIO = 0.2
 
 export function dropFragments(subpaths: string[]): string[] {
   if (subpaths.length < 2) return subpaths
