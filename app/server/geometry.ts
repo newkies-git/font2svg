@@ -1,4 +1,4 @@
-import { AREA_FLATNESS, FIT_END_OVERLAP_MAX_RATIO, FIT_END_OVERLAP_MIN_RATIO, FIT_GRID, FIT_MARGIN, CANVAS, DEFAULT_STROKE_WIDTH, OUTLINE_CONTOUR_MATCH_RATIO, OUTLINE_CONTOUR_TOLERANCE, MAX_COVERED_AREA_RATIO, MEDIAN_BBOX_INSET, MEDIAN_MIN_POINTS, MEDIAN_SIMPLIFY_TOLERANCE, MIN_COVERED_AREA_RATIO, MIN_STROKE_AREA_RATIO } from '../shared/constants.ts'
+import { AREA_FLATNESS, FIT_END_OVERLAP_MAX_RATIO, FIT_END_OVERLAP_MIN_RATIO, FIT_GRID, FIT_MARGIN, DEFAULT_STROKE_WIDTH, OUTLINE_CONTOUR_MATCH_RATIO, OUTLINE_CONTOUR_TOLERANCE, MAX_COVERED_AREA_RATIO, MEDIAN_BBOX_INSET, MEDIAN_MIN_POINTS, MEDIAN_SIMPLIFY_TOLERANCE, MIN_COVERED_AREA_RATIO, MIN_STROKE_AREA_RATIO } from '../shared/constants.ts'
 import { flattenContours, pointSegmentDistance, polygonArea, round1, type Pt as Point } from '../shared/paths.ts'
 import { computeOptimalStrokeWidth, recoverMedian, segmentOutlineByMedians, simplifyPolyline } from '../shared/strokeCut.ts'
 import type { Pt } from '../shared/types.ts'
@@ -7,18 +7,16 @@ import { fitClosedLoop } from '../shared/strokeCut/curveFit.ts'
 import { medianTurns, softenKinks } from '../shared/medianShape.ts'
 import { registerMedians } from './registration.ts'
 
-export type Box = [number, number, number, number]
-
 export type ImportedStrokes = { medians: Pt[][]; outlines: string[]; widths?: number[]; fontOutline?: string[] }
 
 export const toPoints = (line: Pt[]): Point[] => line.map(([x, y]) => ({ x, y }))
 
-export function contourArea(d: string): number {
+function contourArea(d: string): number {
   return flattenContours(d, AREA_FLATNESS).reduce((sum, contour) => sum + polygonArea(contour), 0)
 }
 
 // 길잡이 중심선의 시작·끝점에 가장 가까운 방향이 되도록 순서를 맞춘다.
-export function orientLike(line: Point[], guide: Pt[]): Point[] {
+function orientLike(line: Point[], guide: Pt[]): Point[] {
   if (line.length < 2 || guide.length < 2) return line
   const [start, end] = [guide[0], guide[guide.length - 1]]
   const dist = (a: Point, b: Pt) => Math.hypot(a.x - b[0], a.y - b[1])
@@ -275,28 +273,18 @@ function bboxMapper(medians: Pt[][], contours: string[]): ((x: number, y: number
   return (x, y) => [outline.minX + MEDIAN_BBOX_INSET + (x - source.minX) * scaleX, outline.minY + MEDIAN_BBOX_INSET + (y - source.minY) * scaleY]
 }
 
-export function pathPoints(d: string): Pt[] {
+function pathPoints(d: string): Pt[] {
   const numbers = (d.match(/-?\d+(?:\.\d+)?/g) ?? []).map(Number)
   const points: Pt[] = []
   for (let index = 0; index + 1 < numbers.length; index += 2) points.push([numbers[index], numbers[index + 1]])
   return points
 }
 
-export function boundsOf(points: Pt[]) {
+function boundsOf(points: Pt[]) {
   if (points.length === 0) return { minX: 0, maxX: 0, minY: 0, maxY: 0 }
   const xs = points.map(([x]) => x)
   const ys = points.map(([, y]) => y)
   return { minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) }
-}
-
-// 부품 글자의 모든 획 중심선을 한 덩어리로 보고 box(0~1 비율)에 맞춘다. 획마다 따로 맞추면 모든 획이 box 전체로 늘어난다.
-export function fitMedians(medians: Pt[][], box: Box): Pt[][] {
-  const { minX, maxX, minY, maxY } = boundsOf(medians.flat())
-  const [x0, y0, x1, y1] = box
-  return medians.map((median) => median.map(([x, y]): Pt => [
-    round1((x0 + ((x - minX) / Math.max(1, maxX - minX)) * (x1 - x0)) * CANVAS),
-    round1((y0 + ((y - minY) / Math.max(1, maxY - minY)) * (y1 - y0)) * CANVAS),
-  ]))
 }
 
 export function ribbonPath(median: Pt[], width: number): string {

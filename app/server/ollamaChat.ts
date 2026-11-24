@@ -7,7 +7,7 @@ import {
 } from '../shared/constants.ts'
 import { isRecord } from '../shared/guards.ts'
 import type { ChatCurrent, ChatMessage, ChatMode, ChatProposal, ChatReply } from '../shared/types.ts'
-import { OLLAMA_MODEL, postOllama } from './ids.ts'
+import { OLLAMA_MODEL, postOllama } from './ollamaClient.ts'
 import { runChatTool, toolSpecs, type ChatToolHost } from './ollamaTools.ts'
 import { EDIT_OPS } from './strokeEdits.ts'
 

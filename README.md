@@ -43,11 +43,11 @@ app/
             apiMiddleware(Vite 연결 어댑터), routes·ollamaRoutes(라우터)·routeKit, layers(레이어 구성)·layerWrites(레이어 저장),
             layerFetch(참고 레이어 수신)·layerApply(작업 획에 적용), referencePipeline·referenceMerge(참고 데이터),
             registration(참고 중심선을 궁서체에 등록), characterWrites(글자 행 갱신),
-            ollamaChat·ollamaTools·strokeEdits(Ollama 채팅), extractMetrics(추출 품질 지표)
+            ollamaClient·ollamaChat·ollamaTools·strokeEdits(Ollama 연결·채팅), extractMetrics(추출 품질 지표)
   src/      Vue 화면: components(표시), composables(상태·동작), lib(순수 계산)
   scripts/  보조 스크립트(DB 백업, 참고 데이터 미리 받기, 추출 품질 측정)
   tests/    node:test 테스트
-database/   작업 DB, 내려받은 공개 데이터(IDS)와 백업 — Git 추적 제외
+database/   작업 DB, 내려받은 참고 데이터와 백업 — Git 추적 제외
 docs/       입력 목록, 코드 분석(codebase-logic-analysis.md), 품질 측정 결과(benchmarks/), 참고 자료 조사(references/)
 output/     컴파일 산출물(`compiled/<글자>.json`, `.svg`). 개발 서버를 켤 때 만들어지며 — Git 추적 제외
 ```
@@ -67,7 +67,6 @@ output/     컴파일 산출물(`compiled/<글자>.json`, `.svg`). 개발 서버
 - **일반 채팅**: 모델이 `list_characters`·`get_character` 도구로 DB의 글자·획 정보를 직접 조회해 답한다. 데이터는 바꾸지 않는다.
 - **데이터 수정 채팅**: 위 조회에 더해 `propose_stroke_edits`로 수정을 *제안*할 수 있다. 제안은 DB를 바꾸지 않고, 채팅 창의 **적용**을 눌러야 `POST /api/ollama/apply-edits`가 작업 획에 반영한다. 제안은 부수 지정·기필/수필 모양·중심선 반전·순서 이동·삭제·병합이며, 서버가 제안과 적용 때 두 번 검증하고, 제안을 받은 뒤 그 글자의 획 데이터가 바뀌었으면(지문 불일치) 적용을 거부한다. 번호가 밀리는 수정(이동·삭제·병합)은 한 번에 하나만 받고, 잠긴 레이어에는 적용하지 않는다.
 - 승인된 글자는 적용에 이력이 남아 실행 취소할 수 있다. 승인 전 글자는 작업 데이터를 바로 덮어쓰므로 화면에서 되돌릴 수 없어 적용 버튼을 한 번 더 눌러야 하고(덮어쓰기 전 상태는 `strokes_history`에 되돌릴 수 없는 이력으로 남는다), 서버도 확인 없이는 거부한다. 지금 보고 있는 글자에 저장하지 않은 편집이 있으면 적용이 막힌다.
-- IDS 추론·합성(`ollama-ids`)과 궁서체 획 분리(`ollama-split`)는 API와 다이얼로그 코드만 남아 있고 화면에서는 열 수 없다.
 
 ### 데이터와 마이그레이션
 

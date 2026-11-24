@@ -9,7 +9,7 @@
 ## 1. 시스템 개요 및 전체 아키텍처
 
 ### 1.1 프로젝트 목적 및 기술 스택
-**추사 1817 | 한자 필순 추출 스튜디오(`font2svg-extract`)**는 궁서체 TTF(`app/fonts/Gungseouche.ttf`) 글리프 윤곽을 오픈소스 레퍼런스(Make Me a Hanja, 네이버 한자사전), 래스터 이미지 트레이싱, IDS 합성 및 로컬 Ollama(채팅·도구 호출)와 결합하여 획 단위로 분리하고, 클리핑·마스크 기반 필순 애니메이션용 정적 산출물(`output/compiled/<한자>.json`, `.svg`)을 생성하는 로컬 웹 어드민 스튜디오다.
+**추사 1817 | 한자 필순 추출 스튜디오(`font2svg-extract`)**는 궁서체 TTF(`app/fonts/Gungseouche.ttf`) 글리프 윤곽을 오픈소스 레퍼런스(Make Me a Hanja, 네이버 한자사전), 래스터 이미지 트레이싱, 로컬 Ollama(채팅·도구 호출)와 결합하여 획 단위로 분리하고, 클리핑·마스크 기반 필순 애니메이션용 정적 산출물(`output/compiled/<한자>.json`, `.svg`)을 생성하는 로컬 웹 어드민 스튜디오다.
 
 | 계층 | 주요 기술 및 제약 사항 |
 | :--- | :--- |
@@ -27,7 +27,7 @@ app/
   src/        Vue 3 스튜디오 UI: components(표시), composables(상태·도구·명령), lib(순수 계산/API)
   scripts/    독립 CLI 보조 스크립트 (DB 백업, 참고 데이터 미리 받기 `prefetch:refs`, 추출 품질 측정 `bench:extract`)
   tests/      node:test 기반 서버·공유 엔진·화면 순수 로직 단위 테스트
-database/     SQLite DB (chusa1817.db), 내려받은 IDS.TXT, 백업 파일 (Git 제외)
+database/     SQLite DB (chusa1817.db), 내려받은 공개 데이터(IDS.TXT 등), 백업 파일 (Git 제외)
 docs/         입력 목록, 이 분석 문서, 품질 측정 결과(`benchmarks/extract-*.json`), 참고 자료 조사(`references/animcjk.md`)
 output/       컴파일 산출물 (compiled/<한자>.json, .svg) (Git 제외)
 ```
@@ -116,7 +116,7 @@ flowchart TD
 stateDiagram-v2
     [*] --> Unworked: "초기 한자 등록 (stroke_count = 0)"
     Unworked --> WorkingOpen: "궁서체 윤곽만 추출 (source='FONT', 획 0)"
-    WorkingOpen --> WorkingDraft: "수작업 / SVG / 이미지 / Ollama IDS 초안 (issues.status='DRAFT')"
+    WorkingOpen --> WorkingDraft: "수작업 / SVG / 이미지 초안 (issues.status='DRAFT')"
     Unworked --> WorkingDraft: "작업 데이터 생성"
     WorkingDraft --> WorkingDraft: "updateStrokes: working_data 덮어쓰기 (이력 미기록)"
     WorkingDraft --> ApprovedStrokes: "approve(): strokes 이관 + working_data 삭제 + status='APPROVED'"
@@ -142,7 +142,7 @@ stateDiagram-v2
 - **라우터 구성**: `routes.ts`의 `ROUTES`는 `ollamaRoutes.ts`의 `OLLAMA_ROUTES`를 펼쳐 담고, 두 파일이 쓰는 `Route` 형식과 `optionalText`는 `routeKit.ts`에 둔다. 쓰기 방식(`replace`/`append`) 해석은 `shared/writeMode.ts`의 `parseWriteMode` 한 곳이다.
 - **라우트 검증 (`routes.ts`)**: `:unicode` 경로 파라미터는 `decodeURIComponent` 결과가 `'U+'`로 시작해야만 매칭된다. 핸들러가 내부 표식 `NotFound`를 반환하면 `404`, 도메인 예외를 던지면 `400` (`{ error }`)으로 응답한다.
 
-### 3.2 전체 REST API 명세 (30개 엔드포인트)
+### 3.2 전체 REST API 명세 (28개 엔드포인트)
 
 | # | Method | Endpoint (`/api/...`) | Workspace 핸들러 | 요청 Payload / Query | 응답 (`200 OK`, 예외 시 `400`/`404`) |
 | :---: | :---: | :--- | :--- | :--- | :--- |
@@ -161,21 +161,19 @@ stateDiagram-v2
 | 13 | `POST` | `/api/characters/:unicode/approve` | `approve` | - | `CharacterDetail` |
 | 14 | `POST` | `/api/characters/:unicode/undo` | `undo` | - | `CharacterDetail` |
 | 15 | `POST` | `/api/characters/:unicode/apply-naver` | `applyNaver` | `{ write?: 'replace' \| 'append' }` | `CharacterDetail & { fit_status, unmatched_strokes }` |
-| 16 | `POST` | `/api/characters/:unicode/ollama-ids` | `inferOllamaIds` / `applyOllamaIds` | `{ mode?: 'infer', model?, ids?, write? }` | `infer`: `OllamaIdsPreview`, 적용: `CharacterDetail & { fit_status, unmatched_strokes, ids, model }` |
-| 17 | `POST` | `/api/characters/:unicode/ollama-split` | `splitFontWithOllama` | `{ source?: 'NAVER' \| 'MMH', model?, write? }` | `CharacterDetail & { fit_status, unmatched_strokes, source, model }` |
-| 18 | `POST` | `/api/characters/:unicode/compile` | `compile` | - | `CompiledGlyphJson` (디스크 JSON/SVG 생성 포함) |
-| 19 | `POST` | `/api/characters/:unicode/outline/generate` | `generateOutline` | `{ sourceLayerId?: string }` | `CharacterDetail` |
-| 20 | `POST` | `/api/characters/:unicode/outline/map` | `mapOutlineStroke` | `{ strokeIndex: number, contours: number[] }` | `CharacterDetail` |
-| 21 | `POST` | `/api/characters/:unicode/outline/refresh` | `refreshOutline` | - | `CharacterDetail` |
-| 22 | `POST` | `/api/characters/:unicode/layers-meta` | `updateLayersMeta` | `{ patches: LayerMetaPatch[] }` | `CharacterDetail` |
-| 23 | `POST` | `/api/characters/:unicode/resegment` | `resegmentLayer` | `{ medians: Pt[][] }` | `{ outlines, medians, widths }` |
-| 24 | `POST` | `/api/characters/:unicode/layers` | `duplicateLayer` | `{ sourceLayerId?: string, name?: string }` | `{ createdId, detail: CharacterDetail }` |
-| 25 | `DELETE` | `/api/characters/:unicode/layers/:layerId` | `deleteLayer` | Path `:layerId` (`CUSTOM`만 삭제 가능) | `CharacterDetail` |
-| 26 | `POST` | `/api/characters/:unicode/layers/:layerId/save` | `saveLayer` | `{ strokes?, paths?, action? }` | `CharacterDetail` |
-| 27 | `POST` | `/api/characters/:unicode/layers/batch` | `saveLayers` | `{ layers: Array<{ id, strokes?, paths?, action? }> }` | `CharacterDetail` |
-| 28 | `POST` | `/api/characters/:unicode/layers/:layerId/reset` | `resetLayer` | - | `CharacterDetail` |
-| 29 | `POST` | `/api/characters/:unicode/layers/:layerId/fetch` | `fetchLayer` | Path `:layerId` (`naver` \| `mmh`) | `CharacterDetail` |
-| 30 | `POST` | `/api/characters/:unicode/layers/:layerId/apply` | `applyLayerToStrokes` | `{ mode?: 'direct' \| 'fit_font', write?: 'replace' \| 'append' }` | `CharacterDetail` (참고 레이어는 `+ fit_status, unmatched_strokes`) |
+| 16 | `POST` | `/api/characters/:unicode/compile` | `compile` | - | `CompiledGlyphJson` (디스크 JSON/SVG 생성 포함) |
+| 17 | `POST` | `/api/characters/:unicode/outline/generate` | `generateOutline` | `{ sourceLayerId?: string }` | `CharacterDetail` |
+| 18 | `POST` | `/api/characters/:unicode/outline/map` | `mapOutlineStroke` | `{ strokeIndex: number, contours: number[] }` | `CharacterDetail` |
+| 19 | `POST` | `/api/characters/:unicode/outline/refresh` | `refreshOutline` | - | `CharacterDetail` |
+| 20 | `POST` | `/api/characters/:unicode/layers-meta` | `updateLayersMeta` | `{ patches: LayerMetaPatch[] }` | `CharacterDetail` |
+| 21 | `POST` | `/api/characters/:unicode/resegment` | `resegmentLayer` | `{ medians: Pt[][] }` | `{ outlines, medians, widths }` |
+| 22 | `POST` | `/api/characters/:unicode/layers` | `duplicateLayer` | `{ sourceLayerId?: string, name?: string }` | `{ createdId, detail: CharacterDetail }` |
+| 23 | `DELETE` | `/api/characters/:unicode/layers/:layerId` | `deleteLayer` | Path `:layerId` (`CUSTOM`만 삭제 가능) | `CharacterDetail` |
+| 24 | `POST` | `/api/characters/:unicode/layers/:layerId/save` | `saveLayer` | `{ strokes?, paths?, action? }` | `CharacterDetail` |
+| 25 | `POST` | `/api/characters/:unicode/layers/batch` | `saveLayers` | `{ layers: Array<{ id, strokes?, paths?, action? }> }` | `CharacterDetail` |
+| 26 | `POST` | `/api/characters/:unicode/layers/:layerId/reset` | `resetLayer` | - | `CharacterDetail` |
+| 27 | `POST` | `/api/characters/:unicode/layers/:layerId/fetch` | `fetchLayer` | Path `:layerId` (`naver` \| `mmh`) | `CharacterDetail` |
+| 28 | `POST` | `/api/characters/:unicode/layers/:layerId/apply` | `applyLayerToStrokes` | `{ mode?: 'direct' \| 'fit_font', write?: 'replace' \| 'append' }` | `CharacterDetail` (참고 레이어는 `+ fit_status, unmatched_strokes`) |
 
 ---
 
@@ -218,21 +216,11 @@ stateDiagram-v2
 - **참고 레이어 수신 (`layerFetch.ts`)**: `fetchLayer`가 NAVER·MMH 레이어를 내려받아 표시 상태로 만든다(네이버는 이전 "없음" 캐시를 지우고 재시도).
 - **쓰기 방식 (`shared/writeMode.ts`)**: `parseWriteMode`는 `'append'`가 아니면 모두 `replace`로 본다. 라우트와 서버가 같은 해석을 쓴다.
 
-### 4.5 IDS 합성 및 로컬 Ollama 파이프라인 (`ids.ts`, `idsCompose.ts`, `ollamaIds.ts`, `ollamaSplit.ts`, `ollamaChat.ts`, `ollamaTools.ts`, `strokeEdits.ts`)
-> 항목 1~3(IDS 합성, 궁서체 획 분리)은 서버 API와 다이얼로그(`OllamaIdsDialog.vue`, `OllamaSplitDialog.vue`)가 남아 있지만 화면의 버튼·메뉴를 지워 현재 UI에서는 열 수 없다(`knip.json`의 `entry`에 두 컴포넌트를 등록해 CI를 통과시킨다). 화면에서 쓰는 Ollama 기능은 항목 4(채팅)와 상태 표시뿐이다.
+### 4.5 로컬 Ollama 연결과 채팅 (`ollamaClient.ts`, `ollamaChat.ts`, `ollamaTools.ts`, `strokeEdits.ts`, `ollamaRoutes.ts`)
+> IDS 합성(`ollama-ids`)과 궁서체 획 분리(`ollama-split`)는 화면 버튼을 없앤 뒤 서버 모듈·라우트·다이얼로그까지 모두 지웠다(IDS 파서·합성, `ollamaIds.ts`, `ollamaSplit.ts`). DB의 `origin`/`source` 열이 허용하는 `IDS`·`OLLAMA_IDS` 값은 기존 데이터와 마이그레이션(v2) 호환을 위해 CHECK 제약에 남겨 두었다. `database/IDS.TXT`는 더 이상 읽지 않는다.
 
-1. **IDS 구문 파서 및 합성 (`ids.ts`, `idsCompose.ts`)**:
-   - 12종 IDS 연산자(`⿰`~`⿻`)별 `[left, bottom, right, top]` 비율(`IDS_LAYOUTS`)과 14종 변형 부수(`LEAF_FORMS`: `亻→人`, `氵→水` 등) 및 수기 사전(`IDS_BOOK = { 畓: '⿱水田' }`)을 정의한다.
-   - `parseIdsFile`은 `database/IDS.TXT`에서 BOM과 `#` 주석을 제외하고 `^IDS$(지역)` 패턴을 파싱해 한국 표기(`K`)를 우선 정렬한다.
-   - `composeFrom(ids, lookup)`은 `WHOLE_BOX [0, 0, 1, 1]`에서 재귀 하강하며 `knownMedians`가 있으면 `fitMedians`로 배치하고, 없으면 `IDS_MAX_DEPTH = 3` 한도 내에서 재분해한다.
-2. **로컬 Ollama 상태 및 추론 (`ids.ts`, `ollamaIds.ts`)**:
-   - `listOllamaStatus()`: `http://127.0.0.1:11434/api/tags` (`3000ms` 타임아웃)를 조회해 연결 상태와 모델 목록을 반환하며, 이름에 `'embedding'`이 포함된 모델은 생성 모델 목록이 비어있지 않은 한 제외한다.
-   - `askOllama(char, model = 'qwen3.5:9b')`: `/api/generate`에 `stream: false`, `think: false`, `temperature: 0`, `seed: 1`, JSON Schema(`format`), `60초` 타임아웃으로 IDS 문자열을 질의한다.
-   - `ollamaIds.ts`: `knownMedians(char)`를 `strokes` → `working_data` → `reference_data`에서 획순은 NAVER, 모양은 Hanzi로 합쳐(`referenceMerge.ts`의 `orderedGlyph`) 조회한다. `inferIds`는 DB 변경 없이 유효성·합성 가능성·예상 획수를 반환하고, `applyIds`는 `fitOrGiven`을 거쳐 `working_data` (`source = 'OLLAMA_IDS'`, `DRAFT`) 또는 기존 `strokes`에 반영한다.
-3. **로컬 Ollama 궁서체 획 분리 (`ollamaSplit.ts`)**:
-   - 현재 기준 궁서체 윤곽(`fontContoursOf`) 각각의 바운딩 박스/중심점과 `NAVER` 또는 `MMH` 길잡이 획순(`1..N`)의 좌표를 프롬프트로 구성하고, JSON Schema(`strokes: [{ strokeOrder, contourIndices, median }]`)로 보정된 중심선과 윤곽 인덱스를 받는다.
-   - 받은 `median`(`[0..1024]` 클램프, 누락 획은 원본 길잡이 폴백)으로 `segmentOutlineByMedians`를 실행한다. 만약 기하 분할이 실패하거나 전체 윤곽을 쪼개지 못했는데 Ollama가 해당 획에 **단독으로 1개 윤곽만 매핑(`assigned.length === 1 && contourUseCount === 1`)**했고 면적 조건(`>= 0.005 * glyphArea`)을 충족하면 그 윤곽을 그대로 채택하는 보완 로직이 포함되어 있다. 최종 매칭 실패 획은 `ribbonPath`와 `unmatched_strokes`로 반환된다.
-4. **로컬 Ollama 채팅과 도구 호출 (`ollamaChat.ts`, `ollamaTools.ts`, `strokeEdits.ts`, `ollamaRoutes.ts`)**:
+1. **연결 (`ollamaClient.ts`)**: `resolveOllamaBaseUrl`은 `OLLAMA_HOST`를 해석하되 loopback(`127.0.0.1`·`localhost`·`[::1]`)만 허용하고 사용자 정보·비-http(s)를 거부한다. `listOllamaStatus()`는 `/api/tags`(`3000ms` 타임아웃)로 연결 상태와 모델 목록을 돌려주며 이름에 `embedding`이 든 모델은 생성 모델이 있으면 제외한다. `postOllama(endpoint, body)`는 `OLLAMA_TIMEOUT_MS = 60000` 타임아웃으로 `/api/chat`에 JSON을 POST한다. 기본 모델은 `qwen3.5:9b`다.
+2. **채팅과 도구 호출 (`ollamaChat.ts`, `ollamaTools.ts`, `strokeEdits.ts`, `ollamaRoutes.ts`)**:
    - **요청 검증 (`parseChatRequest`)**: 마지막이 사용자 메시지여야 하고, `user`/`assistant` 외 역할·빈 내용은 버린다. 최근 `OLLAMA_CHAT_MAX_MESSAGES = 20`개, 메시지당 `OLLAMA_CHAT_MAX_CONTENT = 4000`자까지만 받는다. `mode`는 `chat`(기본)·`edit`이고, `current`(지금 보는 글자)는 시스템 프롬프트에만 쓴다.
    - **도구 호출 루프 (`chatWithOllama`)**: `/api/chat`에 `stream: false`, `think: false`, `tools`를 보내고, 모델이 `tool_calls`를 내면 서버가 도구를 실행해 `role: 'tool'` 결과를 붙여 다시 묻는다. 도구 호출이 없는 답이 나오면 끝낸다. 최대 `OLLAMA_CHAT_MAX_TOOL_ROUNDS = 6`회까지 반복하고, 상한에 닿으면 도구 없이 마지막으로 묻는다(그래도 도구를 부르면 안내 문구를 돌려준다). 응답은 `{ reply, proposals, toolLog, model }`이다.
    - **도구 (`ollamaTools.ts`)**: DB를 직접 열어 주지 않고 `Workspace`의 `listCharacters`·`getCharacter`만 거친다. `list_characters`(검색, 기본 `OLLAMA_CHAT_LIST_DEFAULT = 10`·최대 `OLLAMA_CHAT_LIST_MAX = 20`개), `get_character`(한자 또는 `U+코드`로 조회, 획 요약 포함)는 항상 쓸 수 있고, `propose_stroke_edits`는 `edit` 모드에서만 제공한다. 도구 오류는 던지지 않고 `{ error }`로 돌려줘 모델이 고쳐 부르게 한다.
@@ -349,7 +337,7 @@ stateDiagram-v2
 ### 6.3 필순 재생, 단축키 및 IME 안전 처리
 - **필순 재생 (`usePlayback.ts`)**: `requestAnimationFrame` 기반 시간 비례(`350ms`/획) 보간을 수행하며, `window.matchMedia('(prefers-reduced-motion: reduce)')` 변경을 실시간 감지해 동작 줄이기 활성 시 애니메이션 대신 즉시 `showAll()`을 실행한다.
 - **전역 단축키 (`keymap.ts`, `useStudioShortcuts.ts`)**: 순수 함수 `resolveKeyAction`으로 키 매핑을 분리(`⌘/Ctrl+S` 저장, `⌘/Ctrl+Z` 실행 취소, `V/A/M/P/K` 도구, `Shift+방향키` `2`단위 이동, `←/→` 획 스텝, `Space` 재생/정지, `Enter/Backspace` 연결 도구 커밋/점 취소, `Esc` 칼·연결 취소). 입력 컨트롤 포커스 시 무시되며 `Escape`만 브라우저/모달 기본 동작을 막지 않기 위해 `preventDefault`를 생략한다.
-- **CJK IME 방어**: `CharacterSidebar.vue` 검색창과 `OllamaIdsDialog.vue` IDS 입력창(현재 UI에서 열 수 없음) 모두 `event.isComposing || event.keyCode === 229`를 검사해 한글·한자 조합 확정용 `Enter`가 검색/검증을 조기 실행하지 않도록 차단한다.
+- **CJK IME 방어**: `CharacterSidebar.vue` 검색창이 `event.isComposing || event.keyCode === 229`를 검사해 한글·한자 조합 확정용 `Enter`가 검색/검증을 조기 실행하지 않도록 차단한다.
 
 ### 6.4 CSS 아키텍처 (`app/src/style.css`)
 - **Cascade Layers**: `@layer reset, base, theme, components, utilities;` 선언으로 특이도 충돌을 배제한다.
@@ -378,5 +366,4 @@ Node.js 24 환경(`working-directory: app`)에서 5단계 파이프라인을 실
 3. **참고 레이어 불변 보호**: `MMH`, `NAVER` 레이어는 `layers.ts`·`layerWrites.ts`·`workspace.ts` 3중 계층에서 잠금과 직접 편집 차단이 강제되며, 작업 획으로 복사하거나 맞춤 적용한 뒤에만 편집할 수 있다.
 4. **Ollama 쓰기는 승인 뒤에만**: 채팅 모델은 읽기 도구와 "제안" 도구만 가지며, DB를 바꾸는 `POST /api/ollama/apply-edits`는 사람이 화면에서 적용을 눌러야 호출된다. 서버는 제안 때와 적용 때 각각 검증하고, 잠긴 작업 획 레이어와 저장하지 않은 화면 편집이 있는 글자(화면 쪽)를 막는다. 모델이 만든 SQL을 실행하는 경로는 없다.
 5. **AnimCJK 제거(v4)**: AnimCJK는 DB·레이어·참고 수신에서 빠졌고, `docs/references/animcjk.md`에 조사 결과만 남아 있다. `animSvg.ts`의 AnimCJK 좌표 규칙은 `import-svg`가 읽는 파일 형식 때문에 남았다.
-6. **UI에서 뺀 기능의 코드 보존**: IDS 합성(`ollama-ids`)과 궁서체 획 분리(`ollama-split`)는 버튼을 없앴지만 API·서버 모듈·다이얼로그를 남겼다. 다이얼로그 두 개는 `app/knip.json`의 `entry`로 등록해 knip이 미사용 파일로 잡지 않게 했다.
-7. **TypeScript 6 별칭**: `app/package.json`의 `"typescript": "npm:@typescript/typescript6@^6.0.2"`는 `vue-tsc` v3.3.x가 TS 7에서 제거된 내부 JS API에 의존하기 때문에 유지되고 있다.
+6. **TypeScript 6 별칭**: `app/package.json`의 `"typescript": "npm:@typescript/typescript6@^6.0.2"`는 `vue-tsc` v3.3.x가 TS 7에서 제거된 내부 JS API에 의존하기 때문에 유지되고 있다.

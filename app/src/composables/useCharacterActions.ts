@@ -1,7 +1,7 @@
 import type { Ref } from 'vue'
 import { LAYER_ID, type ImageSplit } from '../../shared/constants.ts'
 import type { AppliedCharacterDetail, CharacterDetail, CharacterSummary, WriteMode } from '../../shared/types.ts'
-import { apiRequest, apiUrl, applyOllamaIds, characterUrl, splitFontWithOllama } from '../lib/api.ts'
+import { apiRequest, apiUrl, characterUrl } from '../lib/api.ts'
 import { buildImageImport } from '../lib/imageDecode.ts'
 import { issueLabel } from '../lib/labels.ts'
 import { createBusyRunner } from './useBusyAction.ts'
@@ -185,57 +185,5 @@ export function useCharacterActions(studio: StudioState, deps: CharacterActionsD
     await reload()
   }
 
-  async function applyOllama(options: { model?: string; ids?: string } = {}): Promise<boolean> {
-    const current = selected.value
-    if (!current) return false
-    let write: WriteMode = 'replace'
-    if (workStrokeCount() > 0) {
-      const choice = await confirmImport()
-      if (choice !== 'replace' && choice !== 'append') return false
-      write = choice
-    }
-    let succeeded = false
-    await run(async () => {
-      const applied = await applyOllamaIds(current.unicode, { ...options, write })
-      await reload()
-      const orders = applied.unmatched_strokes ?? []
-      const idsLabel = applied.ids ? ` (${applied.ids})` : ''
-      message.value = !applied.fit_status
-        ? (write === 'append' ? `Ollama IDS${idsLabel} 획을 작업 획 뒤에 추가했습니다.` : `Ollama IDS${idsLabel} 획을 적용했습니다.`)
-        : applied.fit_status === 'no-font'
-          ? `궁서체 윤곽이 없어 Ollama IDS${idsLabel} 합성 획을 그대로 가져왔습니다.`
-          : orders.length > 0
-            ? `Ollama IDS${idsLabel} 획을 궁서체에 맞췄습니다. ${orders.join('·')}획은 맞지 않아 편집할 수 있습니다.`
-            : `Ollama IDS${idsLabel} 획을 궁서체에 맞춰 작업 획으로 가져왔습니다.`
-      if (orders.length > 0) focusWorkStroke?.(orders[0] - 1)
-      succeeded = true
-    }, 'Ollama IDS 획 합성에 실패했습니다.')
-    return succeeded
-  }
-
-  async function applyOllamaSplit(options: { source: 'NAVER' | 'MMH'; model?: string }): Promise<boolean> {
-    const current = selected.value
-    if (!current) return false
-    let write: WriteMode = 'replace'
-    if (workStrokeCount() > 0) {
-      const choice = await confirmImport()
-      if (choice !== 'replace' && choice !== 'append') return false
-      write = choice
-    }
-    let succeeded = false
-    await run(async () => {
-      const applied = await splitFontWithOllama(current.unicode, { ...options, write })
-      await reload()
-      const orders = applied.unmatched_strokes ?? []
-      const srcLabel = options.source === 'MMH' ? 'Hanzi' : '네이버'
-      message.value = orders.length > 0
-        ? `Ollama로 궁서체를 ${srcLabel} 획순에 맞춰 분리했습니다. ${orders.join('·')}획은 윤곽 매칭이 약해 직접 편집할 수 있습니다.`
-        : `Ollama로 궁서체를 ${srcLabel} 획순에 맞춰 작업 획으로 분리했습니다.`
-      if (orders.length > 0) focusWorkStroke?.(orders[0] - 1)
-      succeeded = true
-    }, 'Ollama 궁서체 획 분리에 실패했습니다.')
-    return succeeded
-  }
-
-  return { uploadInitial, openChar, openFirst, reload, approve, importSvg, importImage, applyNaver, applyOllama, applyOllamaSplit, undo, compileChar }
+  return { uploadInitial, openChar, openFirst, reload, approve, importSvg, importImage, applyNaver, undo, compileChar }
 }

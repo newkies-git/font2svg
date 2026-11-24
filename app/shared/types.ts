@@ -136,15 +136,6 @@ export type OllamaStatus = {
   error?: string
 }
 
-export type OllamaIdsPreview = {
-  char: string
-  model: string
-  ids: string | null
-  valid: boolean
-  composable: boolean
-  strokeCount: number
-}
-
 type ChatRole = 'user' | 'assistant'
 export type ChatMessage = { role: ChatRole; content: string }
 export type ChatMode = 'chat' | 'edit'

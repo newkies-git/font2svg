@@ -2,7 +2,6 @@ import assert from 'node:assert/strict'
 import { Readable } from 'node:stream'
 import test, { beforeEach, mock } from 'node:test'
 import { readJsonBody } from '../server/http.ts'
-import { askOllama } from '../server/ids.ts'
 import { parseHanja } from '../server/references.ts'
 import { WARN_ONCE_LIMIT } from '../shared/constants.ts'
 import { resetWarnings, warnOnce } from '../shared/log.ts'
@@ -62,14 +61,6 @@ test('parseHanja: 해석하지 못하는 원문은 null이고 한 번 알린다'
   assert.equal(parseHanja('{깨진 JSON'), null)
   assert.equal(warnings().length, 1)
   assert.match(warnings()[0], /^\[parseHanja\]/)
-})
-
-test('askOllama: 연결 실패는 null이고 한 번 알린다', async () => {
-  globalThis.fetch = (async () => { throw new Error('connect ECONNREFUSED') }) as typeof fetch
-  assert.equal(await askOllama('丁'), null)
-  assert.equal(await askOllama('丙'), null)
-  assert.equal(warnings().length, 1)
-  assert.match(warnings()[0], /^\[ollama\] connect ECONNREFUSED/)
 })
 
 test('readJsonBody: 잘못된 JSON 오류에 원인(cause)을 붙인다', async () => {

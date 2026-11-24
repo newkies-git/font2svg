@@ -1,4 +1,4 @@
-import type { AppliedCharacterDetail, ChatCurrent, ChatEdit, ChatMessage, ChatMode, ChatReply, ConversionRecord, OllamaIdsPreview, OllamaStatus, WriteMode } from '../../shared/types.ts'
+import type { AppliedCharacterDetail, ChatCurrent, ChatEdit, ChatMessage, ChatMode, ChatReply, ConversionRecord, OllamaStatus } from '../../shared/types.ts'
 
 const API_ROOT = '/api'
 
@@ -45,39 +45,6 @@ export function chatWithOllama(
 
 export function applyChatEdits(unicode: string, edits: ChatEdit[], fingerprint: string, confirmWorking: boolean): Promise<AppliedCharacterDetail> {
   return apiRequest(apiUrl('ollama', 'apply-edits'), 'Ollama 제안을 적용하지 못했습니다.', { method: 'POST', body: { unicode, edits, fingerprint, confirmWorking } })
-}
-
-export function inferOllamaIds(
-  unicode: string,
-  payload: { model?: string; ids?: string },
-): Promise<OllamaIdsPreview> {
-  return apiRequest<OllamaIdsPreview>(
-    characterUrl(unicode, 'ollama-ids'),
-    'Ollama IDS 추론에 실패했습니다.',
-    { method: 'POST', body: { mode: 'infer', ...payload } },
-  )
-}
-
-export function applyOllamaIds(
-  unicode: string,
-  payload: { model?: string; ids?: string; write?: WriteMode },
-): Promise<AppliedCharacterDetail & { ids?: string; model?: string }> {
-  return apiRequest(
-    characterUrl(unicode, 'ollama-ids'),
-    'Ollama IDS 획 합성에 실패했습니다.',
-    { method: 'POST', body: { mode: 'apply', ...payload } },
-  )
-}
-
-export function splitFontWithOllama(
-  unicode: string,
-  payload: { source: 'NAVER' | 'MMH'; model?: string; write?: WriteMode },
-): Promise<AppliedCharacterDetail & { source?: 'NAVER' | 'MMH'; model?: string }> {
-  return apiRequest(
-    characterUrl(unicode, 'ollama-split'),
-    'Ollama 궁서체 획 분리에 실패했습니다.',
-    { method: 'POST', body: payload },
-  )
 }
 
 export function fetchConversions(unicode: string): Promise<ConversionRecord[]> {

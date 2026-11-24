@@ -10,8 +10,7 @@ import { createFontApply } from './fontApply.ts'
 import { createIssues } from './issues.ts'
 import { createLayerApply } from './layerApply.ts'
 import { createLayerFetch } from './layerFetch.ts'
-import { listOllamaStatus } from './ids.ts'
-import { createOllamaIdsPipeline } from './ollamaIds.ts'
+import { listOllamaStatus } from './ollamaClient.ts'
 import { parseLayerBatch, type LayerSavePayload } from './layerRequests.ts'
 import {
   assertLayerUnlocked,
@@ -70,11 +69,6 @@ export function createWorkspace(rootDir: string) {
     issues,
     fitOrGiven: font.fitOrGiven,
   })
-  const ollamaIds = createOllamaIdsPipeline(db, rootDir, {
-    strokes,
-    issues,
-    fitOrGiven: font.fitOrGiven,
-  })
   const conversions = createConversions(db, { strokes, issues })
   const output = createCompileOutput(db, compiledDir, {
     getCharacter: catalog.getCharacter,
@@ -101,27 +95,12 @@ export function createWorkspace(rootDir: string) {
   const undo = withDetail(strokes.undo)
 
   const layerFetch = createLayerFetch(db, { strokes, references, getCharacter })
-  const layerApply = createLayerApply(db, { strokes, issues, references, getCharacter, fetchLayer: layerFetch.fetchLayer })
+  const layerApply = createLayerApply({ strokes, references, getCharacter })
 
   async function applyNaver(unicode: string, write: WriteMode = 'replace') {
     const fit = await references.applyNaver(unicode, write)
     const detail = getCharacter(unicode)
     return detail && { ...detail, fit_status: fit.status, unmatched_strokes: fit.unmatched }
-  }
-
-  async function applyOllamaIds(
-    unicode: string,
-    options: { model?: string; ids?: string; write?: WriteMode } = {},
-  ) {
-    const fit = await ollamaIds.applyIds(unicode, options)
-    const detail = getCharacter(unicode)
-    return detail && {
-      ...detail,
-      fit_status: fit.status,
-      unmatched_strokes: fit.unmatched,
-      ids: fit.ids,
-      model: fit.model,
-    }
   }
 
   // 채팅 모델이 제안하고 사용자가 승인한 획 수정을 작업 획에 반영한다. 이력이 남아 실행 취소할 수 있다.
@@ -221,9 +200,6 @@ export function createWorkspace(rootDir: string) {
     undo,
     applyNaver,
     getOllamaStatus: listOllamaStatus,
-    inferOllamaIds: ollamaIds.inferIds,
-    applyOllamaIds,
-    splitFontWithOllama: layerApply.splitFontWithOllama,
     applyChatEdits,
     applyFontBatch: font.applyFontBatch,
     prefetchReferences: references.prefetchReferences,

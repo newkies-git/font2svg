@@ -49,7 +49,6 @@ export const DEFAULT_CUSTOM_LAYER_OPACITY = 0.85
 export const MAX_COVERED_AREA_RATIO = 1.7
 export const FONT_BATCH_LIMIT = 10
 export const AREA_FLATNESS = 2
-export const IDS_MAX_DEPTH = 3
 // 참고 획순(Hanzi·네이버) 일괄 수신: 동시에 받는 글자 수와 진행 상황을 알리는 간격(글자 수)
 export const REFERENCE_PREFETCH_CONCURRENCY = 4
 export const REFERENCE_PREFETCH_LOG_STEP = 100
