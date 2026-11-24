@@ -43,3 +43,6 @@ app/dist/
 output/
 *.db-wal
 *.db-shm
+
+# 참고용 PDF 자료
+docs/ttf2stroke.pdf
