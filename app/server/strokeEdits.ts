@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { CAP_TYPES, OLLAMA_CHAT_MAX_EDITS } from '../shared/constants.ts'
 import { isRecord } from '../shared/guards.ts'
 import { moveItem, withCap } from '../shared/strokeOps.ts'
@@ -7,6 +8,15 @@ import { mergeTwoStrokes, reverseMedian } from '../shared/vectorEdit.ts'
 const CAP_SET: ReadonlySet<string> = new Set(CAP_TYPES)
 // 번호가 밀리는 수정. 한 번에 하나만 받아들여 번호가 어긋나는 일을 막는다.
 const STRUCTURAL_OPS: ReadonlySet<string> = new Set(['move', 'delete', 'merge_next'])
+
+// 제안을 받은 뒤 획 데이터가 바뀌었는지 가리는 지문의 길이(16진 문자 수)
+const FINGERPRINT_LENGTH = 16
+
+// 획 목록의 내용(윤곽·중심선·폭·부수·기필/수필)으로 만든 짧은 지문. 같은 내용이면 같고, 하나라도 다르면 달라진다.
+export function strokesFingerprint(strokes: StrokeRecord[]): string {
+  const content = strokes.map((s) => [s.outline_path, s.median_points, s.stroke_width, s.is_radical, s.start_cap_type, s.end_cap_type])
+  return createHash('sha256').update(JSON.stringify(content)).digest('hex').slice(0, FINGERPRINT_LENGTH)
+}
 
 export const EDIT_OPS = ['set_radical', 'set_cap', 'reverse', 'move', 'delete', 'merge_next'] as const
 

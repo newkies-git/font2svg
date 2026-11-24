@@ -4,6 +4,7 @@ import test, { after, afterEach } from 'node:test'
 import { HTTP_BAD_REQUEST, HTTP_OK } from '../server/http.ts'
 import { buildSystemPrompt, chatWithOllama, parseChatRequest } from '../server/ollamaChat.ts'
 import { handleApi } from '../server/routes.ts'
+import { strokesFingerprint } from '../server/strokeEdits.ts'
 import { createWorkspace } from '../server/workspace.ts'
 import { rectPath, strokeOf, tempDir } from './helpers.ts'
 
@@ -40,6 +41,7 @@ function scriptOllama(steps: Step[]) {
   return requests
 }
 
+const fp = (unicode: string) => strokesFingerprint(ws.getCharacter(unicode)!.strokes)
 const parse = (content: string, mode = 'chat') => parseChatRequest({ mode, messages: [{ role: 'user', content }] })
 
 test('채팅 요청: 마지막이 사용자 메시지여야 하고, 잘못된 항목은 버린다', () => {
@@ -107,7 +109,9 @@ test('데이터 수정 채팅: 제안은 모으기만 하고 DB는 바꾸지 않
     { content: '제안했습니다' },
   ])
   const result = await chatWithOllama(parse('1획을 부수로', 'edit'), ws)
-  assert.deepEqual(result.proposals, [{ unicode: 'U+4E01', char: '丁', edits: [{ op: 'set_radical', stroke: 1, value: 1 }] }])
+  assert.deepEqual(result.proposals.map(({ fingerprint, ...rest }) => ({ ...rest, hasFingerprint: fingerprint.length > 0 })), [
+    { unicode: 'U+4E01', char: '丁', edits: [{ op: 'set_radical', stroke: 1, value: 1 }], hasFingerprint: true },
+  ])
   assert.equal(ws.getCharacter('U+4E01')!.strokes[0].is_radical, 0)
 })
 
@@ -138,7 +142,7 @@ test('POST /api/ollama/chat: 정상은 200, 검증 실패는 400', async () => {
 
 test('승인 적용(승인 전 글자): 작업 획에 반영된다', async () => {
   ws.updateStrokes('U+4E19', [bar(100), bar(300)] as never, '초기')
-  const result = await call('/api/ollama/apply-edits', { unicode: 'U+4E19', edits: [{ op: 'set_radical', stroke: 1, value: 1 }, { op: 'delete', stroke: 2 }] })
+  const result = await call('/api/ollama/apply-edits', { unicode: 'U+4E19', fingerprint: fp('U+4E19'), edits: [{ op: 'set_radical', stroke: 1, value: 1 }, { op: 'delete', stroke: 2 }] })
   assert.equal(result.status, HTTP_OK)
   const detail = ws.getCharacter('U+4E19')!
   assert.equal(detail.strokes.length, 1)
@@ -148,7 +152,7 @@ test('승인 적용(승인 전 글자): 작업 획에 반영된다', async () =>
 test('승인 적용(승인된 글자): 이력이 남아 실행 취소할 수 있다', async () => {
   ws.approve('U+4E01')
   const before = ws.getCharacter('U+4E01')!.strokes.length
-  const result = await call('/api/ollama/apply-edits', { unicode: 'U+4E01', edits: [{ op: 'set_radical', stroke: 1, value: 1 }, { op: 'delete', stroke: 3 }] })
+  const result = await call('/api/ollama/apply-edits', { unicode: 'U+4E01', fingerprint: fp('U+4E01'), edits: [{ op: 'set_radical', stroke: 1, value: 1 }, { op: 'delete', stroke: 3 }] })
   assert.equal(result.status, HTTP_OK)
   const detail = ws.getCharacter('U+4E01')!
   assert.equal(detail.strokes.length, before - 1)
@@ -160,11 +164,25 @@ test('승인 적용(승인된 글자): 이력이 남아 실행 취소할 수 있
 })
 
 test('승인 적용: 잘못된 요청·없는 글자·잠긴 레이어는 거부하고 데이터를 바꾸지 않는다', async () => {
-  assert.equal((await call('/api/ollama/apply-edits', { unicode: 'U+4E01', edits: [{ op: 'delete', stroke: 99 }] })).status, HTTP_BAD_REQUEST)
+  assert.equal((await call('/api/ollama/apply-edits', { unicode: 'U+4E01', fingerprint: fp('U+4E01'), edits: [{ op: 'delete', stroke: 99 }] })).status, HTTP_BAD_REQUEST)
   assert.equal((await call('/api/ollama/apply-edits', { unicode: 'U+0000', edits: [] })).status, HTTP_BAD_REQUEST)
   ws.updateLayersMeta('U+4E01', [{ id: 'strokes', locked: true }])
-  const locked = await call('/api/ollama/apply-edits', { unicode: 'U+4E01', edits: [{ op: 'reverse', stroke: 1 }] })
+  const locked = await call('/api/ollama/apply-edits', { unicode: 'U+4E01', fingerprint: fp('U+4E01'), edits: [{ op: 'reverse', stroke: 1 }] })
   assert.equal(locked.status, HTTP_BAD_REQUEST)
   assert.match((locked.body as { error: string }).error, /잠긴/)
   assert.deepEqual(ws.getCharacter('U+4E01')!.strokes[0].median_points, [[110, 130], [390, 130]])
+})
+
+test('승인 적용: 제안을 받은 뒤 획 데이터가 바뀌었거나 지문이 없으면 거부한다', async () => {
+  ws.updateLayersMeta('U+4E01', [{ id: 'strokes', locked: false }])
+  const stale = fp('U+4E01')
+  ws.updateStrokes('U+4E01', [bar(100), bar(300), bar(520)] as never, '다른 편집')
+  const detail = ws.getCharacter('U+4E01')!
+  assert.notEqual(stale, fp('U+4E01'), '내용이 바뀌면 지문이 달라야 한다(같은 길이라도)')
+  const edits = [{ op: 'reverse', stroke: 1 }]
+  const changed = await call('/api/ollama/apply-edits', { unicode: 'U+4E01', fingerprint: stale, edits })
+  assert.equal(changed.status, HTTP_BAD_REQUEST)
+  assert.match((changed.body as { error: string }).error, /바뀌어/)
+  assert.equal((await call('/api/ollama/apply-edits', { unicode: 'U+4E01', edits })).status, HTTP_BAD_REQUEST)
+  assert.deepEqual(ws.getCharacter('U+4E01')!.strokes[0].median_points, detail.strokes[0].median_points)
 })

@@ -43,8 +43,8 @@ export function chatWithOllama(
   return apiRequest<ChatReply>(apiUrl('ollama', 'chat'), 'Ollama 채팅에 실패했습니다.', { method: 'POST', body: payload, signal })
 }
 
-export function applyChatEdits(unicode: string, edits: ChatEdit[]): Promise<AppliedCharacterDetail> {
-  return apiRequest(apiUrl('ollama', 'apply-edits'), 'Ollama 제안을 적용하지 못했습니다.', { method: 'POST', body: { unicode, edits } })
+export function applyChatEdits(unicode: string, edits: ChatEdit[], fingerprint: string): Promise<AppliedCharacterDetail> {
+  return apiRequest(apiUrl('ollama', 'apply-edits'), 'Ollama 제안을 적용하지 못했습니다.', { method: 'POST', body: { unicode, edits, fingerprint } })
 }
 
 export function inferOllamaIds(

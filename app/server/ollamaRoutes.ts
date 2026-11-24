@@ -10,7 +10,7 @@ export const OLLAMA_ROUTES: Route[] = [
     pattern: 'ollama/apply-edits',
     handler: async ({ ws, body }) => {
       const payload = await body()
-      return ws.applyChatEdits(String(payload.unicode ?? ''), payload.edits)
+      return ws.applyChatEdits(String(payload.unicode ?? ''), payload.edits, payload.fingerprint)
     },
   },
   { method: 'GET', pattern: 'ollama/status', handler: ({ ws }) => ws.getOllamaStatus() },

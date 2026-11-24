@@ -1,6 +1,6 @@
 import { CAP_TYPES, OLLAMA_CHAT_LIST_DEFAULT, OLLAMA_CHAT_LIST_MAX } from '../shared/constants.ts'
 import type { ChatProposal } from '../shared/types.ts'
-import { EDIT_OPS, sanitizeEdits } from './strokeEdits.ts'
+import { EDIT_OPS, sanitizeEdits, strokesFingerprint } from './strokeEdits.ts'
 import type { Workspace } from './workspace.ts'
 
 // 채팅 모델이 부를 수 있는 도구. DB를 직접 열어 주지 않고 작업 공간의 조회 함수만 거친다.
@@ -115,7 +115,7 @@ export function runChatTool(host: ChatToolHost, name: string, args: Record<strin
       if (!canPropose) return { result: { error: '이 모드에서는 수정을 제안할 수 없습니다.' }, log: '수정 제안 거부(일반 채팅)' }
       const edits = sanitizeEdits(args.edits, detail.strokes.length)
       if (edits.length === 0) return { result: { error: '유효한 수정이 없습니다. 획 번호와 op를 확인하세요.' }, log: `수정 제안 실패 ${detail.char}` }
-      proposals.push({ unicode: String(detail.unicode), char: String(detail.char), edits })
+      proposals.push({ unicode: String(detail.unicode), char: String(detail.char), edits, fingerprint: strokesFingerprint(detail.strokes) })
       return { result: { ok: true, accepted: edits.length, note: '사용자가 승인하면 적용된다.' }, log: `수정 제안 ${detail.char} ${edits.length}건` }
     }
     return { result: { error: `알 수 없는 도구: ${name}` }, log: `알 수 없는 도구 ${name}` }

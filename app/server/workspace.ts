@@ -23,7 +23,7 @@ import {
 } from './layerWrites.ts'
 import { sanitizeLayerStrokes } from './layerData.ts'
 import { requireFound } from './model.ts'
-import { applyStrokeEdits, sanitizeEdits } from './strokeEdits.ts'
+import { applyStrokeEdits, sanitizeEdits, strokesFingerprint } from './strokeEdits.ts'
 import { createOutlineMapping } from './outlineMapping.ts'
 import { createReferencePipeline } from './referencePipeline.ts'
 import { migrate, seed } from './schema.ts'
@@ -125,9 +125,10 @@ export function createWorkspace(rootDir: string) {
   }
 
   // 채팅 모델이 제안하고 사용자가 승인한 획 수정을 작업 획에 반영한다. 이력이 남아 실행 취소할 수 있다.
-  function applyChatEdits(unicode: string, rawEdits: unknown) {
+  function applyChatEdits(unicode: string, rawEdits: unknown, fingerprint: unknown) {
     const character = strokes.requireCharacter(unicode)
     const detail = requireFound(getCharacter(unicode))
+    if (fingerprint !== strokesFingerprint(detail.strokes)) throw new Error('제안을 받은 뒤 획 데이터가 바뀌어 적용하지 않았습니다. 다시 요청하세요.')
     const edits = sanitizeEdits(rawEdits, detail.strokes.length)
     if (edits.length === 0) throw new Error('적용할 수 있는 수정이 없습니다. 획 번호가 바뀌었는지 확인하세요.')
     assertLayerUnlocked(db, character.char, LAYER_ID.strokes)

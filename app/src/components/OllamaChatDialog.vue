@@ -77,7 +77,7 @@ async function applyProposal(proposal: Turn['proposals'] extends (infer P)[] | u
   if (proposal.state !== 'pending' || blockedReason(proposal)) return
   failure.value = ''
   try {
-    await applyChatEdits(proposal.unicode, proposal.edits)
+    await applyChatEdits(proposal.unicode, proposal.edits, proposal.fingerprint)
     proposal.state = 'applied'
     emit('applied', proposal.unicode)
   } catch (cause) {
