@@ -3,6 +3,7 @@ import test from 'node:test'
 import { flattenContours, samplePath } from '../shared/paths.ts'
 import { autoFitLayer, autoFitStroke } from '../src/lib/autoFit.ts'
 import { transformStroke } from '../shared/vectorEdit.ts'
+import { mildJoinCount } from '../shared/strokeCut/smoothJoins.ts'
 import { rectPath, strokeOf } from './helpers.ts'
 
 // 글자: 서로 떨어진 두 덩어리. 획: 같은 모양인데 위치·각도가 틀어진 레이어.
@@ -184,4 +185,12 @@ test('자동 맞춤 멱등성: 이미 맞춤된 T자에 다시 적용해도 겹�
   const maxY2 = Math.max(...samplePath(second.strokes[1].outline_path, 1).map((p) => p.y))
   assert.ok(maxY2 >= 648 && maxY2 <= 669, `재적용 후 겹침 범위 이탈: maxY2=${maxY2}`)
   assert.ok(maxY2 <= maxY1 + 2, `재적용 시 겹침이 과도하게 증가함: ${maxY1} → ${maxY2}`)
+})
+
+test('자동 맞춤(사선 접합부): 겹친 끝 모양과 윤곽 변이 만나는 앵커의 접선이 어긋나 변곡점처럼 보이지 않는다', () => {
+  const diagFont = ['M 200 900 L 300 900 L 300 600 L 650 250 L 570 170 L 300 440 L 300 100 L 200 100 Z']
+  const vBar = strokeOf(rectPath(200, 100, 300, 900), [[250, 880], [250, 120]], { stroke_order: 1 })
+  const diag = strokeOf('M 300 600 L 650 250 L 570 170 L 300 440 Z', [[320, 500], [600, 220]], { stroke_order: 2 })
+  const result = autoFitLayer([vBar, diag], diagFont)
+  assert.equal(mildJoinCount(result.strokes[1].outline_path), 0, result.strokes[1].outline_path)
 })

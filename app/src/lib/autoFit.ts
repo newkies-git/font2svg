@@ -12,6 +12,7 @@ import {
 import { assignRegions, CELL, centroidOf, fillMask, IDENTITY, iou, loopsOf, mapFor, optimize, type FitParams, type Loop } from '../../shared/fitCore.ts'
 import { flattenContours, round1 } from '../../shared/paths.ts'
 import { computeOptimalStrokeWidth, recoverMedian, segmentOutlineByMedians, simplifyPolyline } from '../../shared/strokeCut.ts'
+import { smoothMildJoins } from '../../shared/strokeCut/smoothJoins.ts'
 import { transformStroke } from '../../shared/vectorEdit.ts'
 import type { Pt, StrokeRecord } from '../../shared/types.ts'
 
@@ -133,7 +134,8 @@ function snapStroke(
           }
         : medianAlong(path, stroke.median_points, stroke.stroke_width)
     if (median) {
-      const snapped: StrokeRecord = { ...stroke, outline_path: path, median_points: median.points, stroke_width: median.width }
+      // 접합부 끝 모양의 접선 어긋남(약한 꺾임)을 매끄럽게 이어 변곡점처럼 보이는 정점을 없앤다.
+      const snapped: StrokeRecord = { ...stroke, outline_path: smoothMildJoins(path), median_points: median.points, stroke_width: median.width }
       const after = iou(pieceMask ?? fillMask(strokeLoops(snapped)), region)
       // 접합부에서 잘린 조각은 모서리가 새로 생기므로, 원본보다 꺾임이 늘면 원본 윤곽을 변형해 맞춘다.
       if (preserveGuideMedian && cornerCount(loopsOf([path])) > cornerCount(strokeLoops(stroke))) return refineStroke(stroke, region)
